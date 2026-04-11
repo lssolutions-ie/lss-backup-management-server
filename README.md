@@ -45,12 +45,23 @@ created.
 1. Log in to the dashboard
 2. Go to **Client Groups** → create a group for the client (e.g. "Acme Ltd")
 3. Go to **Register Node**
-4. Enter the node name and UID, assign to the client group
+4. Fill in:
+   - **Node ID** — a unique code you choose (e.g. `acme-fileserver-01`).
+     This is the node's identity on the server and you will paste it into
+     the CLI below.
+   - **Node Hostname** — the node's actual hostname, copied from the node
+     itself, for display in the dashboard.
+   - **Client Group** — assign to the group you created above.
 5. Copy the PSK key shown — **it will not be shown again**
 6. On the node machine, open LSS Backup CLI → **Settings** → **Configure
    Management Console**
-7. Enter: server URL, user ID, node name, and paste the PSK key
-8. The node will check in within 5 minutes
+7. Enter:
+   - **Server URL** — `https://your-domain.com`
+   - **User ID** — the **Node ID** string you entered in step 4
+   - **Node Name** — anything; the server ignores this field
+   - **PSK Key** — the 128-char PSK from step 5
+8. Save. The node will check in within 5 minutes, or immediately after the
+   next backup job runs.
 
 ## Upgrading
 

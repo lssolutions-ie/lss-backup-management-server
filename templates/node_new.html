@@ -11,14 +11,15 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="mb-3">
-        <label class="form-label">Node Name</label>
-        <input type="text" name="name" class="form-control" required autofocus>
+        <label class="form-label">Node ID</label>
+        <input type="text" name="uid" class="form-control" required autofocus>
+        <small class="form-hint">A unique code you choose. Paste this same value into the node's LSS Backup CLI under Management Console → User ID.</small>
       </div>
 
       <div class="mb-3">
-        <label class="form-label">Node UID</label>
-        <input type="text" name="uid" class="form-control" required>
-        <small class="form-hint">Unique identifier set by the operator in the CLI.</small>
+        <label class="form-label">Node Hostname</label>
+        <input type="text" name="name" class="form-control" required>
+        <small class="form-hint">The node's hostname — for display only. Copy it from the node itself.</small>
       </div>
 
       <div class="mb-3">

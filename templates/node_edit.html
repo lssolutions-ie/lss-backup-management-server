@@ -11,14 +11,14 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="mb-3">
-        <label class="form-label">Node Name</label>
-        <input type="text" name="name" class="form-control" value="{{.Node.Name}}" required autofocus>
+        <label class="form-label">Node ID</label>
+        <input type="text" class="form-control" value="{{.Node.UID}}" disabled>
+        <small class="form-hint">Node ID cannot be changed — it is the node's identity on the server.</small>
       </div>
 
       <div class="mb-3">
-        <label class="form-label">Node UID</label>
-        <input type="text" class="form-control" value="{{.Node.UID}}" disabled>
-        <small class="form-hint">UID cannot be changed — it is the node's identity.</small>
+        <label class="form-label">Node Hostname</label>
+        <input type="text" name="name" class="form-control" value="{{.Node.Name}}" required autofocus>
       </div>
 
       <div class="mb-3">

@@ -1,27 +1,47 @@
 {{define "content"}}
 <div class="page-header mb-3">
   <h2 class="page-title">PSK for {{.Node.Name}}</h2>
+  <div class="text-muted">UID <code>{{.Node.UID}}</code></div>
 </div>
 
-<div class="alert alert-warning">
-  <h3 class="h3 mb-2">⚠ COPY THIS KEY NOW — it will not be shown again</h3>
-  <p class="mb-3">Paste this into LSS Backup CLI → Settings → Configure Management Console → PSK Key.</p>
-  <div class="card bg-dark text-light mb-3">
-    <div class="card-body">
-      <code id="psk-value" style="word-break: break-all; font-size: 0.95rem;">{{.PSK}}</code>
-    </div>
+<div class="alert alert-warning" role="alert">
+  <h3 class="h3 mb-1">⚠ Copy this key now — it will not be shown again</h3>
+  <p class="mb-0">
+    Paste it into LSS Backup CLI → <strong>Settings → Configure Management Console → PSK Key</strong>.
+    If you lose it, regenerate a new one from the node's detail page.
+  </p>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">PSK Key (128 characters)</h3>
   </div>
-  <button type="button" class="btn btn-primary" onclick="copyPSK()">Copy to clipboard</button>
-  <a href="/nodes/{{.Node.ID}}" class="btn btn-outline-secondary">Done</a>
+  <div class="card-body">
+    <div id="psk-value"
+         style="background:#182230; color:#f8fafc; padding:1rem; border-radius:.5rem;
+                font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.95rem;
+                line-height: 1.5; word-break: break-all; white-space: pre-wrap;
+                user-select: all; -webkit-user-select: all;">{{.PSK}}</div>
+
+    <div class="btn-list mt-3">
+      <button type="button" class="btn btn-primary" onclick="copyPSK()">
+        📋 Copy to clipboard
+      </button>
+      <a href="/nodes/{{.Node.ID}}" class="btn btn-outline-secondary">Done</a>
+    </div>
+    <div id="copy-status" class="text-success mt-2" style="display:none;">✓ Copied.</div>
+  </div>
 </div>
 
 <script>
 function copyPSK() {
   const psk = document.getElementById('psk-value').textContent;
+  const status = document.getElementById('copy-status');
   navigator.clipboard.writeText(psk).then(function() {
-    alert('PSK copied to clipboard.');
+    status.style.display = 'block';
+    setTimeout(function() { status.style.display = 'none'; }, 2500);
   }, function() {
-    alert('Copy failed — please select the text manually.');
+    alert('Copy failed — please triple-click the key and copy manually.');
   });
 }
 </script>

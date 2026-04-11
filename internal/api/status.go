@@ -44,6 +44,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if node == nil {
+		log.Printf("api: unknown uid %q (request rejected)", req.UID)
 		apiError(w, http.StatusNotFound)
 		return
 	}

@@ -92,7 +92,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	role := r.FormValue("role")
-	if role != "superadmin" && role != "user" {
+	if role != "superadmin" && role != "user" && role != "viewer" {
 		role = "user"
 	}
 
@@ -134,7 +134,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if role == "user" {
+	if role != "superadmin" {
 		groupIDs := parseGroupIDs(r)
 		if err := s.DB.SetUserClientGroupAccess(userID, groupIDs); err != nil {
 			log.Printf("user new: set access: %v", err)
@@ -186,7 +186,7 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 
 	password := r.FormValue("password")
 	role := r.FormValue("role")
-	if role != "superadmin" && role != "user" {
+	if role != "superadmin" && role != "user" && role != "viewer" {
 		role = "user"
 	}
 
@@ -219,7 +219,7 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupIDs := parseGroupIDs(r)
-	if role == "user" {
+	if role != "superadmin" {
 		if err := s.DB.SetUserClientGroupAccess(target.ID, groupIDs); err != nil {
 			log.Printf("user edit: set access: %v", err)
 		}

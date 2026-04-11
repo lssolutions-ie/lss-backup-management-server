@@ -87,6 +87,9 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 
 // HandleNodeNew shows the register-node form (GET) and creates a node (POST).
 func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
+	if !s.EnforceWrite(w, r) {
+		return
+	}
 	groups, err := s.DB.ListClientGroups()
 	if err != nil {
 		log.Printf("node new: list groups: %v", err)
@@ -161,6 +164,9 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 
 // HandleNodePSK shows the one-time PSK display page.
 func (s *Server) HandleNodePSK(w http.ResponseWriter, r *http.Request) {
+	if !s.EnforceWrite(w, r) {
+		return
+	}
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
 		return
@@ -182,6 +188,9 @@ func (s *Server) HandleNodePSK(w http.ResponseWriter, r *http.Request) {
 
 // HandleNodeEdit shows the edit form (GET) and updates a node (POST).
 func (s *Server) HandleNodeEdit(w http.ResponseWriter, r *http.Request) {
+	if !s.EnforceWrite(w, r) {
+		return
+	}
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
 		return
@@ -253,6 +262,9 @@ func (s *Server) HandleNodeDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !s.EnforceWrite(w, r) {
+		return
+	}
 
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
@@ -279,6 +291,9 @@ func (s *Server) HandleNodeDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleNodeRegeneratePSK(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.NotFound(w, r)
+		return
+	}
+	if !s.EnforceWrite(w, r) {
 		return
 	}
 

@@ -32,7 +32,8 @@
       <div class="mb-3">
         <label class="form-label">Role</label>
         <select name="role" class="form-select" id="role-select">
-          <option value="user" {{if and .TargetUser (not .TargetUser.IsSuperAdmin)}}selected{{end}}>User</option>
+          <option value="user"       {{if and .TargetUser (eq .TargetUser.Role "user")}}selected{{end}}>User (read/write)</option>
+          <option value="viewer"     {{if and .TargetUser .TargetUser.IsViewer}}selected{{end}}>Viewer (read-only)</option>
           <option value="superadmin" {{if and .TargetUser .TargetUser.IsSuperAdmin}}selected{{end}}>Superadmin</option>
         </select>
       </div>
@@ -51,7 +52,7 @@
           <span class="text-muted">No groups exist yet.</span>
           {{end}}
         </div>
-        <small class="form-hint">Only applies to regular users.</small>
+        <small class="form-hint">Applies to user (read/write) and viewer (read-only) roles.</small>
       </div>
 
       <div class="form-footer">
@@ -66,7 +67,7 @@
 (function() {
   const sel  = document.getElementById('role-select');
   const wrap = document.getElementById('group-select-wrap');
-  function toggle() { wrap.style.display = sel.value === 'user' ? '' : 'none'; }
+  function toggle() { wrap.style.display = sel.value === 'superadmin' ? 'none' : ''; }
   if (sel && wrap) { sel.addEventListener('change', toggle); toggle(); }
 })();
 </script>

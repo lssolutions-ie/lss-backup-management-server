@@ -144,6 +144,17 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// EnforceWrite returns true if the current user may perform write actions.
+// Call at the top of write handlers; returns false and writes 403 for viewers.
+func (s *Server) EnforceWrite(w http.ResponseWriter, r *http.Request) bool {
+	user, _ := r.Context().Value(ctxUser).(*models.User)
+	if user == nil || !user.CanWrite() {
+		http.Error(w, "Forbidden — read-only user", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 // RequireSuperAdmin wraps RequireAuth and additionally checks role.
 func (s *Server) RequireSuperAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return s.RequireAuth(func(w http.ResponseWriter, r *http.Request) {

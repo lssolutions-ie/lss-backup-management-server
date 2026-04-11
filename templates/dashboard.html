@@ -2,9 +2,11 @@
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
     <div class="col"><h2 class="page-title">Dashboard</h2></div>
+    {{if .User.CanWrite}}
     <div class="col-auto">
       <a href="/nodes/new" class="btn btn-primary">Register Node</a>
     </div>
+    {{end}}
   </div>
 </div>
 

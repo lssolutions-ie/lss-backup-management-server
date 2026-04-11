@@ -27,8 +27,10 @@
           <td>
             {{if .IsSuperAdmin}}
             <span class="badge bg-primary">superadmin</span>
+            {{else if .IsViewer}}
+            <span class="badge bg-warning">viewer</span>
             {{else}}
-            <span class="badge bg-secondary">user</span>
+            <span class="badge bg-secondary">user (read/write)</span>
             {{end}}
           </td>
           <td>

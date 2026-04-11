@@ -15,6 +15,16 @@ func (u *User) IsSuperAdmin() bool {
 	return u.Role == "superadmin"
 }
 
+func (u *User) IsViewer() bool {
+	return u.Role == "viewer"
+}
+
+// CanWrite returns true for superadmin and regular user roles.
+// Viewers have read-only access to their assigned client groups.
+func (u *User) CanWrite() bool {
+	return u.Role == "superadmin" || u.Role == "user"
+}
+
 type ClientGroup struct {
 	ID        uint64
 	Name      string

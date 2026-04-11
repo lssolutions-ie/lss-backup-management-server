@@ -7,6 +7,7 @@
         UID <code>{{.Node.UID}}</code> · Group <strong>{{.Node.ClientGroup}}</strong>
       </div>
     </div>
+    {{if .User.CanWrite}}
     <div class="col-auto">
       <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
       <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">
@@ -19,6 +20,7 @@
         <button type="submit" class="btn btn-danger">Delete</button>
       </form>
     </div>
+    {{end}}
   </div>
 </div>
 

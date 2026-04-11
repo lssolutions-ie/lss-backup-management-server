@@ -1,0 +1,27 @@
+# Built binary
+lss-management-server
+server
+/bin/
+
+# Config and secrets — never commit these
+config.toml
+*.key
+*.password
+*.env
+
+# Go build cache
+*.test
+*.out
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+install/deploy_key

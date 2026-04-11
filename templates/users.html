@@ -37,17 +37,19 @@
             {{if .IsSuperAdmin}}
             <span class="text-muted">all</span>
             {{else}}
-              {{range index $groupsByUser .ID}}<span class="badge bg-light text-dark me-1">{{.Name}}</span>{{else}}<span class="text-muted">none</span>{{end}}
+              {{range index $groupsByUser .ID}}<span class="badge bg-secondary me-1">{{.Name}}</span>{{else}}<span class="text-muted">none</span>{{end}}
             {{end}}
           </td>
           <td>{{.CreatedAt.Format "2006-01-02"}}</td>
           <td>
-            <a href="/users/{{.ID}}/edit" class="btn btn-sm">Edit</a>
-            <form action="/users/{{.ID}}/delete" method="POST" class="d-inline"
-                  onsubmit="return confirm('Delete this user?');">
-              <input type="hidden" name="csrf_token" value="{{$csrf}}">
-              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-            </form>
+            <div class="btn-list flex-nowrap">
+              <a href="/users/{{.ID}}/edit" class="btn btn-sm">Edit</a>
+              <form action="/users/{{.ID}}/delete" method="POST"
+                    onsubmit="return confirm('Delete this user?');">
+                <input type="hidden" name="csrf_token" value="{{$csrf}}">
+                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+              </form>
+            </div>
           </td>
         </tr>
         {{end}}

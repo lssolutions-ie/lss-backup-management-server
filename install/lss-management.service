@@ -21,7 +21,7 @@ SyslogIdentifier=lss-management
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/etc/lss-management /var/log/lss-management
+ReadWritePaths=/etc/lss-management /var/log/lss-management /var/lib/lss-management
 
 [Install]
 WantedBy=multi-user.target

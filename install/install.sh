@@ -18,7 +18,7 @@ else
     C_RED= C_GREEN= C_YELLOW= C_BLUE= C_RESET=
 fi
 
-step()  { echo; echo "${C_BLUE}[STEP $1/10]${C_RESET} $2"; }
+step()  { echo; echo "${C_BLUE}[STEP $1/11]${C_RESET} $2"; }
 info()  { echo "  ${C_GREEN}→${C_RESET} $*"; }
 warn()  { echo "  ${C_YELLOW}⚠${C_RESET} $*"; }
 error() { echo "${C_RED}✗ $*${C_RESET}" >&2; }
@@ -31,6 +31,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ─── Constants ───────────────────────────────────────────────────────────────
 SERVICE_USER="lss-management"
 CONFIG_DIR="/etc/lss-management"
+STATE_DIR="/var/lib/lss-management"
 LOG_DIR="/var/log/lss-management"
 SECRET_KEY_FILE="$CONFIG_DIR/secret.key"
 DB_PASSWORD_FILE="$CONFIG_DIR/db.password"
@@ -39,6 +40,10 @@ BINARY_PATH="/usr/local/bin/lss-management-server"
 SYSTEMD_UNIT="/etc/systemd/system/lss-management.service"
 NGINX_AVAILABLE="/etc/nginx/sites-available/lss-management"
 NGINX_ENABLED="/etc/nginx/sites-enabled/lss-management"
+TUNNEL_USER="lss-tunnel"
+TUNNEL_AUTHKEYS_FILE="$STATE_DIR/tunnel_authorized_keys"
+TUNNEL_AUTHKEYS_SCRIPT="/usr/local/bin/lss-tunnel-authkeys.sh"
+SSHD_DROPIN="/etc/ssh/sshd_config.d/lss-tunnel.conf"
 GO_MIN_VERSION="1.22"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -144,8 +149,13 @@ mkdir -p "$LOG_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
 chmod 750 "$LOG_DIR"
 
+mkdir -p "$STATE_DIR"
+chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
+chmod 755 "$STATE_DIR"
+
 info "Config dir: $CONFIG_DIR"
 info "Log dir:    $LOG_DIR"
+info "State dir:  $STATE_DIR"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 4 — Configure MySQL
@@ -219,9 +229,78 @@ else
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 6 — Build the binary
+# STEP 6 — Provision the reverse-tunnel SSH user
 # ═════════════════════════════════════════════════════════════════════════════
-step 6 "Building the binary"
+step 6 "Provisioning reverse-tunnel SSH user"
+
+# Restricted user that nodes use to hold persistent reverse tunnels.
+# Cannot get a shell, cannot open PTYs, can only establish TCP port forwards.
+if ! id "$TUNNEL_USER" &>/dev/null; then
+    useradd --system --create-home --shell /usr/sbin/nologin "$TUNNEL_USER"
+    info "Created user: $TUNNEL_USER"
+else
+    info "User $TUNNEL_USER already exists"
+fi
+
+# Ensure ~lss-tunnel/.ssh exists with correct perms even though we rely on
+# AuthorizedKeysCommand instead of a literal authorized_keys file — some
+# OpenSSH versions still probe the home dir.
+TUNNEL_HOME="$(getent passwd "$TUNNEL_USER" | cut -d: -f6)"
+mkdir -p "$TUNNEL_HOME/.ssh"
+chown "$TUNNEL_USER:$TUNNEL_USER" "$TUNNEL_HOME/.ssh"
+chmod 700 "$TUNNEL_HOME/.ssh"
+: > "$TUNNEL_HOME/.ssh/authorized_keys"
+chown "$TUNNEL_USER:$TUNNEL_USER" "$TUNNEL_HOME/.ssh/authorized_keys"
+chmod 600 "$TUNNEL_HOME/.ssh/authorized_keys"
+
+# authorized_keys file maintained by lss-management.
+touch "$TUNNEL_AUTHKEYS_FILE"
+chown "$SERVICE_USER:$SERVICE_USER" "$TUNNEL_AUTHKEYS_FILE"
+chmod 644 "$TUNNEL_AUTHKEYS_FILE"
+
+# Helper script sshd invokes via AuthorizedKeysCommand. It just cats the file.
+cat > "$TUNNEL_AUTHKEYS_SCRIPT" <<'SCRIPT'
+#!/bin/bash
+# Invoked by sshd for the lss-tunnel user. Emits the current authorized_keys
+# contents from the file maintained by the lss-management service.
+if [[ "$1" != "lss-tunnel" ]]; then
+    exit 0
+fi
+cat /var/lib/lss-management/tunnel_authorized_keys 2>/dev/null
+SCRIPT
+chown root:root "$TUNNEL_AUTHKEYS_SCRIPT"
+chmod 0755 "$TUNNEL_AUTHKEYS_SCRIPT"
+
+# sshd drop-in that only applies to the lss-tunnel user.
+cat > "$SSHD_DROPIN" <<EOF
+Match User $TUNNEL_USER
+    PubkeyAuthentication yes
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    AllowTcpForwarding yes
+    GatewayPorts no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitTTY no
+    PermitTunnel no
+    ForceCommand /bin/false
+    AuthorizedKeysCommand $TUNNEL_AUTHKEYS_SCRIPT
+    AuthorizedKeysCommandUser nobody
+EOF
+chown root:root "$SSHD_DROPIN"
+chmod 0644 "$SSHD_DROPIN"
+
+if sshd -t 2>/dev/null; then
+    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+    info "sshd reloaded with drop-in $SSHD_DROPIN"
+else
+    warn "sshd config test failed — tunnel drop-in not applied; run 'sshd -t' to inspect"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 7 — Build the binary
+# ═════════════════════════════════════════════════════════════════════════════
+step 7 "Building the binary"
 
 cd "$REPO_ROOT"
 info "Running: go build -o $BINARY_PATH ./cmd/server"
@@ -246,7 +325,7 @@ done
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 7 — Write config file
 # ═════════════════════════════════════════════════════════════════════════════
-step 7 "Writing config file"
+step 8 "Writing config file"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     cat > "$CONFIG_FILE" <<EOF
@@ -273,7 +352,7 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 8 — Install systemd unit
 # ═════════════════════════════════════════════════════════════════════════════
-step 8 "Installing systemd unit"
+step 9 "Installing systemd unit"
 
 cp "$REPO_ROOT/install/lss-management.service" "$SYSTEMD_UNIT"
 chown root:root "$SYSTEMD_UNIT"
@@ -286,7 +365,7 @@ info "systemd unit installed and enabled"
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 9 — Configure nginx
 # ═════════════════════════════════════════════════════════════════════════════
-step 9 "Configuring nginx"
+step 10 "Configuring nginx"
 
 if [[ ! -f "$NGINX_AVAILABLE" ]]; then
     read -rp "Enter the domain name for this server (e.g. backup.example.com): " DOMAIN
@@ -318,7 +397,7 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 10 — Start/restart the service
 # ═════════════════════════════════════════════════════════════════════════════
-step 10 "Starting lss-management service"
+step 11 "Starting lss-management service"
 
 if systemctl is-active --quiet lss-management; then
     systemctl restart lss-management

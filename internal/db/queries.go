@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -250,34 +252,59 @@ func (d *DB) CountNodesInGroup(groupID uint64) (int, error) {
 
 func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 	n := &models.Node{}
+	var tPort sql.NullInt32
+	var tKey sql.NullString
 	err := d.db.QueryRow(`
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
-		       n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at
+		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
+		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.created_at
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.uid = ?`, uid).
 		Scan(&n.ID, &n.UID, &n.Name, &n.ClientGroupID, &n.ClientGroup,
-			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt, &n.CreatedAt)
+			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt,
+			&tPort, &n.TunnelConnected, &tKey,
+			&n.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
+	applyTunnelScan(n, tPort, tKey)
 	return n, err
 }
 
 func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 	n := &models.Node{}
+	var tPort sql.NullInt32
+	var tKey sql.NullString
 	err := d.db.QueryRow(`
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
-		       n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at
+		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
+		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.created_at
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.id = ?`, id).
 		Scan(&n.ID, &n.UID, &n.Name, &n.ClientGroupID, &n.ClientGroup,
-			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt, &n.CreatedAt)
+			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt,
+			&tPort, &n.TunnelConnected, &tKey,
+			&n.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
+	applyTunnelScan(n, tPort, tKey)
 	return n, err
+}
+
+// applyTunnelScan converts nullable scan results into the Node struct.
+func applyTunnelScan(n *models.Node, port sql.NullInt32, key sql.NullString) {
+	if port.Valid {
+		p := int(port.Int32)
+		n.TunnelPort = &p
+	}
+	if key.Valid {
+		n.TunnelPublicKey = key.String
+	}
 }
 
 func (d *DB) CreateNode(uid, name string, groupID uint64, pskEncrypted string) (uint64, error) {
@@ -322,13 +349,94 @@ func (d *DB) DeleteNode(id uint64) error {
 	return err
 }
 
+// UpdateNodeTunnel stores the latest reverse-tunnel info reported by a node.
+// Returns true if the stored public key changed (so the caller can trigger
+// regeneration of the authorized_keys file).
+func (d *DB) UpdateNodeTunnel(nodeID uint64, port int, publicKey string, connected bool) (keyChanged bool, err error) {
+	// Read the current stored key first.
+	var cur sql.NullString
+	err = d.db.QueryRow("SELECT tunnel_public_key FROM nodes WHERE id = ?", nodeID).Scan(&cur)
+	if err != nil {
+		return false, err
+	}
+	currentKey := ""
+	if cur.Valid {
+		currentKey = cur.String
+	}
+
+	_, err = d.db.Exec(
+		`UPDATE nodes
+		   SET tunnel_port = ?, tunnel_connected = ?, tunnel_public_key = ?
+		 WHERE id = ?`,
+		port, connected, publicKey, nodeID,
+	)
+	if err != nil {
+		return false, err
+	}
+	return publicKey != currentKey, nil
+}
+
+// ListTunnelPublicKeys returns all non-empty tunnel public keys stored in the
+// nodes table. Used to regenerate the authorized_keys file.
+func (d *DB) ListTunnelPublicKeys() ([]string, error) {
+	rows, err := d.db.Query(
+		"SELECT tunnel_public_key FROM nodes WHERE tunnel_public_key IS NOT NULL AND tunnel_public_key != '' ORDER BY id",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+// WriteTunnelAuthorizedKeys atomically writes every registered tunnel public
+// key to path, one per line. The file is mode 0644 and owned by whichever
+// user the process runs as — on the production server that's lss-management,
+// which matches the AuthorizedKeysCommand script's expected readable source.
+func (d *DB) WriteTunnelAuthorizedKeys(path string) error {
+	keys, err := d.ListTunnelPublicKeys()
+	if err != nil {
+		return fmt.Errorf("list keys: %w", err)
+	}
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".tunnel_authkeys_*")
+	if err != nil {
+		return fmt.Errorf("tempfile: %w", err)
+	}
+	defer os.Remove(f.Name()) //nolint:errcheck
+	if err := f.Chmod(0o644); err != nil {
+		f.Close() //nolint:errcheck
+		return err
+	}
+	for _, k := range keys {
+		if _, err := f.WriteString(strings.TrimRight(k, "\n") + "\n"); err != nil {
+			f.Close() //nolint:errcheck
+			return err
+		}
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
+}
+
 // ListNodesWithStatus returns all nodes visible to the user, enriched with job
 // count and worst job status. groupIDs is nil for superadmins (all nodes).
 // Runs as a single JOIN + GROUP BY query (no N+1).
 func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, error) {
 	query := `
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
-		       n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at,
+		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
+		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.created_at,
 		       COUNT(js.id) AS job_count,
 		       CASE
 		         WHEN SUM(js.last_status = 'failure') > 0 THEN 'failure'
@@ -347,7 +455,9 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 		}
 	}
 	query += ` GROUP BY n.id, n.uid, n.name, n.client_group_id, cg.name,
-	                    n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at
+	                    n.psk_encrypted, n.first_seen_at, n.last_seen_at,
+	                    n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+	                    n.created_at
 	          ORDER BY n.name`
 
 	rows, err := d.db.Query(query, args...)
@@ -359,13 +469,18 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 	var nodes []*models.NodeWithStatus
 	for rows.Next() {
 		ns := &models.NodeWithStatus{}
+		var tPort sql.NullInt32
+		var tKey sql.NullString
 		if err := rows.Scan(
 			&ns.ID, &ns.UID, &ns.Name, &ns.ClientGroupID, &ns.ClientGroup,
-			&ns.PSKEncrypted, &ns.FirstSeenAt, &ns.LastSeenAt, &ns.CreatedAt,
+			&ns.PSKEncrypted, &ns.FirstSeenAt, &ns.LastSeenAt,
+			&tPort, &ns.TunnelConnected, &tKey,
+			&ns.CreatedAt,
 			&ns.JobCount, &ns.WorstStatus,
 		); err != nil {
 			return nil, err
 		}
+		applyTunnelScan(&ns.Node, tPort, tKey)
 		nodes = append(nodes, ns)
 	}
 	return nodes, rows.Err()
@@ -376,7 +491,9 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 	rows, err := d.db.Query(`
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
-		       n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at
+		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
+		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.created_at
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.first_seen_at IS NOT NULL
@@ -388,12 +505,17 @@ func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 	var nodes []*models.Node
 	for rows.Next() {
 		n := &models.Node{}
+		var tPort sql.NullInt32
+		var tKey sql.NullString
 		if err := rows.Scan(
 			&n.ID, &n.UID, &n.Name, &n.ClientGroupID, &n.ClientGroup,
-			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt, &n.CreatedAt,
+			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt,
+			&tPort, &n.TunnelConnected, &tKey,
+			&n.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
+		applyTunnelScan(n, tPort, tKey)
 		nodes = append(nodes, n)
 	}
 	return nodes, rows.Err()

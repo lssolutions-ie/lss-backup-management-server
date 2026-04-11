@@ -45,6 +45,14 @@
             <span class="status status-red"><span class="status-dot"></span> Offline</span>
             {{end}}
           </dd>
+          <dt class="col-4">Tunnel</dt>
+          <dd class="col-8">
+            {{if .Node.TunnelReady}}
+            <span class="status status-green"><span class="status-dot"></span> Connected (port {{.Node.TunnelPort}})</span>
+            {{else}}
+            <span class="status status-secondary"><span class="status-dot"></span> Not connected</span>
+            {{end}}
+          </dd>
           <dt class="col-4">Created</dt>
           <dd class="col-8">{{.Node.CreatedAt.Format "2006-01-02 15:04:05"}}</dd>
         </dl>

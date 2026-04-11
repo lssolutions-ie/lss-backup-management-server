@@ -36,15 +36,23 @@ type ClientGroup struct {
 }
 
 type Node struct {
-	ID            uint64
-	UID           string
-	Name          string
-	ClientGroupID uint64
-	ClientGroup   string // populated by JOIN
-	PSKEncrypted  string
-	FirstSeenAt   *time.Time
-	LastSeenAt    *time.Time
-	CreatedAt     time.Time
+	ID              uint64
+	UID             string
+	Name            string
+	ClientGroupID   uint64
+	ClientGroup     string // populated by JOIN
+	PSKEncrypted    string
+	FirstSeenAt     *time.Time
+	LastSeenAt      *time.Time
+	TunnelPort      *int   // last-reported reverse-tunnel port on the mgmt server
+	TunnelConnected bool   // last-reported tunnel-connected flag from the node
+	TunnelPublicKey string // ssh public key registered for the reverse tunnel
+	CreatedAt       time.Time
+}
+
+// TunnelReady returns true if the server can dial 127.0.0.1:TunnelPort and expect to reach the node.
+func (n *Node) TunnelReady() bool {
+	return n.TunnelConnected && n.TunnelPort != nil && *n.TunnelPort > 0
 }
 
 func (n *Node) IsOnline() bool {
@@ -100,6 +108,14 @@ type NodeStatus struct {
 	NodeName       string      `json:"node_name"`
 	ReportedAt     time.Time   `json:"reported_at"`
 	Jobs           []JobStatus `json:"jobs"`
+	Tunnel         *TunnelInfo `json:"tunnel,omitempty"`
+}
+
+// TunnelInfo is carried on heartbeats by nodes running the reverse-tunnel daemon.
+type TunnelInfo struct {
+	Port      int    `json:"port"`       // port on the mgmt-server that reverse-forwards to the node's sshd
+	PublicKey string `json:"public_key"` // ssh public key the node uses to hold the tunnel open
+	Connected bool   `json:"connected"`  // true if the tunnel is currently established
 }
 
 type JobStatus struct {

@@ -68,10 +68,24 @@ func main() {
 		AppKey: appKey,
 	}
 
+	// Path to the authorized_keys file consumed by sshd's AuthorizedKeysCommand
+	// for the restricted tunnel user. Overridable via LSS_TUNNEL_AUTHKEYS_FILE.
+	tunnelAuthKeysFile := os.Getenv("LSS_TUNNEL_AUTHKEYS_FILE")
+	if tunnelAuthKeysFile == "" {
+		tunnelAuthKeysFile = "/var/lib/lss-management/tunnel_authorized_keys"
+	}
+
 	apiHandler := &api.Handler{
-		DB:       database,
-		AppKey:   appKey,
-		Notifier: notifier,
+		DB:                       database,
+		AppKey:                   appKey,
+		Notifier:                 notifier,
+		TunnelAuthorizedKeysFile: tunnelAuthKeysFile,
+	}
+
+	// Rebuild the authorized_keys file from the DB on startup so that any
+	// keys already stored are represented, even if the file was deleted.
+	if err := database.WriteTunnelAuthorizedKeys(tunnelAuthKeysFile); err != nil {
+		log.Printf("tunnel authorized_keys startup sync: %v", err)
 	}
 
 	mux := http.NewServeMux()

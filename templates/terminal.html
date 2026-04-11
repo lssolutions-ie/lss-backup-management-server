@@ -18,13 +18,25 @@
 <div id="creds-card" class="card mb-3">
   <div class="card-header"><h3 class="card-title">SSH Connection</h3></div>
   <div class="card-body">
-    <div class="alert alert-warning mb-3" role="alert" style="display:block;">
-      <strong>Heads-up:</strong> the SSH host key is not verified (MITM between
-      this server and the node is possible). Credentials are held in memory for
-      the duration of the session only, never stored.
+    {{if .Node.TunnelReady}}
+    <div class="alert alert-info mb-3" role="alert" style="display:block;">
+      <strong>Reverse tunnel active</strong> — connection will be routed through
+      the node's persistent tunnel (port {{.Node.TunnelPort}}). You only need
+      to provide the node's SSH username and password.
     </div>
+    {{else}}
+    <div class="alert alert-warning mb-3" role="alert" style="display:block;">
+      <strong>No active tunnel for this node.</strong> Enter the node's
+      reachable address directly. The SSH host key is not verified (MITM is
+      possible). Credentials are held in memory for the session only, never
+      stored.
+    </div>
+    {{end}}
+
     <div id="creds-error" class="alert alert-danger" style="display:none;"></div>
+
     <div class="row g-2">
+      {{if not .Node.TunnelReady}}
       <div class="col-md-8">
         <label class="form-label">Host</label>
         <input type="text" id="host" class="form-control" placeholder="192.168.0.14 or example.com" autofocus>
@@ -33,9 +45,10 @@
         <label class="form-label">Port</label>
         <input type="number" id="port" class="form-control" value="22">
       </div>
+      {{end}}
       <div class="col-md-6">
         <label class="form-label">Username</label>
-        <input type="text" id="user" class="form-control" placeholder="root">
+        <input type="text" id="user" class="form-control" placeholder="root" {{if .Node.TunnelReady}}autofocus{{end}}>
       </div>
       <div class="col-md-6">
         <label class="form-label">Password</label>
@@ -47,6 +60,11 @@
     </div>
   </div>
 </div>
+
+<script>
+  window.__lssNodeID = {{.Node.ID}};
+  window.__lssTunnelReady = {{if .Node.TunnelReady}}true{{else}}false{{end}};
+</script>
 
 <div id="term-card" class="card mb-3" style="display:none;">
   <div class="card-header">
@@ -68,22 +86,33 @@
   let resizeHandler = null;
 
   window.connect = function() {
-    const host = document.getElementById('host').value.trim();
-    const port = parseInt(document.getElementById('port').value, 10) || 22;
     const user = document.getElementById('user').value.trim();
     const pass = document.getElementById('pass').value;
     const errEl = document.getElementById('creds-error');
+    const viaTunnel = !!window.__lssTunnelReady;
+
+    const hostEl = document.getElementById('host');
+    const portEl = document.getElementById('port');
+    const host = hostEl ? hostEl.value.trim() : '';
+    const port = portEl ? (parseInt(portEl.value, 10) || 22) : 22;
 
     errEl.style.display = 'none';
-    if (!host || !user) {
-      errEl.textContent = 'Host and username are required.';
+    if (!user) {
+      errEl.textContent = 'Username is required.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!viaTunnel && !host) {
+      errEl.textContent = 'Host is required (node has no active tunnel).';
       errEl.style.display = 'block';
       return;
     }
 
     document.getElementById('creds-card').style.display = 'none';
     document.getElementById('term-card').style.display = 'block';
-    document.getElementById('term-title').textContent = 'Terminal — ' + user + '@' + host + ':' + port;
+    document.getElementById('term-title').textContent = viaTunnel
+      ? ('Terminal — ' + user + '@' + 'node (via tunnel)')
+      : ('Terminal — ' + user + '@' + host + ':' + port);
 
     term = new Terminal({
       cursorBlink: true,
@@ -102,6 +131,7 @@
     ws.onopen = function() {
       ws.send(JSON.stringify({
         type: 'auth',
+        node_id: window.__lssNodeID,
         host: host,
         port: port,
         username: user,

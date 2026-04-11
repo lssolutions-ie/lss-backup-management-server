@@ -24,7 +24,8 @@ type terminalPageData struct {
 // upgrade. It carries the SSH connect details.
 type terminalAuthMsg struct {
 	Type     string `json:"type"`
-	Host     string `json:"host"`
+	NodeID   uint64 `json:"node_id"` // if set, server routes via the node's reverse tunnel
+	Host     string `json:"host"`    // fallback when there's no tunnel
 	Port     int    `json:"port"`
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -98,12 +99,9 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		wsSendError(ws, "invalid auth message")
 		return
 	}
-	if auth.Host == "" || auth.Username == "" {
-		wsSendError(ws, "host and username are required")
+	if auth.Username == "" {
+		wsSendError(ws, "username is required")
 		return
-	}
-	if auth.Port == 0 {
-		auth.Port = 22
 	}
 	if auth.Cols <= 0 {
 		auth.Cols = 80
@@ -112,9 +110,40 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		auth.Rows = 24
 	}
 
+	// Resolve the dial target. If the browser specified a node_id and that
+	// node has a live reverse tunnel, dial 127.0.0.1:<tunnel_port>. Otherwise
+	// fall back to the operator-supplied host/port (direct mode).
+	dialHost := auth.Host
+	dialPort := auth.Port
+	viaTunnel := false
+	if auth.NodeID > 0 {
+		node, err := s.DB.GetNodeByID(auth.NodeID)
+		if err != nil {
+			wsSendError(ws, "node lookup failed")
+			return
+		}
+		if node == nil {
+			wsSendError(ws, "node not found")
+			return
+		}
+		if node.TunnelReady() {
+			dialHost = "127.0.0.1"
+			dialPort = *node.TunnelPort
+			viaTunnel = true
+		}
+	}
+	if dialHost == "" {
+		wsSendError(ws, "host is required (node has no active tunnel)")
+		return
+	}
+	if dialPort == 0 {
+		dialPort = 22
+	}
+
 	// NB: never log the password. Log enough to audit who connected where.
-	log.Printf("terminal: user=%s opening ssh to %s@%s:%d",
-		user.Username, auth.Username, auth.Host, auth.Port)
+	log.Printf("terminal: user=%s opening ssh %s=%s@%s:%d",
+		user.Username, map[bool]string{true: "via-tunnel", false: "direct"}[viaTunnel],
+		auth.Username, dialHost, dialPort)
 
 	// Dial SSH.
 	sshCfg := &ssh.ClientConfig{
@@ -126,7 +155,7 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	// Drop the plaintext password from the auth struct ASAP; the cfg has its own copy.
 	auth.Password = ""
 
-	addr := fmt.Sprintf("%s:%d", auth.Host, auth.Port)
+	addr := fmt.Sprintf("%s:%d", dialHost, dialPort)
 	sshClient, err := ssh.Dial("tcp", addr, sshCfg)
 	if err != nil {
 		wsSendError(ws, "ssh dial failed: "+err.Error())

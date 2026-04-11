@@ -13,9 +13,10 @@ import (
 )
 
 type Handler struct {
-	DB       *db.DB
-	AppKey   []byte
-	Notifier notify.Notifier
+	DB                    *db.DB
+	AppKey                []byte
+	Notifier              notify.Notifier
+	TunnelAuthorizedKeysFile string // path the server rewrites when a new tunnel key arrives
 }
 
 type statusRequest struct {
@@ -119,6 +120,21 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// 7. Update last_seen_at (and first_seen_at if first check-in)
 	if err := h.DB.UpdateNodeSeen(node.ID, now, node.FirstSeenAt == nil); err != nil {
 		log.Printf("api: update seen node=%d: %v", node.ID, err)
+	}
+
+	// 7b. If the node reported tunnel info, persist it. On a public key change,
+	// regenerate the authorized_keys file that sshd reads via AuthorizedKeysCommand.
+	if status.Tunnel != nil {
+		changed, err := h.DB.UpdateNodeTunnel(node.ID, status.Tunnel.Port, status.Tunnel.PublicKey, status.Tunnel.Connected)
+		if err != nil {
+			log.Printf("api: update tunnel node=%d: %v", node.ID, err)
+		} else if changed && h.TunnelAuthorizedKeysFile != "" {
+			if err := h.DB.WriteTunnelAuthorizedKeys(h.TunnelAuthorizedKeysFile); err != nil {
+				log.Printf("api: rewrite tunnel authorized_keys: %v", err)
+			} else {
+				log.Printf("api: tunnel key changed for node=%d; authorized_keys regenerated", node.ID)
+			}
+		}
 	}
 
 	// 8. Notify on job failures

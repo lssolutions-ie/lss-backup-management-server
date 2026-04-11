@@ -324,12 +324,21 @@ func (d *DB) DeleteNode(id uint64) error {
 
 // ListNodesWithStatus returns all nodes visible to the user, enriched with job
 // count and worst job status. groupIDs is nil for superadmins (all nodes).
+// Runs as a single JOIN + GROUP BY query (no N+1).
 func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, error) {
 	query := `
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
-		       n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at
+		       n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at,
+		       COUNT(js.id) AS job_count,
+		       CASE
+		         WHEN SUM(js.last_status = 'failure') > 0 THEN 'failure'
+		         WHEN SUM(js.last_status = '')        > 0 THEN 'never_run'
+		         WHEN SUM(js.last_status = 'success') > 0 THEN 'success'
+		         ELSE ''
+		       END AS worst_status
 		FROM nodes n
-		JOIN client_groups cg ON cg.id = n.client_group_id`
+		JOIN client_groups cg ON cg.id = n.client_group_id
+		LEFT JOIN job_snapshots js ON js.node_id = n.id`
 	args := []interface{}{}
 	if len(groupIDs) > 0 {
 		query += " WHERE n.client_group_id IN (" + placeholders(len(groupIDs)) + ")"
@@ -337,7 +346,9 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 			args = append(args, id)
 		}
 	}
-	query += " ORDER BY n.name"
+	query += ` GROUP BY n.id, n.uid, n.name, n.client_group_id, cg.name,
+	                    n.psk_encrypted, n.first_seen_at, n.last_seen_at, n.created_at
+	          ORDER BY n.name`
 
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
@@ -351,25 +362,13 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 		if err := rows.Scan(
 			&ns.ID, &ns.UID, &ns.Name, &ns.ClientGroupID, &ns.ClientGroup,
 			&ns.PSKEncrypted, &ns.FirstSeenAt, &ns.LastSeenAt, &ns.CreatedAt,
+			&ns.JobCount, &ns.WorstStatus,
 		); err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, ns)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	// Enrich with job snapshots
-	for _, ns := range nodes {
-		jobs, err := d.ListJobSnapshots(ns.ID)
-		if err != nil {
-			return nil, err
-		}
-		ns.JobCount = len(jobs)
-		ns.WorstStatus = models.WorstStatus(jobs)
-	}
-	return nodes, nil
+	return nodes, rows.Err()
 }
 
 // ListOfflineNodes returns nodes that last checked in more than 15 minutes ago
@@ -492,98 +491,85 @@ func (d *DB) CountNodeReports(nodeID uint64) (int, error) {
 
 // ─── Dashboard stats ─────────────────────────────────────────────────────────
 
+// GetDashboardStats returns the four summary counters for the dashboard cards.
+// Runs as two queries: one for per-node counters, one for failing-node count.
 func (d *DB) GetDashboardStats(groupIDs []uint64) (*models.DashboardStats, error) {
 	stats := &models.DashboardStats{}
-
 	where, args := groupFilter("n.client_group_id", groupIDs)
 
-	// Total nodes
-	row := d.db.QueryRow("SELECT COUNT(*) FROM nodes n"+where, args...)
-	if err := row.Scan(&stats.TotalNodes); err != nil {
-		return nil, fmt.Errorf("total nodes: %w", err)
+	// One query covers total / online / never-seen.
+	q1 := `
+		SELECT
+		  COUNT(*) AS total,
+		  SUM(n.last_seen_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)) AS online,
+		  SUM(n.first_seen_at IS NULL) AS never_seen
+		FROM nodes n` + where
+	var online, never sql.NullInt64
+	if err := d.db.QueryRow(q1, args...).Scan(&stats.TotalNodes, &online, &never); err != nil {
+		return nil, fmt.Errorf("dashboard node counters: %w", err)
 	}
+	stats.OnlineNodes = int(online.Int64)
+	stats.NeverSeenNodes = int(never.Int64)
 
-	// Online nodes
-	onlineArgs := append(args, interface{}(nil))
-	copy(onlineArgs, args)
-	onlineArgs = append([]interface{}{}, args...)
-	onlineWhere := where
-	if onlineWhere != "" {
-		onlineWhere += " AND n.last_seen_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)"
-	} else {
-		onlineWhere = " WHERE n.last_seen_at >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)"
+	// Failing nodes: distinct nodes with at least one failing job snapshot.
+	q2 := `
+		SELECT COUNT(DISTINCT js.node_id)
+		FROM job_snapshots js
+		JOIN nodes n ON n.id = js.node_id
+		WHERE js.last_status = 'failure'`
+	if where != "" {
+		// where already starts with " WHERE ..." — convert to extra AND.
+		q2 += " AND " + where[len(" WHERE "):]
 	}
-	row = d.db.QueryRow("SELECT COUNT(*) FROM nodes n"+onlineWhere, onlineArgs...)
-	if err := row.Scan(&stats.OnlineNodes); err != nil {
-		return nil, fmt.Errorf("online nodes: %w", err)
-	}
-
-	// Never seen
-	neverWhere := where
-	if neverWhere != "" {
-		neverWhere += " AND n.first_seen_at IS NULL"
-	} else {
-		neverWhere = " WHERE n.first_seen_at IS NULL"
-	}
-	row = d.db.QueryRow("SELECT COUNT(*) FROM nodes n"+neverWhere, args...)
-	if err := row.Scan(&stats.NeverSeenNodes); err != nil {
-		return nil, fmt.Errorf("never seen nodes: %w", err)
-	}
-
-	// Nodes with failures (any job_snapshot with last_status = 'failure')
-	failQuery := `SELECT COUNT(DISTINCT js.node_id) FROM job_snapshots js
-		JOIN nodes n ON n.id = js.node_id` + where + func() string {
-		if where != "" {
-			return " AND js.last_status = 'failure'"
-		}
-		return " WHERE js.last_status = 'failure'"
-	}()
-	row = d.db.QueryRow(failQuery, args...)
-	if err := row.Scan(&stats.FailingNodes); err != nil {
-		return nil, fmt.Errorf("failing nodes: %w", err)
+	if err := d.db.QueryRow(q2, args...).Scan(&stats.FailingNodes); err != nil {
+		return nil, fmt.Errorf("dashboard failing counter: %w", err)
 	}
 
 	return stats, nil
 }
 
+// ListGroupsWithStats returns each client group with node count and worst job
+// status. groupIDs is nil for superadmins (all groups). Single JOIN query, no
+// per-group subqueries.
 func (d *DB) ListGroupsWithStats(groupIDs []uint64) ([]*models.GroupWithStats, error) {
-	var groups []*models.ClientGroup
-	var err error
-	if groupIDs == nil {
-		groups, err = d.ListClientGroups()
-	} else {
-		// fetch specific groups with node counts
-		groups = make([]*models.ClientGroup, 0)
+	query := `
+		SELECT cg.id, cg.name, cg.created_at,
+		       COUNT(DISTINCT n.id) AS node_count,
+		       CASE
+		         WHEN SUM(js.last_status = 'failure') > 0 THEN 'failure'
+		         WHEN SUM(js.last_status = '')        > 0 THEN 'never_run'
+		         WHEN SUM(js.last_status = 'success') > 0 THEN 'success'
+		         ELSE ''
+		       END AS worst_status
+		FROM client_groups cg
+		LEFT JOIN nodes n          ON n.client_group_id = cg.id
+		LEFT JOIN job_snapshots js ON js.node_id = n.id`
+	args := []interface{}{}
+	if len(groupIDs) > 0 {
+		query += " WHERE cg.id IN (" + placeholders(len(groupIDs)) + ")"
 		for _, id := range groupIDs {
-			g, err2 := d.GetClientGroupByID(id)
-			if err2 != nil || g == nil {
-				continue
-			}
-			count, _ := d.CountNodesInGroup(g.ID)
-			g.NodeCount = count
-			groups = append(groups, g)
+			args = append(args, id)
 		}
 	}
+	query += " GROUP BY cg.id, cg.name, cg.created_at ORDER BY cg.name"
+
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
-	result := make([]*models.GroupWithStats, 0, len(groups))
-	for _, g := range groups {
-		gws := &models.GroupWithStats{ClientGroup: *g}
-		// get worst status across all jobs in this group
-		row := d.db.QueryRow(`
-			SELECT COALESCE(
-			  CASE WHEN SUM(js.last_status = 'failure') > 0 THEN 'failure'
-			       WHEN SUM(js.last_status = 'success') > 0 THEN 'success'
-			       ELSE 'never_run' END, '')
-			FROM job_snapshots js
-			JOIN nodes n ON n.id = js.node_id
-			WHERE n.client_group_id = ?`, g.ID)
-		row.Scan(&gws.WorstStatus) //nolint:errcheck
+	var result []*models.GroupWithStats
+	for rows.Next() {
+		gws := &models.GroupWithStats{}
+		if err := rows.Scan(
+			&gws.ID, &gws.Name, &gws.CreatedAt, &gws.NodeCount, &gws.WorstStatus,
+		); err != nil {
+			return nil, err
+		}
 		result = append(result, gws)
 	}
-	return result, nil
+	return result, rows.Err()
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -123,10 +123,12 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("ssh-tunnel: closed node=%d uid=%s", node.ID, uid)
 }
 
-// computeTunnelHMAC returns HMAC-SHA256(psk, "ssh-tunnel|<uid>|<ts>") as lowercase hex.
+// computeTunnelHMAC returns HMAC-SHA256(psk, "ssh-tunnel:<uid>:<ts>") as lowercase hex.
+// The separator is a colon (matching CLI v2.1.135+); the original pipe-based
+// spec from the protocol negotiation was superseded when the CLI shipped.
 func computeTunnelHMAC(psk, uid, ts string) string {
 	h := hmac.New(sha256.New, []byte(psk))
-	h.Write([]byte("ssh-tunnel|" + uid + "|" + ts))
+	h.Write([]byte("ssh-tunnel:" + uid + ":" + ts))
 	return hex.EncodeToString(h.Sum(nil))
 }
 

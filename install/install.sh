@@ -254,7 +254,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 listen_addr = "127.0.0.1:8080"
 
 [database]
-dsn = "lss_mgmt:${DB_PASSWORD}@tcp(localhost:3306)/lss_management?parseTime=true"
+dsn = "lss_mgmt:${DB_PASSWORD}@tcp(localhost:3306)/lss_management?parseTime=true&loc=Local"
 
 [security]
 secret_key_file = "$SECRET_KEY_FILE"

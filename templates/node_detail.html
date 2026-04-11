@@ -106,6 +106,7 @@
       <thead>
         <tr>
           <th>Reported at</th>
+          <th>Type</th>
           <th>Jobs</th>
           <th>Worst status</th>
         </tr>
@@ -114,6 +115,13 @@
         {{range .Reports}}
         <tr>
           <td>{{.ReportedAt.Format "2006-01-02 15:04:05"}}</td>
+          <td>
+            {{if eq .ReportType "heartbeat"}}
+            <span class="badge text-bg-info">Heartbeat</span>
+            {{else}}
+            <span class="badge text-bg-primary">Post-run</span>
+            {{end}}
+          </td>
           <td>{{.JobCount}}</td>
           <td>
             {{if eq .WorstStatus "failure"}}
@@ -128,7 +136,7 @@
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="3" class="text-center text-muted">No check-ins yet.</td></tr>
+        <tr><td colspan="4" class="text-center text-muted">No check-ins yet.</td></tr>
         {{end}}
       </tbody>
     </table>

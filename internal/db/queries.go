@@ -452,17 +452,17 @@ func (d *DB) UpsertJobSnapshot(nodeID uint64, job models.JobStatus) error {
 
 // ─── Node reports ────────────────────────────────────────────────────────────
 
-func (d *DB) InsertNodeReport(nodeID uint64, reportedAt time.Time, payloadJSON string) error {
+func (d *DB) InsertNodeReport(nodeID uint64, reportedAt time.Time, reportType, payloadJSON string) error {
 	_, err := d.db.Exec(
-		"INSERT INTO node_reports (node_id, reported_at, payload_json) VALUES (?, ?, ?)",
-		nodeID, reportedAt, payloadJSON,
+		"INSERT INTO node_reports (node_id, reported_at, report_type, payload_json) VALUES (?, ?, ?, ?)",
+		nodeID, reportedAt, reportType, payloadJSON,
 	)
 	return err
 }
 
 func (d *DB) ListNodeReports(nodeID uint64, limit, offset int) ([]*models.NodeReport, error) {
 	rows, err := d.db.Query(`
-		SELECT id, node_id, reported_at, received_at, payload_json
+		SELECT id, node_id, reported_at, received_at, report_type, payload_json
 		FROM node_reports
 		WHERE node_id = ?
 		ORDER BY reported_at DESC
@@ -474,7 +474,7 @@ func (d *DB) ListNodeReports(nodeID uint64, limit, offset int) ([]*models.NodeRe
 	var reports []*models.NodeReport
 	for rows.Next() {
 		r := &models.NodeReport{}
-		if err := rows.Scan(&r.ID, &r.NodeID, &r.ReportedAt, &r.ReceivedAt, &r.PayloadJSON); err != nil {
+		if err := rows.Scan(&r.ID, &r.NodeID, &r.ReportedAt, &r.ReceivedAt, &r.ReportType, &r.PayloadJSON); err != nil {
 			return nil, err
 		}
 		// compute job count and worst status from stored JSON

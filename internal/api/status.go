@@ -79,6 +79,13 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 
+	// Normalise report_type: empty/unknown values default to "post_run" for
+	// backwards compatibility with nodes that pre-date the field.
+	reportType := status.ReportType
+	if reportType != "heartbeat" && reportType != "post_run" {
+		reportType = "post_run"
+	}
+
 	// 5. Upsert job snapshots
 	for _, job := range status.Jobs {
 		if err := h.DB.UpsertJobSnapshot(node.ID, job); err != nil {
@@ -87,7 +94,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. Insert node report
-	if err := h.DB.InsertNodeReport(node.ID, status.ReportedAt, string(plaintext)); err != nil {
+	if err := h.DB.InsertNodeReport(node.ID, status.ReportedAt, reportType, string(plaintext)); err != nil {
 		log.Printf("api: insert report node=%d: %v", node.ID, err)
 	}
 

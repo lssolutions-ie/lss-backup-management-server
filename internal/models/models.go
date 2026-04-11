@@ -76,6 +76,7 @@ type NodeReport struct {
 	NodeID      uint64
 	ReportedAt  time.Time
 	ReceivedAt  time.Time
+	ReportType  string // "heartbeat" | "post_run"
 	PayloadJSON string
 	JobCount    int    // computed from payload
 	WorstStatus string // computed from payload
@@ -91,6 +92,7 @@ type Session struct {
 // NodeStatus is the decrypted inner payload sent by a node
 type NodeStatus struct {
 	PayloadVersion string      `json:"payload_version"`
+	ReportType     string      `json:"report_type"` // "heartbeat" | "post_run"; empty treated as "post_run"
 	NodeName       string      `json:"node_name"`
 	ReportedAt     time.Time   `json:"reported_at"`
 	Jobs           []JobStatus `json:"jobs"`

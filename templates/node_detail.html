@@ -9,16 +9,19 @@
     </div>
     {{if .User.CanWrite}}
     <div class="col-auto">
-      <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
-      <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <button type="submit" class="btn">Regenerate PSK</button>
-      </form>
-      <form action="/nodes/{{.Node.ID}}/delete" method="POST" class="d-inline"
-            onsubmit="return confirm('Delete this node? All reports will be removed.');">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <button type="submit" class="btn btn-danger">Delete</button>
-      </form>
+      <div class="btn-list flex-nowrap">
+        <a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>
+        <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
+        <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn">Regenerate PSK</button>
+        </form>
+        <form action="/nodes/{{.Node.ID}}/delete" method="POST" class="d-inline"
+              onsubmit="return confirm('Delete this node? All reports will be removed.');">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-danger">Delete</button>
+        </form>
+      </div>
     </div>
     {{end}}
   </div>

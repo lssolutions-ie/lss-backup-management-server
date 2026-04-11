@@ -94,6 +94,9 @@ func main() {
 	mux.HandleFunc("/nodes/new", webServer.RequireAuth(webServer.HandleNodeNew))
 	mux.HandleFunc("/nodes/", webServer.RequireAuth(nodeRouter(webServer)))
 
+	// Terminal WebSocket (separate from /nodes/ tree because it uses a different path style)
+	mux.HandleFunc("/ws/terminal", webServer.RequireAuth(webServer.HandleTerminalWS))
+
 	// Groups (superadmin only)
 	mux.HandleFunc("/groups", webServer.RequireSuperAdmin(webServer.HandleGroups))
 	mux.HandleFunc("/groups/new", webServer.RequireSuperAdmin(webServer.HandleGroupNew))
@@ -167,6 +170,8 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodeRegeneratePSK(w, r)
 		case "psk":
 			s.HandleNodePSK(w, r)
+		case "terminal":
+			s.HandleTerminalPage(w, r)
 		default:
 			http.NotFound(w, r)
 		}

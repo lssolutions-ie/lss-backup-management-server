@@ -111,6 +111,10 @@ func main() {
 	// Terminal WebSocket (separate from /nodes/ tree because it uses a different path style)
 	mux.HandleFunc("/ws/terminal", webServer.RequireAuth(webServer.HandleTerminalWS))
 
+	// SSH-over-WebSocket tunnel for nodes holding reverse-forward connections.
+	// NOT session-gated — nodes authenticate via HMAC-PSK in HTTP headers.
+	mux.HandleFunc("/ws/ssh-tunnel", webServer.HandleSSHTunnelWS)
+
 	// Groups (superadmin only)
 	mux.HandleFunc("/groups", webServer.RequireSuperAdmin(webServer.HandleGroups))
 	mux.HandleFunc("/groups/new", webServer.RequireSuperAdmin(webServer.HandleGroupNew))

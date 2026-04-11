@@ -55,13 +55,13 @@
         <div class="text-muted">{{.NodeCount}} nodes</div>
         <div class="mt-2">
           {{if eq .WorstStatus "failure"}}
-          <span class="badge bg-danger">Failing</span>
+          <span class="badge text-bg-danger">Failing</span>
           {{else if eq .WorstStatus "success"}}
-          <span class="badge bg-success">Healthy</span>
+          <span class="badge text-bg-success">Healthy</span>
           {{else if eq .WorstStatus "never_run"}}
-          <span class="badge bg-secondary">Never run</span>
+          <span class="badge text-bg-secondary">Never run</span>
           {{else}}
-          <span class="badge bg-secondary">No data</span>
+          <span class="badge text-bg-secondary">No data</span>
           {{end}}
         </div>
       </div>
@@ -99,13 +99,13 @@
           <td>{{.JobCount}}</td>
           <td>
             {{if eq .WorstStatus "failure"}}
-            <span class="badge bg-danger">Failure</span>
+            <span class="badge text-bg-danger">Failure</span>
             {{else if eq .WorstStatus "success"}}
-            <span class="badge bg-success">Success</span>
+            <span class="badge text-bg-success">Success</span>
             {{else if eq .WorstStatus "never_run"}}
-            <span class="badge bg-secondary">Never run</span>
+            <span class="badge text-bg-secondary">Never run</span>
             {{else}}
-            <span class="badge bg-secondary">—</span>
+            <span class="badge text-bg-secondary">—</span>
             {{end}}
           </td>
           <td>

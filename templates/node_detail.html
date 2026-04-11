@@ -76,11 +76,11 @@
           <td>{{if .Enabled}}yes{{else}}no{{end}}</td>
           <td>
             {{if eq .LastStatus "failure"}}
-            <span class="badge bg-danger">Failure</span>
+            <span class="badge text-bg-danger">Failure</span>
             {{else if eq .LastStatus "success"}}
-            <span class="badge bg-success">Success</span>
+            <span class="badge text-bg-success">Success</span>
             {{else}}
-            <span class="badge bg-secondary">Never run</span>
+            <span class="badge text-bg-secondary">Never run</span>
             {{end}}
           </td>
           <td>{{if .LastRunAt}}{{.LastRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
@@ -117,13 +117,13 @@
           <td>{{.JobCount}}</td>
           <td>
             {{if eq .WorstStatus "failure"}}
-            <span class="badge bg-danger">Failure</span>
+            <span class="badge text-bg-danger">Failure</span>
             {{else if eq .WorstStatus "success"}}
-            <span class="badge bg-success">Success</span>
+            <span class="badge text-bg-success">Success</span>
             {{else if eq .WorstStatus "never_run"}}
-            <span class="badge bg-secondary">Never run</span>
+            <span class="badge text-bg-secondary">Never run</span>
             {{else}}
-            <span class="badge bg-secondary">—</span>
+            <span class="badge text-bg-secondary">—</span>
             {{end}}
           </td>
         </tr>

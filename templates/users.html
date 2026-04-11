@@ -26,18 +26,18 @@
           <td>{{.Username}}</td>
           <td>
             {{if .IsSuperAdmin}}
-            <span class="badge bg-primary">superadmin</span>
+            <span class="badge text-bg-primary">superadmin</span>
             {{else if .IsViewer}}
-            <span class="badge bg-warning">viewer</span>
+            <span class="badge text-bg-warning">viewer</span>
             {{else}}
-            <span class="badge bg-secondary">user (read/write)</span>
+            <span class="badge text-bg-secondary">user (read/write)</span>
             {{end}}
           </td>
           <td>
             {{if .IsSuperAdmin}}
             <span class="text-muted">all</span>
             {{else}}
-              {{range index $groupsByUser .ID}}<span class="badge bg-secondary me-1">{{.Name}}</span>{{else}}<span class="text-muted">none</span>{{end}}
+              {{range index $groupsByUser .ID}}<span class="badge text-bg-secondary me-1">{{.Name}}</span>{{else}}<span class="text-muted">none</span>{{end}}
             {{end}}
           </td>
           <td>{{.CreatedAt.Format "2006-01-02"}}</td>

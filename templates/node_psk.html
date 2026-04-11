@@ -17,11 +17,11 @@
     <h3 class="card-title">PSK Key (128 characters)</h3>
   </div>
   <div class="card-body">
-    <div id="psk-value"
-         style="background:#182230; color:#f8fafc; padding:1rem; border-radius:.5rem;
-                font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.95rem;
-                line-height: 1.5; word-break: break-all; white-space: pre-wrap;
-                user-select: all; -webkit-user-select: all;">{{.PSK}}</div>
+    <textarea id="psk-value" class="form-control" readonly rows="3" wrap="soft"
+              onclick="this.select();"
+              style="background:#182230; color:#f8fafc; padding:1rem; border-radius:.5rem;
+                     font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.95rem;
+                     line-height: 1.5; resize: vertical;">{{.PSK}}</textarea>
 
     <div class="btn-list mt-3">
       <button type="button" class="btn btn-primary" onclick="copyPSK()">Copy to clipboard</button>
@@ -33,14 +33,29 @@
 
 <script>
 function copyPSK() {
-  const psk = document.getElementById('psk-value').textContent;
+  const ta = document.getElementById('psk-value');
   const status = document.getElementById('copy-status');
-  navigator.clipboard.writeText(psk).then(function() {
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+
+  const ok = function() {
     status.style.display = 'block';
     setTimeout(function() { status.style.display = 'none'; }, 2500);
-  }, function() {
-    alert('Copy failed — please triple-click the key and copy manually.');
-  });
+  };
+
+  // Try modern clipboard API, fall back to execCommand (works over HTTP and in iframes)
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(ta.value).then(ok, function() {
+      try { document.execCommand('copy') && ok(); } catch (e) {}
+    });
+  } else {
+    try {
+      if (document.execCommand('copy')) ok();
+    } catch (e) {
+      alert('Copy failed — the key is already selected; press Cmd/Ctrl+C to copy.');
+    }
+  }
 }
 </script>
 {{end}}

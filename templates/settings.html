@@ -1,0 +1,34 @@
+{{define "content"}}
+<div class="page-header mb-3"><h2 class="page-title">Settings</h2></div>
+
+{{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+{{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
+
+<div class="card">
+  <div class="card-header"><h3 class="card-title">Change your password</h3></div>
+  <div class="card-body">
+    <form action="/settings" method="POST" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="mb-3">
+        <label class="form-label">Current password</label>
+        <input type="password" name="current_password" class="form-control" required>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">New password</label>
+        <input type="password" name="new_password" class="form-control" required minlength="8">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Confirm new password</label>
+        <input type="password" name="confirm_password" class="form-control" required minlength="8">
+      </div>
+
+      <div class="form-footer">
+        <button type="submit" class="btn btn-primary">Update password</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}

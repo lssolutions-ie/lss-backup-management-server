@@ -1,0 +1,138 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col"><h2 class="page-title">Dashboard</h2></div>
+    <div class="col-auto">
+      <a href="/nodes/new" class="btn btn-primary">Register Node</a>
+    </div>
+  </div>
+</div>
+
+<div class="row row-deck row-cards mb-3">
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body">
+        <div class="subheader">Total nodes</div>
+        <div class="h1 mb-0">{{.Stats.TotalNodes}}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body">
+        <div class="subheader">Online (last 10 min)</div>
+        <div class="h1 mb-0 text-success">{{.Stats.OnlineNodes}}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body">
+        <div class="subheader">With failures</div>
+        <div class="h1 mb-0 text-danger">{{.Stats.FailingNodes}}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body">
+        <div class="subheader">Never seen</div>
+        <div class="h1 mb-0 text-muted">{{.Stats.NeverSeenNodes}}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{if .Groups}}
+<div class="row row-deck row-cards mb-3">
+  {{range .Groups}}
+  <div class="col-sm-6 col-lg-3">
+    <div class="card">
+      <div class="card-body">
+        <h3 class="card-title">{{.Name}}</h3>
+        <div class="text-muted">{{.NodeCount}} nodes</div>
+        <div class="mt-2">
+          {{if eq .WorstStatus "failure"}}
+          <span class="badge bg-danger">Failing</span>
+          {{else if eq .WorstStatus "success"}}
+          <span class="badge bg-success">Healthy</span>
+          {{else if eq .WorstStatus "never_run"}}
+          <span class="badge bg-secondary">Never run</span>
+          {{else}}
+          <span class="badge bg-secondary">No data</span>
+          {{end}}
+        </div>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">Nodes</h3>
+    <div class="card-actions">
+      <input type="text" id="node-search" class="form-control form-control-sm" placeholder="Search nodes…">
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-vcenter table-hover" id="node-table">
+      <thead>
+        <tr>
+          <th>Node Name</th>
+          <th>Client Group</th>
+          <th>Last Seen</th>
+          <th>Jobs</th>
+          <th>Status</th>
+          <th>Online</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Nodes}}
+        <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'">
+          <td>{{.Name}}</td>
+          <td>{{.ClientGroup}}</td>
+          <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+          <td>{{.JobCount}}</td>
+          <td>
+            {{if eq .WorstStatus "failure"}}
+            <span class="badge bg-danger">Failure</span>
+            {{else if eq .WorstStatus "success"}}
+            <span class="badge bg-success">Success</span>
+            {{else if eq .WorstStatus "never_run"}}
+            <span class="badge bg-secondary">Never run</span>
+            {{else}}
+            <span class="badge bg-secondary">—</span>
+            {{end}}
+          </td>
+          <td>
+            {{if .IsOnline}}
+            <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
+            {{else}}
+            <span class="status status-red"><span class="status-dot"></span> Offline</span>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function() {
+  const input = document.getElementById('node-search');
+  const rows  = document.querySelectorAll('#node-table tbody tr');
+  if (!input) return;
+  input.addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    rows.forEach(function(row) {
+      row.style.display = row.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+    });
+  });
+})();
+</script>
+{{end}}

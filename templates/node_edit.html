@@ -1,0 +1,41 @@
+{{define "content"}}
+<div class="page-header mb-3"><h2 class="page-title">Edit Node</h2></div>
+
+{{if .Error}}
+<div class="alert alert-danger">{{.Error}}</div>
+{{end}}
+
+<div class="card">
+  <div class="card-body">
+    <form action="/nodes/{{.Node.ID}}/edit" method="POST" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="mb-3">
+        <label class="form-label">Node Name</label>
+        <input type="text" name="name" class="form-control" value="{{.Node.Name}}" required autofocus>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Node UID</label>
+        <input type="text" class="form-control" value="{{.Node.UID}}" disabled>
+        <small class="form-hint">UID cannot be changed — it is the node's identity.</small>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Client Group</label>
+        <select name="client_group_id" class="form-select" required>
+          {{$current := .Node.ClientGroupID}}
+          {{range .Groups}}
+          <option value="{{.ID}}" {{if eq .ID $current}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+
+      <div class="form-footer">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="/nodes/{{.Node.ID}}" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}

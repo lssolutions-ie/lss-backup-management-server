@@ -1,0 +1,56 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col"><h2 class="page-title">Users</h2></div>
+    <div class="col-auto"><a href="/users/new" class="btn btn-primary">New User</a></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-vcenter">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Assigned groups</th>
+          <th>Created</th>
+          <th class="w-1"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{$csrf := .CSRFToken}}
+        {{$groupsByUser := .GroupsByUser}}
+        {{range .Users}}
+        <tr>
+          <td>{{.Username}}</td>
+          <td>
+            {{if .IsSuperAdmin}}
+            <span class="badge bg-primary">superadmin</span>
+            {{else}}
+            <span class="badge bg-secondary">user</span>
+            {{end}}
+          </td>
+          <td>
+            {{if .IsSuperAdmin}}
+            <span class="text-muted">all</span>
+            {{else}}
+              {{range index $groupsByUser .ID}}<span class="badge bg-light text-dark me-1">{{.Name}}</span>{{else}}<span class="text-muted">none</span>{{end}}
+            {{end}}
+          </td>
+          <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+          <td>
+            <a href="/users/{{.ID}}/edit" class="btn btn-sm">Edit</a>
+            <form action="/users/{{.ID}}/delete" method="POST" class="d-inline"
+                  onsubmit="return confirm('Delete this user?');">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

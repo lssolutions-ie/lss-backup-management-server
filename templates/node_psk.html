@@ -1,0 +1,28 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <h2 class="page-title">PSK for {{.Node.Name}}</h2>
+</div>
+
+<div class="alert alert-warning">
+  <h3 class="h3 mb-2">⚠ COPY THIS KEY NOW — it will not be shown again</h3>
+  <p class="mb-3">Paste this into LSS Backup CLI → Settings → Configure Management Console → PSK Key.</p>
+  <div class="card bg-dark text-light mb-3">
+    <div class="card-body">
+      <code id="psk-value" style="word-break: break-all; font-size: 0.95rem;">{{.PSK}}</code>
+    </div>
+  </div>
+  <button type="button" class="btn btn-primary" onclick="copyPSK()">Copy to clipboard</button>
+  <a href="/nodes/{{.Node.ID}}" class="btn btn-outline-secondary">Done</a>
+</div>
+
+<script>
+function copyPSK() {
+  const psk = document.getElementById('psk-value').textContent;
+  navigator.clipboard.writeText(psk).then(function() {
+    alert('PSK copied to clipboard.');
+  }, function() {
+    alert('Copy failed — please select the text manually.');
+  });
+}
+</script>
+{{end}}

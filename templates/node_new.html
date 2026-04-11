@@ -1,0 +1,44 @@
+{{define "content"}}
+<div class="page-header mb-3"><h2 class="page-title">Register Node</h2></div>
+
+{{if .Error}}
+<div class="alert alert-danger">{{.Error}}</div>
+{{end}}
+
+<div class="card">
+  <div class="card-body">
+    <form action="/nodes/new" method="POST" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="mb-3">
+        <label class="form-label">Node Name</label>
+        <input type="text" name="name" class="form-control" required autofocus>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Node UID</label>
+        <input type="text" name="uid" class="form-control" required>
+        <small class="form-hint">Unique identifier set by the operator in the CLI.</small>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Client Group</label>
+        <select name="client_group_id" class="form-select" required>
+          <option value="">— choose —</option>
+          {{range .Groups}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+        {{if not .Groups}}
+        <small class="form-hint text-danger">No client groups exist. <a href="/groups/new">Create one</a> first.</small>
+        {{end}}
+      </div>
+
+      <div class="form-footer">
+        <button type="submit" class="btn btn-primary">Create & generate PSK</button>
+        <a href="/" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,73 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <h2 class="page-title">{{if .TargetUser}}Edit User{{else}}New User{{end}}</h2>
+</div>
+
+{{if .Error}}
+<div class="alert alert-danger">{{.Error}}</div>
+{{end}}
+
+<div class="card">
+  <div class="card-body">
+    <form action="{{if .TargetUser}}/users/{{.TargetUser.ID}}/edit{{else}}/users/new{{end}}" method="POST" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      {{if not .TargetUser}}
+      <div class="mb-3">
+        <label class="form-label">Username</label>
+        <input type="text" name="username" class="form-control" required autofocus>
+      </div>
+      {{else}}
+      <div class="mb-3">
+        <label class="form-label">Username</label>
+        <input type="text" class="form-control" value="{{.TargetUser.Username}}" disabled>
+      </div>
+      {{end}}
+
+      <div class="mb-3">
+        <label class="form-label">Password {{if .TargetUser}}<small class="text-muted">(leave blank to keep current)</small>{{end}}</label>
+        <input type="password" name="password" class="form-control" {{if not .TargetUser}}required{{end}}>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Role</label>
+        <select name="role" class="form-select" id="role-select">
+          <option value="user" {{if and .TargetUser (not .TargetUser.IsSuperAdmin)}}selected{{end}}>User</option>
+          <option value="superadmin" {{if and .TargetUser .TargetUser.IsSuperAdmin}}selected{{end}}>Superadmin</option>
+        </select>
+      </div>
+
+      <div class="mb-3" id="group-select-wrap">
+        <label class="form-label">Assigned client groups</label>
+        <div>
+          {{$assigned := .Assigned}}
+          {{range .Groups}}
+          <label class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" name="client_group_ids" value="{{.ID}}"
+                   {{if index $assigned .ID}}checked{{end}}>
+            <span class="form-check-label">{{.Name}}</span>
+          </label>
+          {{else}}
+          <span class="text-muted">No groups exist yet.</span>
+          {{end}}
+        </div>
+        <small class="form-hint">Only applies to regular users.</small>
+      </div>
+
+      <div class="form-footer">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="/users" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  const sel  = document.getElementById('role-select');
+  const wrap = document.getElementById('group-select-wrap');
+  function toggle() { wrap.style.display = sel.value === 'user' ? '' : 'none'; }
+  if (sel && wrap) { sel.addEventListener('change', toggle); toggle(); }
+})();
+</script>
+{{end}}

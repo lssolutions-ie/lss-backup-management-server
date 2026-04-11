@@ -1,0 +1,140 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">{{.Node.Name}}</h2>
+      <div class="text-muted">
+        UID <code>{{.Node.UID}}</code> · Group <strong>{{.Node.ClientGroup}}</strong>
+      </div>
+    </div>
+    <div class="col-auto">
+      <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
+      <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn">Regenerate PSK</button>
+      </form>
+      <form action="/nodes/{{.Node.ID}}/delete" method="POST" class="d-inline"
+            onsubmit="return confirm('Delete this node? All reports will be removed.');">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="row row-cards mb-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <h3 class="card-title">Node info</h3>
+        <dl class="row">
+          <dt class="col-4">First seen</dt>
+          <dd class="col-8">{{if .Node.FirstSeenAt}}{{.Node.FirstSeenAt.Format "2006-01-02 15:04:05"}}{{else}}never{{end}}</dd>
+          <dt class="col-4">Last seen</dt>
+          <dd class="col-8">{{if .Node.LastSeenAt}}{{.Node.LastSeenAt.Format "2006-01-02 15:04:05"}}{{else}}never{{end}}</dd>
+          <dt class="col-4">Status</dt>
+          <dd class="col-8">
+            {{if .Node.IsOnline}}
+            <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
+            {{else}}
+            <span class="status status-red"><span class="status-dot"></span> Offline</span>
+            {{end}}
+          </dd>
+          <dt class="col-4">Created</dt>
+          <dd class="col-8">{{.Node.CreatedAt.Format "2006-01-02 15:04:05"}}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">Jobs ({{len .Jobs}})</h3></div>
+  <div class="table-responsive">
+    <table class="table table-vcenter">
+      <thead>
+        <tr>
+          <th>Job ID</th>
+          <th>Name</th>
+          <th>Program</th>
+          <th>Enabled</th>
+          <th>Status</th>
+          <th>Last Run</th>
+          <th>Duration</th>
+          <th>Next Run</th>
+          <th>Schedule</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Jobs}}
+        <tr>
+          <td><code>{{.JobID}}</code></td>
+          <td>{{.JobName}}</td>
+          <td>{{.Program}}</td>
+          <td>{{if .Enabled}}yes{{else}}no{{end}}</td>
+          <td>
+            {{if eq .LastStatus "failure"}}
+            <span class="badge bg-danger">Failure</span>
+            {{else if eq .LastStatus "success"}}
+            <span class="badge bg-success">Success</span>
+            {{else}}
+            <span class="badge bg-secondary">Never run</span>
+            {{end}}
+          </td>
+          <td>{{if .LastRunAt}}{{.LastRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+          <td>{{.LastRunDurationSeconds}}s</td>
+          <td>{{if .NextRunAt}}{{.NextRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+          <td>{{.ScheduleDescription}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="9" class="text-center text-muted">No jobs reported yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">Check-in history</h3>
+    <div class="card-actions text-muted">{{.Total}} total</div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-vcenter">
+      <thead>
+        <tr>
+          <th>Reported at</th>
+          <th>Jobs</th>
+          <th>Worst status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Reports}}
+        <tr>
+          <td>{{.ReportedAt.Format "2006-01-02 15:04:05"}}</td>
+          <td>{{.JobCount}}</td>
+          <td>
+            {{if eq .WorstStatus "failure"}}
+            <span class="badge bg-danger">Failure</span>
+            {{else if eq .WorstStatus "success"}}
+            <span class="badge bg-success">Success</span>
+            {{else if eq .WorstStatus "never_run"}}
+            <span class="badge bg-secondary">Never run</span>
+            {{else}}
+            <span class="badge bg-secondary">—</span>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="3" class="text-center text-muted">No check-ins yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{if gt .Pages 1}}
+  <div class="card-footer text-muted">
+    Page {{.Page}} of {{.Pages}} — append <code>?page=N</code> to navigate.
+  </div>
+  {{end}}
+</div>
+{{end}}

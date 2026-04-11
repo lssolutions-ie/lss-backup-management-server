@@ -405,7 +405,7 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 	rows, err := d.db.Query(`
 		SELECT id, node_id, job_id, job_name, program, enabled,
 		       last_status, last_run_at, last_run_duration_seconds,
-		       last_error, next_run_at, schedule_description, updated_at
+		       last_error, next_run_at, schedule_description, config_json, updated_at
 		FROM job_snapshots WHERE node_id = ? ORDER BY job_id`, nodeID)
 	if err != nil {
 		return nil, err
@@ -414,12 +414,16 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 	var jobs []models.JobSnapshot
 	for rows.Next() {
 		j := models.JobSnapshot{}
+		var config sql.NullString
 		if err := rows.Scan(
 			&j.ID, &j.NodeID, &j.JobID, &j.JobName, &j.Program, &j.Enabled,
 			&j.LastStatus, &j.LastRunAt, &j.LastRunDurationSeconds,
-			&j.LastError, &j.NextRunAt, &j.ScheduleDescription, &j.UpdatedAt,
+			&j.LastError, &j.NextRunAt, &j.ScheduleDescription, &config, &j.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if config.Valid {
+			j.ConfigJSON = config.String
 		}
 		jobs = append(jobs, j)
 	}
@@ -427,11 +431,20 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 }
 
 func (d *DB) UpsertJobSnapshot(nodeID uint64, job models.JobStatus) error {
+	// job.Config is populated only on heartbeat reports. On post_run reports
+	// it's nil/empty — pass NULL so ON DUPLICATE KEY UPDATE's COALESCE
+	// preserves whatever config the last heartbeat stored.
+	var configArg interface{}
+	if len(job.Config) > 0 && string(job.Config) != "null" {
+		configArg = string(job.Config)
+	}
+
 	_, err := d.db.Exec(`
 		INSERT INTO job_snapshots
 		  (node_id, job_id, job_name, program, enabled, last_status,
-		   last_run_at, last_run_duration_seconds, last_error, next_run_at, schedule_description)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   last_run_at, last_run_duration_seconds, last_error, next_run_at,
+		   schedule_description, config_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 		  job_name                  = VALUES(job_name),
 		  program                   = VALUES(program),
@@ -442,9 +455,11 @@ func (d *DB) UpsertJobSnapshot(nodeID uint64, job models.JobStatus) error {
 		  last_error                = VALUES(last_error),
 		  next_run_at               = VALUES(next_run_at),
 		  schedule_description      = VALUES(schedule_description),
+		  config_json               = COALESCE(VALUES(config_json), config_json),
 		  updated_at                = CURRENT_TIMESTAMP`,
 		nodeID, job.ID, job.Name, job.Program, job.Enabled, job.LastStatus,
-		job.LastRunAt, job.LastRunDurationSeconds, job.LastError, job.NextRunAt, job.ScheduleDescription,
+		job.LastRunAt, job.LastRunDurationSeconds, job.LastError, job.NextRunAt,
+		job.ScheduleDescription, configArg,
 	)
 	return err
 }

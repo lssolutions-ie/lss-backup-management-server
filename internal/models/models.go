@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type User struct {
 	ID           uint64
@@ -68,6 +71,7 @@ type JobSnapshot struct {
 	LastError              string
 	NextRunAt              *time.Time
 	ScheduleDescription    string
+	ConfigJSON             string // latest heartbeat-carried job config; empty if never received
 	UpdatedAt              time.Time
 }
 
@@ -99,16 +103,17 @@ type NodeStatus struct {
 }
 
 type JobStatus struct {
-	ID                     string     `json:"id"`
-	Name                   string     `json:"name"`
-	Program                string     `json:"program"`
-	Enabled                bool       `json:"enabled"`
-	LastStatus             string     `json:"last_status"`
-	LastRunAt              *time.Time `json:"last_run_at,omitempty"`
-	LastRunDurationSeconds int        `json:"last_run_duration_seconds"`
-	LastError              string     `json:"last_error"`
-	NextRunAt              *time.Time `json:"next_run_at,omitempty"`
-	ScheduleDescription    string     `json:"schedule_description"`
+	ID                     string          `json:"id"`
+	Name                   string          `json:"name"`
+	Program                string          `json:"program"`
+	Enabled                bool            `json:"enabled"`
+	LastStatus             string          `json:"last_status"`
+	LastRunAt              *time.Time      `json:"last_run_at,omitempty"`
+	LastRunDurationSeconds int             `json:"last_run_duration_seconds"`
+	LastError              string          `json:"last_error"`
+	NextRunAt              *time.Time      `json:"next_run_at,omitempty"`
+	ScheduleDescription    string          `json:"schedule_description"`
+	Config                 json.RawMessage `json:"config,omitempty"` // heartbeat-only; opaque passthrough
 }
 
 // DashboardStats holds summary counters for the dashboard header cards

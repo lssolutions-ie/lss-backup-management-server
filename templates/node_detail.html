@@ -65,6 +65,7 @@
           <th>Duration</th>
           <th>Next Run</th>
           <th>Schedule</th>
+          <th class="w-1"></th>
         </tr>
       </thead>
       <tbody>
@@ -87,14 +88,37 @@
           <td>{{.LastRunDurationSeconds}}s</td>
           <td>{{if .NextRunAt}}{{.NextRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
           <td>{{.ScheduleDescription}}</td>
+          <td>
+            {{if .ConfigJSON}}
+            <button type="button" class="btn btn-sm" onclick="toggleJobConfig('{{.JobID}}')">View Configuration</button>
+            {{else}}
+            <span class="text-muted small">no config yet</span>
+            {{end}}
+          </td>
         </tr>
+        {{if .ConfigJSON}}
+        <tr id="job-config-{{.JobID}}" class="job-config-row" style="display:none;">
+          <td colspan="10" class="bg-body-tertiary">
+            <div class="small text-muted mb-1">Configuration (from last heartbeat)</div>
+            <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.85rem; max-height: 400px; overflow: auto;">{{prettyJSON .ConfigJSON}}</pre>
+          </td>
+        </tr>
+        {{end}}
         {{else}}
-        <tr><td colspan="9" class="text-center text-muted">No jobs reported yet.</td></tr>
+        <tr><td colspan="10" class="text-center text-muted">No jobs reported yet.</td></tr>
         {{end}}
       </tbody>
     </table>
   </div>
 </div>
+
+<script>
+function toggleJobConfig(jobID) {
+  const row = document.getElementById('job-config-' + jobID);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+</script>
 
 <div class="card">
   <div class="card-header">

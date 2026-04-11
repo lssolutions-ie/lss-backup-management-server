@@ -10,6 +10,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -74,6 +75,20 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 				return fmt.Sprintf("%ds", secs)
 			}
 			return fmt.Sprintf("%dm %ds", secs/60, secs%60)
+		},
+		"prettyJSON": func(s string) string {
+			if s == "" {
+				return ""
+			}
+			var v interface{}
+			if err := json.Unmarshal([]byte(s), &v); err != nil {
+				return s
+			}
+			b, err := json.MarshalIndent(v, "", "  ")
+			if err != nil {
+				return s
+			}
+			return string(b)
 		},
 	}
 

@@ -1,0 +1,27 @@
+[Unit]
+Description=LSS Management Server
+After=network.target mysql.service
+Requires=mysql.service
+
+[Service]
+Type=simple
+User=lss-management
+Group=lss-management
+ExecStart=/usr/local/bin/lss-management-server
+WorkingDirectory=/etc/lss-management
+Environment=LSS_ENV=production
+Environment=LSS_CONFIG=/etc/lss-management/config.toml
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lss-management
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/etc/lss-management /var/log/lss-management
+
+[Install]
+WantedBy=multi-user.target

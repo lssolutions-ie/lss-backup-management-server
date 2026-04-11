@@ -77,7 +77,25 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Freshness window: reject reports older than 10 minutes (replay protection)
+	// or more than 2 minutes in the future (severe clock skew on the node).
+	// This assumes nodes keep their clocks reasonably in sync via NTP.
+	const maxAge = 10 * time.Minute
+	const maxFuture = 2 * time.Minute
 	now := time.Now().UTC()
+	age := now.Sub(status.ReportedAt)
+	if age > maxAge {
+		log.Printf("api: stale report rejected node=%d uid=%s reported_at=%s age=%s",
+			node.ID, node.UID, status.ReportedAt.Format(time.RFC3339), age)
+		apiError(w, http.StatusBadRequest)
+		return
+	}
+	if age < -maxFuture {
+		log.Printf("api: future-dated report rejected node=%d uid=%s reported_at=%s skew=%s",
+			node.ID, node.UID, status.ReportedAt.Format(time.RFC3339), -age)
+		apiError(w, http.StatusBadRequest)
+		return
+	}
 
 	// Normalise report_type: empty/unknown values default to "post_run" for
 	// backwards compatibility with nodes that pre-date the field.

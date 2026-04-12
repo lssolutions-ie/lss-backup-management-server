@@ -206,7 +206,11 @@
       header += '<i class="ti ti-archive me-2"></i>';
       header += escHtml(job.job_name || job.job_id);
       header += ' <span class="badge text-bg-secondary ms-2">' + escHtml(job.program) + '</span>';
-      header += ' <span class="text-muted small ms-2">' + snapCount + ' snapshots</span>';
+      if (job.program === 'rsync') {
+        header += ' <span class="text-muted small ms-2">file sync</span>';
+      } else {
+        header += ' <span class="text-muted small ms-2">' + snapCount + ' snapshots</span>';
+      }
       if (job.destination) header += ' <code class="ms-3 small text-muted">' + escHtml(job.destination) + '</code>';
       if (job.error) header += ' <span class="badge text-bg-danger ms-2">Error</span>';
       header += '</h3></div>';

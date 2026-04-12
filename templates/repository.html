@@ -96,6 +96,24 @@
   const nodeID = {{.Node.ID}};
   let creds = {};
 
+  // Try cached credentials on page load.
+  (function() {
+    fetch('/nodes/' + nodeID + '/repo/jobs', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.error && data.jobs) {
+        document.getElementById('auth-card').style.display = 'none';
+        renderJobs(data);
+      }
+    })
+    .catch(function() {});
+  })();
+
   window.loadRepos = function() {
     const user = document.getElementById('ssh-user').value.trim();
     const pass = document.getElementById('ssh-pass').value;

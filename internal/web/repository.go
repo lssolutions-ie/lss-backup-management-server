@@ -63,6 +63,27 @@ func (s *Server) HandleRepoPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// getRepoSSHCreds extracts SSH credentials from the request body,
+// falling back to cached credentials from the session.
+func (s *Server) getRepoSSHCreds(r *http.Request, nodeID uint64, body []byte) (username, password string) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	json.Unmarshal(body, &req)
+
+	sessionToken, _ := r.Context().Value(ctxSession).(string)
+
+	if req.Username != "" {
+		// Cache for this session+node.
+		CacheSSHCreds(sessionToken, nodeID, req.Username, req.Password)
+		return req.Username, req.Password
+	}
+
+	// Try cached.
+	return GetCachedSSHCreds(sessionToken, nodeID)
+}
+
 // HandleRepoJobs is an API endpoint that SSHes into the node and
 // retrieves job list with metadata (no snapshots).
 func (s *Server) HandleRepoJobs(w http.ResponseWriter, r *http.Request) {
@@ -76,12 +97,10 @@ func (s *Server) HandleRepoJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request", http.StatusBadRequest)
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+	if username == "" {
+		jsonError(w, "ssh credentials required", http.StatusUnauthorized)
 		return
 	}
 
@@ -90,7 +109,7 @@ func (s *Server) HandleRepoJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, "lss-backup-cli repo-info --json --summary")
+	output, err := sshExecOnNodeSudo(node, username, password, "lss-backup-cli repo-info --json --summary")
 	if err != nil {
 		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
@@ -114,15 +133,17 @@ func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		JobID    string `json:"job_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request", http.StatusBadRequest)
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+	if username == "" {
+		jsonError(w, "ssh credentials required", http.StatusUnauthorized)
 		return
 	}
+
+	var req struct {
+		JobID string `json:"job_id"`
+	}
+	json.Unmarshal(body, &req)
 
 	if !node.TunnelReady() {
 		jsonError(w, "node has no active tunnel", http.StatusBadGateway)
@@ -130,7 +151,7 @@ func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := fmt.Sprintf("lss-backup-cli repo-info --json --job %s", req.JobID)
-	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, cmd)
+	output, err := sshExecOnNodeSudo(node, username, password, cmd)
 	if err != nil {
 		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
@@ -154,17 +175,19 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Username   string `json:"username"`
-		Password   string `json:"password"`
-		JobID      string `json:"job_id"`
-		SnapshotID string `json:"snapshot_id"`
-		Path       string `json:"path"` // subdirectory to browse, empty for root
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request", http.StatusBadRequest)
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+	if username == "" {
+		jsonError(w, "ssh credentials required", http.StatusUnauthorized)
 		return
 	}
+
+	var req struct {
+		JobID      string `json:"job_id"`
+		SnapshotID string `json:"snapshot_id"`
+		Path       string `json:"path"`
+	}
+	json.Unmarshal(body, &req)
 
 	if !node.TunnelReady() {
 		jsonError(w, "node has no active tunnel", http.StatusBadGateway)
@@ -176,7 +199,7 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 		cmd += fmt.Sprintf(" --path %s", req.Path)
 	}
 
-	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, cmd)
+	output, err := sshExecOnNodeSudo(node, username, password, cmd)
 	if err != nil {
 		log.Printf("repo: ssh browse node=%d: %v", node.ID, err)
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
@@ -199,26 +222,24 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+
 	var req struct {
-		Username   string `json:"username"`
-		Password   string `json:"password"`
 		JobID      string `json:"job_id"`
 		SnapshotID string `json:"snapshot_id"`
 		Path       string `json:"path"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
+	json.Unmarshal(body, &req)
 
-	if !node.TunnelReady() || req.Path == "" {
+	if !node.TunnelReady() || req.Path == "" || username == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
 	cfg := &ssh.ClientConfig{
-		User:            req.Username,
-		Auth:            []ssh.AuthMethod{ssh.Password(req.Password)},
+		User:            username,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         30 * time.Second,
 	}
@@ -259,7 +280,7 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send password for sudo.
-	fmt.Fprintf(stdin, "%s\n", req.Password)
+	fmt.Fprintf(stdin, "%s\n", password)
 	stdin.Close()
 
 	// Extract filename from path.
@@ -291,26 +312,24 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+
 	var req struct {
-		Username   string   `json:"username"`
-		Password   string   `json:"password"`
 		JobID      string   `json:"job_id"`
 		SnapshotID string   `json:"snapshot_id"`
 		Paths      []string `json:"paths"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
+	json.Unmarshal(body, &req)
 
-	if !node.TunnelReady() || len(req.Paths) == 0 {
+	if !node.TunnelReady() || len(req.Paths) == 0 || username == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
 	cfg := &ssh.ClientConfig{
-		User:            req.Username,
-		Auth:            []ssh.AuthMethod{ssh.Password(req.Password)},
+		User:            username,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         30 * time.Second,
 	}
@@ -353,7 +372,7 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(stdin, "%s\n", req.Password)
+	fmt.Fprintf(stdin, "%s\n", password)
 	stdin.Close()
 
 	shortID := req.SnapshotID

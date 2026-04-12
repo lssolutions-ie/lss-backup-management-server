@@ -367,6 +367,7 @@ func (s *Server) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cookie, err := r.Cookie(s.Config.Session.CookieName); err == nil {
+		ClearSessionSSHCreds(cookie.Value)
 		if err := s.DB.DeleteSession(cookie.Value); err != nil {
 			log.Printf("logout: delete session: %v", err)
 		}

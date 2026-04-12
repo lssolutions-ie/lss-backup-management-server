@@ -51,6 +51,48 @@ type PageData struct {
 // ServerVersion is set at startup from main.Version.
 var ServerVersion = "dev"
 
+// sshCredCache stores SSH credentials in memory per session+node.
+// Credentials are never persisted — they live only as long as the session.
+var sshCredCache = struct {
+	sync.Mutex
+	creds map[string]sshCred // key: "sessionToken:nodeID"
+}{creds: make(map[string]sshCred)}
+
+type sshCred struct {
+	Username string
+	Password string
+}
+
+func sshCredKey(sessionToken string, nodeID uint64) string {
+	return fmt.Sprintf("%s:%d", sessionToken, nodeID)
+}
+
+// CacheSSHCreds stores SSH credentials for a session+node combination.
+func CacheSSHCreds(sessionToken string, nodeID uint64, username, password string) {
+	sshCredCache.Lock()
+	defer sshCredCache.Unlock()
+	sshCredCache.creds[sshCredKey(sessionToken, nodeID)] = sshCred{username, password}
+}
+
+// GetCachedSSHCreds returns cached SSH credentials, or empty strings if none.
+func GetCachedSSHCreds(sessionToken string, nodeID uint64) (username, password string) {
+	sshCredCache.Lock()
+	defer sshCredCache.Unlock()
+	c := sshCredCache.creds[sshCredKey(sessionToken, nodeID)]
+	return c.Username, c.Password
+}
+
+// ClearSessionSSHCreds removes all SSH credentials for a session (called on logout).
+func ClearSessionSSHCreds(sessionToken string) {
+	sshCredCache.Lock()
+	defer sshCredCache.Unlock()
+	for k := range sshCredCache.creds {
+		if len(k) > len(sessionToken) && k[:len(sessionToken)+1] == sessionToken+":" {
+			delete(sshCredCache.creds, k)
+		}
+	}
+}
+
 // newPageData builds PageData from the request context.
 func (s *Server) newPageData(r *http.Request) PageData {
 	user, _ := r.Context().Value(ctxUser).(*models.User)

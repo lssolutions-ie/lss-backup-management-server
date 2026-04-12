@@ -1,4 +1,14 @@
 {{define "content"}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<style>
+  .flatpickr-calendar { font-size: 14px !important; box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important; border-radius: 8px !important; }
+  .flatpickr-day { height: 40px !important; line-height: 40px !important; border-radius: 6px !important; }
+  .flatpickr-day.selected { background: #333 !important; border-color: #333 !important; }
+  .flatpickr-day:hover { background: #f0f0f0 !important; }
+  .flatpickr-months { padding: 8px 0 !important; }
+  .flatpickr-current-month { font-size: 1.1rem !important; }
+</style>
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
     <div class="col">
@@ -69,6 +79,7 @@
           <th>Type</th>
           <th>Size</th>
           <th>Modified</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="browse-body"></tbody>
@@ -128,13 +139,14 @@
       return;
     }
 
-    jobs.forEach(function(job) {
+    jobs.forEach(function(job, jobIdx) {
       const card = document.createElement('div');
       card.className = 'card mb-3';
 
       let header = '<div class="card-header"><h3 class="card-title">';
       header += '<i class="ti ti-archive me-1"></i> ' + escHtml(job.job_name || job.job_id);
       header += ' <span class="badge text-bg-secondary ms-2">' + escHtml(job.program) + '</span>';
+      header += ' <span class="text-muted small ms-2">(' + (job.snapshots ? job.snapshots.length : 0) + ' snapshots)</span>';
       if (job.destination) header += ' <code class="ms-2 small">' + escHtml(job.destination) + '</code>';
       header += '</h3></div>';
 
@@ -144,12 +156,34 @@
       } else if (!job.snapshots || job.snapshots.length === 0) {
         body = '<div class="card-body text-muted">No snapshots found.</div>';
       } else {
-        body = '<div class="table-responsive"><table class="table table-vcenter table-hover">';
-        body += '<thead><tr><th>Snapshot</th><th>Date</th><th>Hostname</th><th>Paths</th><th></th></tr></thead><tbody>';
+        // Filter bar
+        body += '<div class="card-body border-bottom py-2">';
+        body += '<div class="row g-2 align-items-end">';
+        body += '<div class="col-auto"><label class="form-label small mb-0">From</label>';
+        body += '<input type="text" class="form-control form-control-sm snap-from" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
+        body += '<div class="col-auto"><label class="form-label small mb-0">To</label>';
+        body += '<input type="text" class="form-control form-control-sm snap-to" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
+        body += '<div class="col-auto"><label class="form-label small mb-0">Show</label>';
+        body += '<select class="form-select form-select-sm snap-limit" data-job="' + jobIdx + '">';
+        body += '<option value="10">Latest 10</option>';
+        body += '<option value="25">Latest 25</option>';
+        body += '<option value="50">Latest 50</option>';
+        body += '<option value="0" selected>All</option>';
+        body += '</select></div>';
+        body += '<div class="col-auto"><button class="btn btn-sm btn-primary" onclick="filterSnapshots(' + jobIdx + ')">Filter</button>';
+        body += ' <button class="btn btn-sm btn-outline-secondary" onclick="clearSnapFilter(' + jobIdx + ')">Clear</button></div>';
+        body += '<div class="col-auto text-muted small" id="snap-count-' + jobIdx + '"></div>';
+        body += '</div></div>';
+
+        // Table
+        body += '<div class="table-responsive"><table class="table table-vcenter table-hover">';
+        body += '<thead><tr><th>Snapshot</th><th>Date</th><th>Hostname</th><th>Paths</th><th></th></tr></thead>';
+        body += '<tbody id="snap-body-' + jobIdx + '">';
         job.snapshots.forEach(function(snap) {
-          const d = new Date(snap.time);
-          const dateStr = d.toLocaleDateString('en-IE', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-          body += '<tr>';
+          var d = new Date(snap.time);
+          var ts = d.getTime();
+          var dateStr = d.toLocaleDateString('en-IE', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+          body += '<tr data-ts="' + ts + '">';
           body += '<td><code>' + escHtml(snap.short_id || snap.id.substring(0,8)) + '</code></td>';
           body += '<td>' + dateStr + '</td>';
           body += '<td>' + escHtml(snap.hostname || '') + '</td>';
@@ -162,56 +196,204 @@
 
       card.innerHTML = header + body;
       container.appendChild(card);
+
+      // Init flatpickr on the date inputs for this job
+      if (job.snapshots && job.snapshots.length > 0) {
+        flatpickr(card.querySelector('.snap-from[data-job="' + jobIdx + '"]'), {
+          dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
+        });
+        flatpickr(card.querySelector('.snap-to[data-job="' + jobIdx + '"]'), {
+          dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
+        });
+      }
     });
   }
 
-  window.browseSnapshot = function(jobID, snapshotID, label) {
-    document.getElementById('browse-card').style.display = 'block';
-    document.getElementById('browse-title').textContent = 'Snapshot ' + label;
+  var _browseJobID = '';
+  var _browseSnapID = '';
+  var _browseSnapLabel = '';
+  var _browsePath = '';
+
+  window.browseSnapshot = function(jobID, snapshotID, label, path) {
+    _browseJobID = jobID;
+    _browseSnapID = snapshotID;
+    _browseSnapLabel = label;
+    _browsePath = path || '';
+    loadBrowse();
+  };
+
+  function loadBrowse() {
+    var browseCard = document.getElementById('browse-card');
+    browseCard.style.display = 'block';
+    browseCard.scrollIntoView({ behavior: 'smooth' });
     document.getElementById('browse-loading').style.display = 'block';
     document.getElementById('browse-content').style.display = 'none';
+    document.getElementById('browse-body').innerHTML = '';
+    updateBreadcrumb();
+
+    var payload = Object.assign({}, creds, {
+      job_id: _browseJobID,
+      snapshot_id: _browseSnapID,
+      path: _browsePath
+    });
 
     fetch('/nodes/' + nodeID + '/repo/browse', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({}, creds, { job_id: jobID, snapshot_id: snapshotID })),
+      body: JSON.stringify(payload),
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status + ': ' + t); });
+      return r.json();
+    })
+    .then(function(data) {
       document.getElementById('browse-loading').style.display = 'none';
       document.getElementById('browse-content').style.display = 'block';
+      if (data.error) {
+        document.getElementById('browse-body').innerHTML = '<tr><td colspan="5" class="text-danger">' + escHtml(data.error) + '</td></tr>';
+        return;
+      }
       renderFiles(data);
     })
-    .catch(err => {
+    .catch(function(err) {
       document.getElementById('browse-loading').style.display = 'none';
       document.getElementById('browse-content').style.display = 'block';
-      document.getElementById('browse-body').innerHTML = '<tr><td colspan="4" class="text-danger">' + err.message + '</td></tr>';
+      document.getElementById('browse-body').innerHTML = '<tr><td colspan="5" class="text-danger">' + escHtml(err.message) + '</td></tr>';
     });
-  };
+  }
+
+  function updateBreadcrumb() {
+    var parts = ['<a href="javascript:void(0)" onclick="browseSnapshot(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(_browseSnapLabel) + '\')"><i class="ti ti-archive me-1"></i>' + escHtml(_browseSnapLabel) + '</a>'];
+    if (_browsePath) {
+      var segments = _browsePath.replace(/^\/+/, '').split('/');
+      var accumulated = '';
+      segments.forEach(function(seg) {
+        accumulated += '/' + seg;
+        var p = accumulated;
+        parts.push(' <i class="ti ti-chevron-right" style="font-size:0.75rem;"></i> <a href="javascript:void(0)" onclick="browseSnapshot(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(_browseSnapLabel) + '\',\'' + escAttr(p) + '\')">' + escHtml(seg) + '</a>');
+      });
+    }
+    document.getElementById('browse-title').innerHTML = parts.join('');
+  }
 
   function renderFiles(data) {
-    const tbody = document.getElementById('browse-body');
-    const files = data.files || data || [];
+    var tbody = document.getElementById('browse-body');
+    var files = data.files || data || [];
     if (!Array.isArray(files) || files.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No files found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No files found.</td></tr>';
       return;
     }
-    let html = '';
+
+    // Sort: dirs first, then files, alphabetical
+    files.sort(function(a, b) {
+      if (a.type === 'dir' && b.type !== 'dir') return -1;
+      if (a.type !== 'dir' && b.type === 'dir') return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    var html = '';
     files.forEach(function(f) {
-      const icon = f.type === 'dir' ? 'ti-folder' : 'ti-file';
-      const size = f.type === 'dir' ? '' : formatBytes(f.size || 0);
+      var icon = f.type === 'dir' ? 'ti-folder-filled text-warning' : 'ti-file';
+      var size = f.type === 'dir' ? '' : formatBytes(f.size || 0);
+      var filePath = f.path || ((_browsePath || '') + '/' + f.name);
       html += '<tr>';
-      html += '<td><i class="ti ' + icon + ' me-1"></i> ' + escHtml(f.name) + '</td>';
+      if (f.type === 'dir') {
+        html += '<td style="cursor:pointer;" onclick="browseSnapshot(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(_browseSnapLabel) + '\',\'' + escAttr(filePath) + '\')"><i class="ti ' + icon + ' me-1"></i> <strong>' + escHtml(f.name) + '</strong></td>';
+      } else {
+        html += '<td><i class="ti ' + icon + ' me-1"></i> ' + escHtml(f.name) + '</td>';
+      }
       html += '<td>' + escHtml(f.type) + '</td>';
       html += '<td>' + size + '</td>';
       html += '<td>' + escHtml(f.mtime || '') + '</td>';
+      if (f.type !== 'dir') {
+        html += '<td><button class="btn btn-sm btn-outline-secondary" onclick="downloadFile(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(filePath) + '\',\'' + escAttr(f.name) + '\')"><i class="ti ti-download me-1"></i>Download</button></td>';
+      } else {
+        html += '<td></td>';
+      }
       html += '</tr>';
     });
     tbody.innerHTML = html;
   }
 
+  window.downloadFile = function(jobID, snapshotID, filePath, fileName) {
+    // POST to download endpoint, receive file as blob
+    fetch('/nodes/' + nodeID + '/repo/download', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, creds, {
+        job_id: jobID,
+        snapshot_id: snapshotID,
+        path: filePath
+      })),
+    })
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+      return r.blob();
+    })
+    .then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    })
+    .catch(function(err) {
+      alert('Download failed: ' + err.message);
+    });
+  };
+
   window.closeBrowser = function() {
     document.getElementById('browse-card').style.display = 'none';
+    _browsePath = '';
+  };
+
+  window.filterSnapshots = function(jobIdx) {
+    var fromEl = document.querySelector('.snap-from[data-job="' + jobIdx + '"]');
+    var toEl = document.querySelector('.snap-to[data-job="' + jobIdx + '"]');
+    var limitEl = document.querySelector('.snap-limit[data-job="' + jobIdx + '"]');
+    var tbody = document.getElementById('snap-body-' + jobIdx);
+    var countEl = document.getElementById('snap-count-' + jobIdx);
+    if (!tbody) return;
+
+    // Get the hidden flatpickr input value (the original input, not the alt).
+    var fromVal = fromEl._flatpickr ? fromEl._flatpickr.input.value : fromEl.value;
+    var toVal = toEl._flatpickr ? toEl._flatpickr.input.value : toEl.value;
+    var fromTs = fromVal ? new Date(fromVal + 'T00:00:00').getTime() : 0;
+    var toTs = toVal ? new Date(toVal + 'T23:59:59').getTime() : Infinity;
+    var limit = parseInt(limitEl.value) || 0;
+
+    var rows = tbody.querySelectorAll('tr');
+    var shown = 0;
+    rows.forEach(function(row) {
+      var ts = parseInt(row.getAttribute('data-ts'));
+      var inRange = ts >= fromTs && ts <= toTs;
+      var inLimit = limit === 0 || shown < limit;
+      if (inRange && inLimit) {
+        row.style.display = '';
+        shown++;
+      } else {
+        row.style.display = 'none';
+      }
+    });
+    countEl.textContent = 'Showing ' + shown + ' of ' + rows.length;
+  };
+
+  window.clearSnapFilter = function(jobIdx) {
+    var fromEl = document.querySelector('.snap-from[data-job="' + jobIdx + '"]');
+    var toEl = document.querySelector('.snap-to[data-job="' + jobIdx + '"]');
+    var limitEl = document.querySelector('.snap-limit[data-job="' + jobIdx + '"]');
+    var countEl = document.getElementById('snap-count-' + jobIdx);
+    if (fromEl._flatpickr) fromEl._flatpickr.clear();
+    if (toEl._flatpickr) toEl._flatpickr.clear();
+    limitEl.value = '0';
+    var tbody = document.getElementById('snap-body-' + jobIdx);
+    if (tbody) tbody.querySelectorAll('tr').forEach(function(r) { r.style.display = ''; });
+    if (countEl) countEl.textContent = '';
   };
 
   function formatBytes(b) {

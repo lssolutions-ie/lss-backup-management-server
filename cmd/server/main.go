@@ -231,6 +231,8 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleRepoSnapshots(w, r)
 		case "repo/browse":
 			s.HandleRepoBrowse(w, r)
+		case "repo/download":
+			s.HandleRepoDownload(w, r)
 		default:
 			http.NotFound(w, r)
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -145,6 +146,98 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(output)
+}
+
+// HandleRepoDownload streams a single file from a restic snapshot via SSH.
+func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Username   string `json:"username"`
+		Password   string `json:"password"`
+		JobID      string `json:"job_id"`
+		SnapshotID string `json:"snapshot_id"`
+		Path       string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if !node.TunnelReady() || req.Path == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	cfg := &ssh.ClientConfig{
+		User:            req.Username,
+		Auth:            []ssh.AuthMethod{ssh.Password(req.Password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         30 * time.Second,
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", *node.TunnelPort)
+	client, err := ssh.Dial("tcp", addr, cfg)
+	if err != nil {
+		http.Error(w, "ssh dial failed", http.StatusBadGateway)
+		return
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		http.Error(w, "ssh session failed", http.StatusBadGateway)
+		return
+	}
+	defer session.Close()
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		return
+	}
+
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
+		return
+	}
+
+	cmd := fmt.Sprintf("sudo -S lss-backup-cli repo-dump --json %s %s --path %s",
+		req.JobID, req.SnapshotID, req.Path)
+
+	if err := session.Start(cmd); err != nil {
+		http.Error(w, "command failed", http.StatusBadGateway)
+		return
+	}
+
+	// Send password for sudo.
+	fmt.Fprintf(stdin, "%s\n", req.Password)
+	stdin.Close()
+
+	// Extract filename from path.
+	parts := bytes.Split([]byte(req.Path), []byte("/"))
+	filename := string(parts[len(parts)-1])
+	if filename == "" {
+		filename = "download"
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+
+	// Stream the file content.
+	io.Copy(w, stdout)
+	session.Wait()
+
+	log.Printf("repo: download node=%d file=%s", node.ID, req.Path)
 }
 
 // sshExecOnNodeSudo connects to a node via its reverse tunnel and runs a

@@ -13,12 +13,17 @@ import (
 
 type nodeDetailPageData struct {
 	PageData
-	Node    *models.Node
-	Jobs    []models.JobSnapshot
-	Reports []*models.NodeReport
-	Total   int
-	Page    int
-	Pages   int
+	Node       *models.Node
+	Jobs       []models.JobSnapshot
+	Reports    []*models.NodeReport
+	Total      int
+	Page       int
+	Pages      int
+	PerPage    int
+	FilterType   string
+	FilterStatus string
+	FilterFrom   string
+	FilterTo     string
 }
 
 type nodeFormPageData struct {
@@ -48,21 +53,40 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	const perPage = 50
+	q := r.URL.Query()
+
+	perPage := 25
+	if pp, err := strconv.Atoi(q.Get("per_page")); err == nil && pp > 0 && pp <= 200 {
+		perPage = pp
+	}
 	page := 1
-	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 1 {
+	if p, err := strconv.Atoi(q.Get("page")); err == nil && p > 1 {
 		page = p
 	}
-	offset := (page - 1) * perPage
 
-	total, err := s.DB.CountNodeReports(node.ID)
+	filterType := q.Get("type")
+	filterStatus := q.Get("status")
+	filterFrom := q.Get("from")
+	filterTo := q.Get("to")
+
+	filter := models.ReportFilter{
+		NodeID: node.ID,
+		Type:   filterType,
+		Status: filterStatus,
+		From:   filterFrom,
+		To:     filterTo,
+		Limit:  perPage,
+		Offset: (page - 1) * perPage,
+	}
+
+	total, err := s.DB.CountNodeReportsFiltered(filter)
 	if err != nil {
 		log.Printf("node detail: count reports: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	reports, err := s.DB.ListNodeReports(node.ID, perPage, offset)
+	reports, err := s.DB.ListNodeReportsFiltered(filter)
 	if err != nil {
 		log.Printf("node detail: list reports: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -75,13 +99,18 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, http.StatusOK, "node_detail.html", nodeDetailPageData{
-		PageData: s.newPageData(r),
-		Node:     node,
-		Jobs:     jobs,
-		Reports:  reports,
-		Total:    total,
-		Page:     page,
-		Pages:    pages,
+		PageData:     s.newPageData(r),
+		Node:         node,
+		Jobs:         jobs,
+		Reports:      reports,
+		Total:        total,
+		Page:         page,
+		Pages:        pages,
+		PerPage:      perPage,
+		FilterType:   filterType,
+		FilterStatus: filterStatus,
+		FilterFrom:   filterFrom,
+		FilterTo:     filterTo,
 	})
 }
 

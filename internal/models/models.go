@@ -226,6 +226,17 @@ type SMTPConfig struct {
 	Enabled     bool
 }
 
+// ReportFilter holds query parameters for filtering check-in history.
+type ReportFilter struct {
+	NodeID uint64
+	Type   string // "heartbeat" | "post_run" | "" (all)
+	Status string // "success" | "failure" | "never_run" | "" (all)
+	From   string // date string YYYY-MM-DD
+	To     string // date string YYYY-MM-DD
+	Limit  int
+	Offset int
+}
+
 // DashboardStats holds summary counters for the dashboard header cards
 type DashboardStats struct {
 	TotalNodes    int

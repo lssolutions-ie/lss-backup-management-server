@@ -27,9 +27,9 @@
   </div>
 </div>
 
-<div class="row row-cards mb-3">
-  <div class="col-md-6">
-    <div class="card">
+<div class="row row-cards mb-3" style="align-items: stretch;">
+  <div class="col-md-6 d-flex">
+    <div class="card w-100">
       <div class="card-body">
         <h3 class="card-title">Node info</h3>
         <dl class="row">
@@ -60,8 +60,8 @@
     </div>
   </div>
   {{if .Node.HasHardware}}
-  <div class="col-md-6">
-    <div class="card">
+  <div class="col-md-6 d-flex">
+    <div class="card w-100">
       <div class="card-body">
         <h3 class="card-title">Hardware</h3>
         <dl class="row">
@@ -165,7 +165,50 @@ function toggleJobConfig(jobID) {
 <div class="card">
   <div class="card-header">
     <h3 class="card-title">Check-in history</h3>
-    <div class="card-actions text-muted">{{.Total}} total</div>
+    <div class="card-actions text-muted">{{.Total}} results</div>
+  </div>
+  <div class="card-body border-bottom py-3">
+    <form method="GET" action="/nodes/{{.Node.ID}}" class="row g-2 align-items-end" id="filter-form">
+      <div class="col-auto">
+        <label class="form-label small">From</label>
+        <input type="date" name="from" class="form-control form-control-sm" value="{{.FilterFrom}}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small">To</label>
+        <input type="date" name="to" class="form-control form-control-sm" value="{{.FilterTo}}">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small">Type</label>
+        <select name="type" class="form-select form-select-sm">
+          <option value="">All</option>
+          <option value="heartbeat" {{if eq .FilterType "heartbeat"}}selected{{end}}>Heartbeat</option>
+          <option value="post_run" {{if eq .FilterType "post_run"}}selected{{end}}>Post-run</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small">Status</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="">All</option>
+          <option value="success" {{if eq .FilterStatus "success"}}selected{{end}}>Success</option>
+          <option value="failure" {{if eq .FilterStatus "failure"}}selected{{end}}>Failure</option>
+          <option value="never_run" {{if eq .FilterStatus "never_run"}}selected{{end}}>Never run</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small">Per page</label>
+        <select name="per_page" class="form-select form-select-sm">
+          <option value="10" {{if eq .PerPage 10}}selected{{end}}>10</option>
+          <option value="25" {{if eq .PerPage 25}}selected{{end}}>25</option>
+          <option value="50" {{if eq .PerPage 50}}selected{{end}}>50</option>
+          <option value="100" {{if eq .PerPage 100}}selected{{end}}>100</option>
+          <option value="200" {{if eq .PerPage 200}}selected{{end}}>200</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+        <a href="/nodes/{{.Node.ID}}" class="btn btn-outline-secondary btn-sm">Clear</a>
+      </div>
+    </form>
   </div>
   <div class="table-responsive">
     <table class="table table-vcenter">
@@ -202,15 +245,36 @@ function toggleJobConfig(jobID) {
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="4" class="text-center text-muted">No check-ins yet.</td></tr>
+        <tr><td colspan="4" class="text-center text-muted">No check-ins match the current filters.</td></tr>
         {{end}}
       </tbody>
     </table>
   </div>
   {{if gt .Pages 1}}
-  <div class="card-footer text-muted">
-    Page {{.Page}} of {{.Pages}} — append <code>?page=N</code> to navigate.
+  <div class="card-footer d-flex align-items-center">
+    <p class="m-0 text-muted">Page <strong>{{.Page}}</strong> of <strong>{{.Pages}}</strong></p>
+    <ul class="pagination m-0 ms-auto">
+      {{if gt .Page 1}}
+      <li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage({{.Page}}-1)">Prev</a></li>
+      {{else}}
+      <li class="page-item disabled"><span class="page-link">Prev</span></li>
+      {{end}}
+      {{if lt .Page .Pages}}
+      <li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="goPage({{.Page}}+1)">Next</a></li>
+      {{else}}
+      <li class="page-item disabled"><span class="page-link">Next</span></li>
+      {{end}}
+    </ul>
   </div>
   {{end}}
 </div>
+
+<script>
+function goPage(p) {
+  const form = document.getElementById('filter-form');
+  const params = new URLSearchParams(new FormData(form));
+  params.set('page', p);
+  window.location.search = params.toString();
+}
+</script>
 {{end}}

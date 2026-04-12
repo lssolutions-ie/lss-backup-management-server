@@ -785,6 +785,57 @@ func (d *DB) CountNodeReports(nodeID uint64) (int, error) {
 	return n, err
 }
 
+func (d *DB) reportFilterWhere(f models.ReportFilter) (string, []interface{}) {
+	where := "WHERE node_id = ?"
+	args := []interface{}{f.NodeID}
+	if f.Type != "" {
+		where += " AND report_type = ?"
+		args = append(args, f.Type)
+	}
+	if f.From != "" {
+		where += " AND reported_at >= ?"
+		args = append(args, f.From+" 00:00:00")
+	}
+	if f.To != "" {
+		where += " AND reported_at <= ?"
+		args = append(args, f.To+" 23:59:59")
+	}
+	return where, args
+}
+
+func (d *DB) CountNodeReportsFiltered(f models.ReportFilter) (int, error) {
+	where, args := d.reportFilterWhere(f)
+	var n int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM node_reports "+where, args...).Scan(&n)
+	return n, err
+}
+
+func (d *DB) ListNodeReportsFiltered(f models.ReportFilter) ([]*models.NodeReport, error) {
+	where, args := d.reportFilterWhere(f)
+	args = append(args, f.Limit, f.Offset)
+	rows, err := d.db.Query(
+		"SELECT id, node_id, reported_at, received_at, report_type, payload_json FROM node_reports "+
+			where+" ORDER BY reported_at DESC LIMIT ? OFFSET ?", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var reports []*models.NodeReport
+	for rows.Next() {
+		r := &models.NodeReport{}
+		if err := rows.Scan(&r.ID, &r.NodeID, &r.ReportedAt, &r.ReceivedAt, &r.ReportType, &r.PayloadJSON); err != nil {
+			return nil, err
+		}
+		r.JobCount, r.WorstStatus = reportStats(r.PayloadJSON)
+		// Filter by status client-side computed field.
+		if f.Status != "" && r.WorstStatus != f.Status {
+			continue
+		}
+		reports = append(reports, r)
+	}
+	return reports, rows.Err()
+}
+
 // ─── Dashboard stats ─────────────────────────────────────────────────────────
 
 // GetDashboardStats returns the four summary counters for the dashboard cards.

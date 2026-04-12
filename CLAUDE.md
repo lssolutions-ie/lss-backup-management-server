@@ -282,4 +282,4 @@ Without these, HAProxy kills idle WebSocket connections after its default timeou
 
 ---
 
-_Last updated: 2026-04-12 (v1.0.1)_
+_Last updated: 2026-04-12 (v1.6.0)_

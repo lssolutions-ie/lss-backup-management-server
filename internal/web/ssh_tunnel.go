@@ -89,12 +89,7 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	// Drop psk reference asap; the HMAC has already been computed.
 	psk = "" //nolint:ineffassign
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(mac)) != 1 {
-		// Temporary debug logging to diagnose HMAC mismatches during
-		// CLI/server protocol alignment. Safe: we only log the first 16
-		// hex chars (8 bytes) of each MAC — not enough to recover the PSK.
-		log.Printf("ssh-tunnel: hmac mismatch node=%d uid=%s ts=%s sent=%s expected=%s message=%q",
-			node.ID, uid, tsStr, safePrefix(mac, 16), safePrefix(expected, 16),
-			"ssh-tunnel:"+uid+":"+tsStr)
+		log.Printf("ssh-tunnel: hmac mismatch node=%d uid=%s", node.ID, uid)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -135,14 +130,6 @@ func computeTunnelHMAC(psk, uid, ts string) string {
 	h := hmac.New(sha256.New, []byte(psk))
 	h.Write([]byte("ssh-tunnel:" + uid + ":" + ts))
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// safePrefix returns up to n characters of s (fewer if s is shorter).
-func safePrefix(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
 
 // proxySSHTunnelBytes shuffles binary frames in both directions until either

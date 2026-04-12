@@ -1,5 +1,13 @@
 {{define "content"}}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+  .flatpickr-calendar { font-size: 14px !important; box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important; border-radius: 8px !important; }
+  .flatpickr-day { height: 40px !important; line-height: 40px !important; border-radius: 6px !important; }
+  .flatpickr-day.selected { background: #333 !important; border-color: #333 !important; }
+  .flatpickr-day:hover { background: #f0f0f0 !important; }
+  .flatpickr-months { padding: 8px 0 !important; }
+  .flatpickr-current-month { font-size: 1.1rem !important; }
+</style>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
@@ -93,6 +101,8 @@
       <div class="card-body">
         <h3 class="card-title">Node info</h3>
         <dl class="row">
+          <dt class="col-4">Created</dt>
+          <dd class="col-8">{{.Node.CreatedAt.Format "2006-01-02 15:04:05"}}</dd>
           <dt class="col-4">First seen</dt>
           <dd class="col-8">{{if .Node.FirstSeenAt}}{{.Node.FirstSeenAt.Format "2006-01-02 15:04:05"}}{{else}}never{{end}}</dd>
           <dt class="col-4">Last seen</dt>
@@ -113,8 +123,6 @@
             <span class="status status-secondary"><span class="status-dot"></span> Not connected</span>
             {{end}}
           </dd>
-          <dt class="col-4">Created</dt>
-          <dd class="col-8">{{.Node.CreatedAt.Format "2006-01-02 15:04:05"}}</dd>
         </dl>
       </div>
     </div>
@@ -150,6 +158,25 @@
     </div>
   </div>
   {{end}}
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title"><i class="ti ti-database me-1"></i> Repositories</h3>
+    {{if .User.CanWrite}}
+    <div class="card-actions">
+      <a href="/nodes/{{.Node.ID}}/repo" class="btn btn-primary btn-sm">
+        <i class="ti ti-folder-open me-1"></i>Browse Repositories
+      </a>
+    </div>
+    {{end}}
+  </div>
+  <div class="card-body">
+    <div class="text-muted">Browse and inspect backup snapshots stored on this node.</div>
+    {{if not .Node.TunnelReady}}
+    <div class="alert alert-warning mt-2 mb-0">Tunnel not connected — browsing unavailable.</div>
+    {{end}}
+  </div>
 </div>
 
 <div class="card mb-3">

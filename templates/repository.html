@@ -1,0 +1,230 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title"><i class="ti ti-database me-1"></i> Repositories — {{.Node.Name}}</h2>
+      <div class="text-muted">Browse backup repositories on this node via SSH tunnel.</div>
+    </div>
+    <div class="col-auto">
+      <a href="/nodes/{{.Node.ID}}" class="btn">Back to Node</a>
+    </div>
+  </div>
+</div>
+
+{{if not .Node.TunnelReady}}
+<div class="alert alert-warning">
+  <strong>No active tunnel.</strong> The node must have a connected reverse tunnel to browse repositories.
+</div>
+{{else}}
+
+<div id="auth-card" class="card mb-3">
+  <div class="card-header"><h3 class="card-title">SSH Credentials</h3></div>
+  <div class="card-body">
+    <p class="text-muted">Enter the node's SSH credentials to browse repositories. Credentials are used once and never stored.</p>
+    <div id="auth-error" class="alert alert-danger" style="display:none;"></div>
+    <div class="row g-2">
+      <div class="col-md-5">
+        <label class="form-label">Username</label>
+        <input type="text" id="ssh-user" class="form-control" placeholder="lss_..." autofocus>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label">Password</label>
+        <input type="password" id="ssh-pass" class="form-control">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-primary w-100" onclick="loadRepos()">
+          <i class="ti ti-lock-open me-1"></i>Connect
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="loading" class="text-center py-4" style="display:none;">
+  <div class="spinner-border text-primary" role="status"></div>
+  <div class="text-muted mt-2">Connecting to node and reading repositories...</div>
+</div>
+
+<div id="repos-container" style="display:none;"></div>
+
+<div id="browse-card" class="card mb-3" style="display:none;">
+  <div class="card-header">
+    <h3 class="card-title">
+      <i class="ti ti-folder me-1"></i>
+      <span id="browse-title">Files</span>
+    </h3>
+    <div class="card-actions">
+      <button class="btn btn-sm btn-outline-secondary" onclick="closeBrowser()">Close</button>
+    </div>
+  </div>
+  <div id="browse-loading" class="text-center py-4" style="display:none;">
+    <div class="spinner-border text-primary" role="status"></div>
+    <div class="text-muted mt-2">Loading files...</div>
+  </div>
+  <div id="browse-content" class="table-responsive">
+    <table class="table table-vcenter">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Size</th>
+          <th>Modified</th>
+        </tr>
+      </thead>
+      <tbody id="browse-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function() {
+  const nodeID = {{.Node.ID}};
+  let creds = {};
+
+  window.loadRepos = function() {
+    const user = document.getElementById('ssh-user').value.trim();
+    const pass = document.getElementById('ssh-pass').value;
+    const errEl = document.getElementById('auth-error');
+    errEl.style.display = 'none';
+
+    if (!user) { errEl.textContent = 'Username is required.'; errEl.style.display = 'block'; return; }
+
+    creds = { username: user, password: pass };
+    document.getElementById('auth-card').style.display = 'none';
+    document.getElementById('loading').style.display = 'block';
+
+    fetch('/nodes/' + nodeID + '/repo/snapshots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(creds),
+    })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('loading').style.display = 'none';
+      if (data.error) {
+        errEl.textContent = data.error;
+        errEl.style.display = 'block';
+        document.getElementById('auth-card').style.display = 'block';
+        return;
+      }
+      renderRepos(data);
+    })
+    .catch(err => {
+      document.getElementById('loading').style.display = 'none';
+      errEl.textContent = 'Connection failed: ' + err.message;
+      errEl.style.display = 'block';
+      document.getElementById('auth-card').style.display = 'block';
+    });
+  };
+
+  function renderRepos(data) {
+    const container = document.getElementById('repos-container');
+    container.style.display = 'block';
+    container.innerHTML = '';
+
+    const jobs = data.jobs || [];
+    if (jobs.length === 0) {
+      container.innerHTML = '<div class="card"><div class="card-body text-muted">No repositories found on this node.</div></div>';
+      return;
+    }
+
+    jobs.forEach(function(job) {
+      const card = document.createElement('div');
+      card.className = 'card mb-3';
+
+      let header = '<div class="card-header"><h3 class="card-title">';
+      header += '<i class="ti ti-archive me-1"></i> ' + escHtml(job.job_name || job.job_id);
+      header += ' <span class="badge text-bg-secondary ms-2">' + escHtml(job.program) + '</span>';
+      if (job.destination) header += ' <code class="ms-2 small">' + escHtml(job.destination) + '</code>';
+      header += '</h3></div>';
+
+      let body = '';
+      if (job.error) {
+        body = '<div class="card-body"><div class="alert alert-danger mb-0">' + escHtml(job.error) + '</div></div>';
+      } else if (!job.snapshots || job.snapshots.length === 0) {
+        body = '<div class="card-body text-muted">No snapshots found.</div>';
+      } else {
+        body = '<div class="table-responsive"><table class="table table-vcenter table-hover">';
+        body += '<thead><tr><th>Snapshot</th><th>Date</th><th>Hostname</th><th>Paths</th><th></th></tr></thead><tbody>';
+        job.snapshots.forEach(function(snap) {
+          const d = new Date(snap.time);
+          const dateStr = d.toLocaleDateString('en-IE', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+          body += '<tr>';
+          body += '<td><code>' + escHtml(snap.short_id || snap.id.substring(0,8)) + '</code></td>';
+          body += '<td>' + dateStr + '</td>';
+          body += '<td>' + escHtml(snap.hostname || '') + '</td>';
+          body += '<td>' + escHtml((snap.paths || []).join(', ')) + '</td>';
+          body += '<td><button class="btn btn-sm btn-outline-primary" onclick="browseSnapshot(\'' + escAttr(job.job_id) + '\', \'' + escAttr(snap.id) + '\', \'' + escAttr(snap.short_id || snap.id.substring(0,8)) + '\')"><i class="ti ti-folder-open me-1"></i>Browse</button></td>';
+          body += '</tr>';
+        });
+        body += '</tbody></table></div>';
+      }
+
+      card.innerHTML = header + body;
+      container.appendChild(card);
+    });
+  }
+
+  window.browseSnapshot = function(jobID, snapshotID, label) {
+    document.getElementById('browse-card').style.display = 'block';
+    document.getElementById('browse-title').textContent = 'Snapshot ' + label;
+    document.getElementById('browse-loading').style.display = 'block';
+    document.getElementById('browse-content').style.display = 'none';
+
+    fetch('/nodes/' + nodeID + '/repo/browse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, creds, { job_id: jobID, snapshot_id: snapshotID })),
+    })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('browse-loading').style.display = 'none';
+      document.getElementById('browse-content').style.display = 'block';
+      renderFiles(data);
+    })
+    .catch(err => {
+      document.getElementById('browse-loading').style.display = 'none';
+      document.getElementById('browse-content').style.display = 'block';
+      document.getElementById('browse-body').innerHTML = '<tr><td colspan="4" class="text-danger">' + err.message + '</td></tr>';
+    });
+  };
+
+  function renderFiles(data) {
+    const tbody = document.getElementById('browse-body');
+    const files = data.files || data || [];
+    if (!Array.isArray(files) || files.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No files found.</td></tr>';
+      return;
+    }
+    let html = '';
+    files.forEach(function(f) {
+      const icon = f.type === 'dir' ? 'ti-folder' : 'ti-file';
+      const size = f.type === 'dir' ? '' : formatBytes(f.size || 0);
+      html += '<tr>';
+      html += '<td><i class="ti ' + icon + ' me-1"></i> ' + escHtml(f.name) + '</td>';
+      html += '<td>' + escHtml(f.type) + '</td>';
+      html += '<td>' + size + '</td>';
+      html += '<td>' + escHtml(f.mtime || '') + '</td>';
+      html += '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  window.closeBrowser = function() {
+    document.getElementById('browse-card').style.display = 'none';
+  };
+
+  function formatBytes(b) {
+    if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+    if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+    return b + ' B';
+  }
+
+  function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escAttr(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+})();
+</script>
+
+{{end}}
+{{end}}

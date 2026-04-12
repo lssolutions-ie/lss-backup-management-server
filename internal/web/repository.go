@@ -110,7 +110,7 @@ func (s *Server) HandleRepoJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := sshExecOnNodeSudo(node, username, password, "lss-backup-cli repo-info --json --summary")
+	output, err := sshExecOnNodeSudo(node, username, password, cliPath(node.HwOS)+" repo-info --json --summary")
 	if err != nil {
 		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
@@ -151,7 +151,7 @@ func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := fmt.Sprintf("lss-backup-cli repo-info --json --job %s", req.JobID)
+	cmd := fmt.Sprintf("%s repo-info --json --job %s", cliPath(node.HwOS), req.JobID)
 	output, err := sshExecOnNodeSudo(node, username, password, cmd)
 	if err != nil {
 		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
@@ -194,7 +194,7 @@ func (s *Server) HandleRepoBrowseRsync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := fmt.Sprintf("lss-backup-cli repo-ls-rsync --json %s", req.JobID)
+	cmd := fmt.Sprintf("%s repo-ls-rsync --json %s", cliPath(node.HwOS), req.JobID)
 	if req.Path != "" {
 		cmd += fmt.Sprintf(" --path %s", req.Path)
 	}
@@ -242,7 +242,7 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := fmt.Sprintf("lss-backup-cli repo-ls --json %s %s", req.JobID, req.SnapshotID)
+	cmd := fmt.Sprintf("%s repo-ls --json %s %s", cliPath(node.HwOS), req.JobID, req.SnapshotID)
 	if req.Path != "" {
 		cmd += fmt.Sprintf(" --path %s", req.Path)
 	}
@@ -464,7 +464,7 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := fmt.Sprintf("lss-backup-cli repo-dump --json %s %s --path %s",
+	cmd := fmt.Sprintf("%s repo-dump --json %s %s --path %s", cliPath(node.HwOS),
 		req.JobID, req.SnapshotID, req.Path)
 	stdin, err := sshStartWithSudo(session, node, password, cmd)
 	if err != nil {
@@ -549,7 +549,7 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	for _, p := range req.Paths {
 		pathArgs += fmt.Sprintf(" --path %s", p)
 	}
-	cmd := fmt.Sprintf("lss-backup-cli repo-dump-zip --json %s %s%s",
+	cmd := fmt.Sprintf("%s repo-dump-zip --json %s %s%s", cliPath(node.HwOS),
 		req.JobID, req.SnapshotID, pathArgs)
 
 	log.Printf("repo: zip cmd=%s", cmd)
@@ -580,6 +580,14 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 		log.Printf("repo: zip stderr node=%d: %s", node.ID, stderr.String())
 	}
 	log.Printf("repo: zip download node=%d paths=%d bytes=%d", node.ID, len(req.Paths), n)
+}
+
+// cliPath returns the full path to lss-backup-cli for the given OS.
+func cliPath(hwOS string) string {
+	if hwOS == "windows" {
+		return `"C:\Program Files\LSS Backup\lss-backup-cli.exe"`
+	}
+	return "/usr/local/bin/lss-backup-cli"
 }
 
 // sshStartWithSudo starts a command on an SSH session, wrapping with sudo on

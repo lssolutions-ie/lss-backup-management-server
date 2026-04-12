@@ -1,0 +1,48 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">Set Up Two-Factor Authentication</h2>
+    </div>
+    <div class="col-auto">
+      <a href="/settings" class="btn">Cancel</a>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        {{if .Error}}
+        <div class="alert alert-danger">{{.Error}}</div>
+        {{end}}
+
+        <h3 class="card-title">1. Scan QR Code</h3>
+        <p class="text-muted">Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.).</p>
+        <div class="text-center mb-3">
+          <img src="data:image/png;base64,{{.QRCode}}" alt="TOTP QR Code" style="image-rendering: pixelated; width: 200px; height: 200px;">
+        </div>
+
+        <h3 class="card-title">2. Manual Entry</h3>
+        <p class="text-muted">If you can't scan the QR code, enter this secret manually:</p>
+        <div class="mb-3">
+          <code style="font-size: 1.1rem; word-break: break-all;">{{.Secret}}</code>
+        </div>
+
+        <h3 class="card-title">3. Verify</h3>
+        <p class="text-muted">Enter the 6-digit code from your authenticator app to confirm setup.</p>
+        <form action="/settings/2fa/setup" method="POST" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="mb-3">
+            <input type="text" name="code" class="form-control text-center" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autofocus required style="font-size: 1.5rem; letter-spacing: 0.5em; max-width: 200px;">
+          </div>
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary">Enable 2FA</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

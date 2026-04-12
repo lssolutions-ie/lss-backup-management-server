@@ -10,6 +10,8 @@ type User struct {
 	ID           uint64
 	Username     string
 	PasswordHash string
+	TOTPSecret   string
+	TOTPEnabled  bool
 	Role         string // "superadmin" | "user"
 	CreatedAt    time.Time
 	UpdatedAt    time.Time

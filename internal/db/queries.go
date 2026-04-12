@@ -36,9 +36,9 @@ func (d *DB) CreateUser(username, passwordHash, role string) (uint64, error) {
 func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 	u := &models.User{}
 	err := d.db.QueryRow(
-		"SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE username = ?",
+		"SELECT id, username, password_hash, totp_secret, totp_enabled, role, created_at, updated_at FROM users WHERE username = ?",
 		username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -48,9 +48,9 @@ func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 func (d *DB) GetUserByID(id uint64) (*models.User, error) {
 	u := &models.User{}
 	err := d.db.QueryRow(
-		"SELECT id, username, password_hash, role, created_at, updated_at FROM users WHERE id = ?",
+		"SELECT id, username, password_hash, totp_secret, totp_enabled, role, created_at, updated_at FROM users WHERE id = ?",
 		id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -59,7 +59,7 @@ func (d *DB) GetUserByID(id uint64) (*models.User, error) {
 
 func (d *DB) ListUsers() ([]*models.User, error) {
 	rows, err := d.db.Query(
-		"SELECT id, username, password_hash, role, created_at, updated_at FROM users ORDER BY username",
+		"SELECT id, username, password_hash, totp_secret, totp_enabled, role, created_at, updated_at FROM users ORDER BY username",
 	)
 	if err != nil {
 		return nil, err
@@ -68,12 +68,27 @@ func (d *DB) ListUsers() ([]*models.User, error) {
 	var users []*models.User
 	for rows.Next() {
 		u := &models.User{}
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
 	}
 	return users, rows.Err()
+}
+
+func (d *DB) SetTOTPSecret(userID uint64, secret string) error {
+	_, err := d.db.Exec("UPDATE users SET totp_secret = ? WHERE id = ?", secret, userID)
+	return err
+}
+
+func (d *DB) EnableTOTP(userID uint64) error {
+	_, err := d.db.Exec("UPDATE users SET totp_enabled = 1 WHERE id = ?", userID)
+	return err
+}
+
+func (d *DB) DisableTOTP(userID uint64) error {
+	_, err := d.db.Exec("UPDATE users SET totp_enabled = 0, totp_secret = '' WHERE id = ?", userID)
+	return err
 }
 
 func (d *DB) UpdateUserPassword(id uint64, passwordHash string) error {
@@ -567,6 +582,29 @@ func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 		nodes = append(nodes, n)
 	}
 	return nodes, rows.Err()
+}
+
+// ─── SSH Host Keys (TOFU) ───────────────────────────────────────────────────
+
+// GetSSHHostKey returns the stored host key for the given host, or empty string if none.
+func (d *DB) GetSSHHostKey(host string) (keyType, keyData string, err error) {
+	err = d.db.QueryRow(
+		"SELECT key_type, key_data FROM ssh_host_keys WHERE host = ?", host,
+	).Scan(&keyType, &keyData)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	return keyType, keyData, err
+}
+
+// SaveSSHHostKey stores a host key (TOFU: trust on first use).
+func (d *DB) SaveSSHHostKey(host, keyType, keyData string) error {
+	_, err := d.db.Exec(
+		`INSERT INTO ssh_host_keys (host, key_type, key_data) VALUES (?, ?, ?)
+		 ON DUPLICATE KEY UPDATE key_type = VALUES(key_type), key_data = VALUES(key_data)`,
+		host, keyType, keyData,
+	)
+	return err
 }
 
 // ─── Job snapshots ───────────────────────────────────────────────────────────

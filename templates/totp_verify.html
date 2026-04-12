@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Two-Factor Authentication · LSS Management Server</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="d-flex flex-column">
+<div class="page page-center">
+  <div class="container container-tight py-4">
+    <div class="text-center mb-4">
+      <h1>LSS Management Server</h1>
+    </div>
+    <div class="card card-md">
+      <div class="card-body">
+        <h2 class="h2 text-center mb-4">Two-Factor Authentication</h2>
+        <p class="text-muted text-center">Enter the 6-digit code from your authenticator app.</p>
+        {{if .Error}}
+        <div class="alert alert-danger">{{.Error}}</div>
+        {{end}}
+        <form action="/login/2fa" method="POST" autocomplete="off">
+          <div class="mb-3">
+            <label class="form-label">Authentication Code</label>
+            <input type="text" name="code" class="form-control text-center" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autofocus required style="font-size: 1.5rem; letter-spacing: 0.5em;">
+          </div>
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary w-100">Verify</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="text-center text-muted mt-3">
+      <a href="/login">Back to login</a>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/js/tabler.min.js" defer></script>
+</body>
+</html>

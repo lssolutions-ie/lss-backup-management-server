@@ -4,6 +4,22 @@
 {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">Two-Factor Authentication</h3></div>
+  <div class="card-body">
+    {{if .User.TOTPEnabled}}
+    <p><span class="status status-green"><span class="status-dot"></span> 2FA is enabled</span></p>
+    <form action="/settings/2fa/disable" method="POST">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn btn-warning" onclick="return confirm('Are you sure you want to disable two-factor authentication?')">Disable 2FA</button>
+    </form>
+    {{else}}
+    <p><span class="status status-secondary"><span class="status-dot"></span> 2FA is not enabled</span></p>
+    <a href="/settings/2fa/setup" class="btn btn-primary">Enable 2FA</a>
+    {{end}}
+  </div>
+</div>
+
 <div class="card">
   <div class="card-header"><h3 class="card-title">Change your password</h3></div>
   <div class="card-body">

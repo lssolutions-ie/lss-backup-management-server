@@ -102,7 +102,12 @@ func main() {
 	// Auth
 	mux.HandleFunc("/setup", webServer.HandleSetup)
 	mux.HandleFunc("/login", webServer.HandleLogin)
+	mux.HandleFunc("/login/2fa", webServer.HandleTOTPVerify)
 	mux.HandleFunc("/logout", webServer.HandleLogout)
+
+	// 2FA setup/disable (requires auth)
+	mux.HandleFunc("/settings/2fa/setup", webServer.RequireAuth(webServer.HandleTOTPSetup))
+	mux.HandleFunc("/settings/2fa/disable", webServer.RequireAuth(webServer.HandleTOTPDisable))
 
 	// Dashboard
 	mux.HandleFunc("/", webServer.RequireAuth(webServer.HandleDashboard))

@@ -265,9 +265,6 @@
       return;
     }
 
-    // Check if already loaded
-    if (body.getAttribute('data-loaded') === 'true') return;
-
     body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><div class="text-muted mt-2">Loading snapshots...</div></div>';
 
     fetch('/nodes/' + nodeID + '/repo/snapshots', {
@@ -281,7 +278,6 @@
       return r.json();
     })
     .then(function(data) {
-      body.setAttribute('data-loaded', 'true');
       var jobData = (data.jobs && data.jobs[0]) || data;
       renderJobSnapshots(body, idx, jobData);
     })
@@ -333,7 +329,8 @@
       html += '<td>' + dateStr + '</td>';
       html += '<td>' + escHtml(snap.hostname || '') + '</td>';
       html += '<td>' + escHtml((snap.paths || []).join(', ')) + '</td>';
-      html += '<td><button class="btn btn-sm btn-outline-primary" onclick="browseSnapshot(\'' + escAttr(job.job_id) + '\', \'' + escAttr(snap.id) + '\', \'' + escAttr(snap.short_id || snap.id.substring(0,8)) + '\')"><i class="ti ti-folder-open me-1"></i>Browse</button></td>';
+      var snapSourcePath = (snap.paths && snap.paths.length > 0) ? snap.paths[0] : '';
+      html += '<td><button class="btn btn-sm btn-outline-primary" onclick="browseSnapshot(\'' + escAttr(job.job_id) + '\', \'' + escAttr(snap.id) + '\', \'' + escAttr(snap.short_id || snap.id.substring(0,8)) + '\', \'' + escAttr(snapSourcePath) + '\')"><i class="ti ti-folder-open me-1"></i>Browse</button></td>';
       html += '</tr>';
     });
     html += '</tbody></table></div>';
@@ -363,11 +360,13 @@
   var _navStack = [];
 
   // Called from snapshot list — opens the file browser.
-  window.browseSnapshot = function(jobID, snapshotID, label) {
+  // sourcePath is the snapshot's backup source (e.g. /Users/lss-vm01/Downloads)
+  // so we can jump directly to the content instead of showing /Users at root.
+  window.browseSnapshot = function(jobID, snapshotID, label, sourcePath) {
     _browseJobID = jobID;
     _browseSnapID = snapshotID;
     _browseSnapLabel = label;
-    _browsePath = '';
+    _browsePath = sourcePath || '';
     _navStack = [];
 
     // Hide jobs, show browser.
@@ -472,51 +471,20 @@
       return;
     }
 
-    // Determine the effective parent path.
-    // At root (_browsePath is empty): find the shortest directory path — that's the
-    // snapshot's source root (e.g. /home/parallels/Downloads). Show its direct children.
-    // When navigating deeper: _browsePath is already the full path.
-    var parentPath = _browsePath.replace(/\/+$/, '');
-    if (!parentPath) {
-      // Find the shortest dir path to use as root.
-      var shortest = null;
-      files.forEach(function(f) {
-        if (f.type === 'dir' && f.path) {
-          var p = f.path.replace(/\/+$/, '');
-          if (shortest === null || p.length < shortest.length) shortest = p;
-        }
-      });
-      // If we found a dir, its parent is our root. If not, use the shortest file's parent.
-      if (shortest === null) {
-        files.forEach(function(f) {
-          if (f.path) {
-            var p = f.path.replace(/\/+$/, '');
-            var dir = p.substring(0, p.lastIndexOf('/'));
-            if (shortest === null || dir.length < shortest.length) shortest = dir;
-          }
-        });
-        parentPath = shortest || '';
-      } else {
-        // shortest is the first child dir — its parent is the root.
-        parentPath = shortest.substring(0, shortest.lastIndexOf('/'));
-      }
-      // Store it so openDir can use it.
-      _browsePath = parentPath;
-    }
-
-    // Filter: only direct children of parentPath.
-    files = files.filter(function(f) {
-      var fp = (f.path || '').replace(/\/+$/, '');
-      // Must start with parentPath + '/'
-      if (!fp.startsWith(parentPath + '/')) return false;
-      // Must be exactly one level deep.
-      var rel = fp.substring(parentPath.length + 1);
-      return rel.length > 0 && rel.indexOf('/') === -1;
-    });
-
     if (files.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="text-muted">Empty directory.</td></tr>';
       return;
+    }
+
+    // Detect parent path from first entry if not set (root level).
+    var parentPath = _browsePath.replace(/\/+$/, '');
+    if (!parentPath && files.length > 0 && files[0].path) {
+      var firstPath = files[0].path.replace(/\/+$/, '');
+      var firstName = files[0].name || '';
+      if (firstPath.endsWith('/' + firstName)) {
+        parentPath = firstPath.substring(0, firstPath.length - firstName.length - 1);
+        _browsePath = parentPath;
+      }
     }
 
     files.sort(function(a, b) {

@@ -876,6 +876,30 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 	return jobs, rows.Err()
 }
 
+// DeleteStaleJobSnapshots removes job snapshots for a node that are no longer
+// reported by the CLI. Returns the number of rows deleted.
+func (d *DB) DeleteStaleJobSnapshots(nodeID uint64, currentJobIDs []string) (int64, error) {
+	if len(currentJobIDs) == 0 {
+		// Node reports zero jobs — delete all.
+		res, err := d.db.Exec("DELETE FROM job_snapshots WHERE node_id = ?", nodeID)
+		if err != nil {
+			return 0, err
+		}
+		return res.RowsAffected()
+	}
+
+	query := "DELETE FROM job_snapshots WHERE node_id = ? AND job_id NOT IN (" + placeholders(len(currentJobIDs)) + ")"
+	args := []interface{}{nodeID}
+	for _, id := range currentJobIDs {
+		args = append(args, id)
+	}
+	res, err := d.db.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (d *DB) UpsertJobSnapshot(nodeID uint64, job models.JobStatus) error {
 	// job.Config is populated only on heartbeat reports. On post_run reports
 	// it's nil/empty — pass NULL so ON DUPLICATE KEY UPDATE's COALESCE

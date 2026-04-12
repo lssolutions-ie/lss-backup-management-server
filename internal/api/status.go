@@ -107,11 +107,18 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("api: %s from node=%d uid=%s jobs=%d", reportType, node.ID, node.UID, len(status.Jobs))
 
-	// 5. Upsert job snapshots
+	// 5. Upsert job snapshots and remove stale jobs no longer reported by the node.
+	reportedJobIDs := make([]string, 0, len(status.Jobs))
 	for _, job := range status.Jobs {
 		if err := h.DB.UpsertJobSnapshot(node.ID, job); err != nil {
 			log.Printf("api: upsert job %s node=%d: %v", job.ID, node.ID, err)
 		}
+		reportedJobIDs = append(reportedJobIDs, job.ID)
+	}
+	if deleted, err := h.DB.DeleteStaleJobSnapshots(node.ID, reportedJobIDs); err != nil {
+		log.Printf("api: delete stale jobs node=%d: %v", node.ID, err)
+	} else if deleted > 0 {
+		log.Printf("api: removed %d stale jobs from node=%d", deleted, node.ID)
 	}
 
 	// 6. Insert node report

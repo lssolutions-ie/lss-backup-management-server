@@ -329,8 +329,7 @@
       html += '<td>' + dateStr + '</td>';
       html += '<td>' + escHtml(snap.hostname || '') + '</td>';
       html += '<td>' + escHtml((snap.paths || []).join(', ')) + '</td>';
-      var snapSourcePath = (snap.paths && snap.paths.length > 0) ? snap.paths[0] : '';
-      html += '<td><button class="btn btn-sm btn-outline-primary" onclick="browseSnapshot(\'' + escAttr(job.job_id) + '\', \'' + escAttr(snap.id) + '\', \'' + escAttr(snap.short_id || snap.id.substring(0,8)) + '\', \'' + escAttr(snapSourcePath) + '\')"><i class="ti ti-folder-open me-1"></i>Browse</button></td>';
+      html += '<td><button class="btn btn-sm btn-outline-primary" onclick="browseSnapshot(\'' + escAttr(job.job_id) + '\', \'' + escAttr(snap.id) + '\', \'' + escAttr(snap.short_id || snap.id.substring(0,8)) + '\')"><i class="ti ti-folder-open me-1"></i>Browse</button></td>';
       html += '</tr>';
     });
     html += '</tbody></table></div>';

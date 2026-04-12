@@ -131,11 +131,25 @@ func main() {
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
 
+	// Wrap mux with security headers.
+	handler := securityHeaders(mux)
+
 	log.Printf("starting server version=%s listen=%s tunnel_authkeys=%s",
 		Version, cfg.Server.ListenAddr, tunnelAuthKeysFile)
-	if err := http.ListenAndServe(cfg.Server.ListenAddr, mux); err != nil {
+	if err := http.ListenAndServe(cfg.Server.ListenAddr, handler); err != nil {
 		log.Fatalf("server: %v", err)
 	}
+}
+
+// securityHeaders adds HSTS and other security headers to every response.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // loadOrCreateSecretKey reads the secret key file. If it does not exist:

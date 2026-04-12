@@ -16,6 +16,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/config"
@@ -344,7 +346,51 @@ func sha256sum(b []byte) []byte {
 	return h[:]
 }
 
-// checkLoginAttempts is a stub for future rate-limiting. Always returns true.
-func checkLoginAttempts(ip, username string) bool {
-	return true
+// loginRateLimiter tracks failed login attempts per IP.
+var loginRateLimiter = struct {
+	sync.Mutex
+	attempts map[string][]time.Time
+}{attempts: make(map[string][]time.Time)}
+
+const (
+	loginMaxAttempts = 5               // max failures per window
+	loginWindow      = 5 * time.Minute // sliding window
+	loginLockout     = 15 * time.Minute // lockout after max failures
+)
+
+// checkLoginAttempts returns true if the IP is allowed to attempt login.
+func checkLoginAttempts(ip, _ string) bool {
+	// Strip port from RemoteAddr.
+	if h, _, ok := strings.Cut(ip, ":"); ok {
+		ip = h
+	}
+
+	loginRateLimiter.Lock()
+	defer loginRateLimiter.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-loginLockout)
+
+	// Prune old entries.
+	attempts := loginRateLimiter.attempts[ip]
+	valid := attempts[:0]
+	for _, t := range attempts {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	loginRateLimiter.attempts[ip] = valid
+
+	return len(valid) < loginMaxAttempts
+}
+
+// recordLoginFailure records a failed login attempt for rate limiting.
+func recordLoginFailure(ip string) {
+	if h, _, ok := strings.Cut(ip, ":"); ok {
+		ip = h
+	}
+
+	loginRateLimiter.Lock()
+	defer loginRateLimiter.Unlock()
+	loginRateLimiter.attempts[ip] = append(loginRateLimiter.attempts[ip], time.Now())
 }

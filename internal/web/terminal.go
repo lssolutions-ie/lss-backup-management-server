@@ -1,10 +1,12 @@
 package web
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -151,11 +153,11 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 			time.Since(sessionStart).Truncate(time.Second))
 	}()
 
-	// Dial SSH.
+	// Dial SSH with TOFU (Trust On First Use) host key verification.
 	sshCfg := &ssh.ClientConfig{
-		User:            auth.Username,
-		Auth:            []ssh.AuthMethod{ssh.Password(auth.Password)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: TOFU store
+		User: auth.Username,
+		Auth: []ssh.AuthMethod{ssh.Password(auth.Password)},
+		HostKeyCallback: s.tofuHostKeyCallback(fmt.Sprintf("%s:%d", dialHost, dialPort)),
 		Timeout:         15 * time.Second,
 	}
 	// Drop the plaintext password from the auth struct ASAP; the cfg has its own copy.
@@ -273,6 +275,38 @@ func copyPipeToWS(r io.Reader, send func([]byte) error) {
 		if err != nil {
 			return
 		}
+	}
+}
+
+// tofuHostKeyCallback returns an ssh.HostKeyCallback that implements Trust On
+// First Use. On first connection to a host, the key is stored in the database.
+// On subsequent connections, the key is compared — mismatch is rejected.
+func (s *Server) tofuHostKeyCallback(host string) ssh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		keyType := key.Type()
+		keyData := base64.StdEncoding.EncodeToString(key.Marshal())
+
+		storedType, storedData, err := s.DB.GetSSHHostKey(host)
+		if err != nil {
+			return fmt.Errorf("host key lookup: %w", err)
+		}
+
+		if storedData == "" {
+			// First connection — trust and store.
+			if err := s.DB.SaveSSHHostKey(host, keyType, keyData); err != nil {
+				return fmt.Errorf("host key store: %w", err)
+			}
+			log.Printf("terminal: TOFU stored host key for %s (%s)", host, keyType)
+			return nil
+		}
+
+		// Subsequent connection — verify.
+		if storedType != keyType || storedData != keyData {
+			log.Printf("terminal: HOST KEY MISMATCH for %s (stored=%s, got=%s)", host, storedType, keyType)
+			return fmt.Errorf("host key mismatch for %s — possible MITM attack. Delete the stored key in the database to re-trust.", host)
+		}
+
+		return nil
 	}
 }
 

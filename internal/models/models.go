@@ -146,10 +146,11 @@ type NodeReport struct {
 }
 
 type Session struct {
-	Token     string
-	UserID    uint64
-	ExpiresAt time.Time
-	CreatedAt time.Time
+	Token        string
+	UserID       uint64
+	ExpiresAt    time.Time
+	LastActiveAt time.Time
+	CreatedAt    time.Time
 }
 
 // NodeStatus is the decrypted inner payload sent by a node

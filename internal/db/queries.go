@@ -166,13 +166,18 @@ func (d *DB) CreateSession(token string, userID uint64, expiresAt time.Time) err
 func (d *DB) GetSessionByToken(token string) (*models.Session, error) {
 	s := &models.Session{}
 	err := d.db.QueryRow(
-		"SELECT token, user_id, expires_at, created_at FROM sessions WHERE token = ?",
+		"SELECT token, user_id, expires_at, last_active_at, created_at FROM sessions WHERE token = ?",
 		token,
-	).Scan(&s.Token, &s.UserID, &s.ExpiresAt, &s.CreatedAt)
+	).Scan(&s.Token, &s.UserID, &s.ExpiresAt, &s.LastActiveAt, &s.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return s, err
+}
+
+func (d *DB) TouchSession(token string) error {
+	_, err := d.db.Exec("UPDATE sessions SET last_active_at = NOW() WHERE token = ?", token)
+	return err
 }
 
 func (d *DB) DeleteSession(token string) error {

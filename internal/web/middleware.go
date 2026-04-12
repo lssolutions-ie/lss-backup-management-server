@@ -151,10 +151,31 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
-		if sess == nil || time.Now().After(sess.ExpiresAt) {
+		now := time.Now()
+
+		if sess == nil || now.After(sess.ExpiresAt) {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
+
+		// Absolute timeout: 2 hours from session creation.
+		if now.Sub(sess.CreatedAt) > 2*time.Hour {
+			_ = s.DB.DeleteSession(token)
+			s.clearSessionCookie(w)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		// Idle timeout: 5 minutes since last activity.
+		if now.Sub(sess.LastActiveAt) > 5*time.Minute {
+			_ = s.DB.DeleteSession(token)
+			s.clearSessionCookie(w)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		// Touch session to track activity.
+		_ = s.DB.TouchSession(token)
 
 		// Timing-safe token comparison
 		tokenBytes := []byte(token)
@@ -172,27 +193,21 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		// Force setup: redirect to password change or 2FA setup if needed.
 		// Allow access to the setup endpoints themselves to avoid redirect loops.
-		if user.ForceSetup {
-			path := r.URL.Path
-			allowed := path == "/settings/force-password" || path == "/settings/2fa/setup" || path == "/logout"
-			if !allowed {
-				if user.ForceSetup && !user.TOTPEnabled {
-					// Step 1: if password is still the default, change it first.
-					// Step 2: then set up 2FA.
-					// We check password_hash against the default to decide which step.
-					if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("lssbackuppassword")) == nil {
-						http.Redirect(w, r, "/settings/force-password", http.StatusSeeOther)
-						return
-					}
-					http.Redirect(w, r, "/settings/2fa/setup", http.StatusSeeOther)
-					return
-				}
-				// Password changed but 2FA still not enabled.
-				if !user.TOTPEnabled {
-					http.Redirect(w, r, "/settings/2fa/setup", http.StatusSeeOther)
-					return
-				}
-				// Both done — clear the flag.
+		path := r.URL.Path
+		setupAllowed := path == "/settings/force-password" || path == "/settings/2fa/setup" || path == "/logout"
+		if !setupAllowed {
+			// Step 1: if force_setup and password is still the default, change it first.
+			if user.ForceSetup && bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("lssbackuppassword")) == nil {
+				http.Redirect(w, r, "/settings/force-password", http.StatusSeeOther)
+				return
+			}
+			// Step 2: all users must have 2FA enabled.
+			if !user.TOTPEnabled {
+				http.Redirect(w, r, "/settings/2fa/setup", http.StatusSeeOther)
+				return
+			}
+			// Clear force_setup flag once both steps are done.
+			if user.ForceSetup {
 				_ = s.DB.ClearForceSetup(user.ID)
 			}
 		}
@@ -262,13 +277,12 @@ func setFlash(w http.ResponseWriter, msg string) {
 	})
 }
 
-// setSessionCookie sets the session cookie.
+// setSessionCookie sets an ephemeral session cookie (no MaxAge = dies on browser close).
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.Config.Session.CookieName,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   s.Config.Session.MaxAgeHours * 3600,
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,

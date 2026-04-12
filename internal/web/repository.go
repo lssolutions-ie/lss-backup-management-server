@@ -89,7 +89,7 @@ func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := sshExecOnNode(node, req.Username, req.Password, "lss-backup-cli repo-info --json")
+	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, "lss-backup-cli repo-info --json")
 	if err != nil {
 		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
@@ -136,7 +136,7 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 		cmd += fmt.Sprintf(" --path %s", req.Path)
 	}
 
-	output, err := sshExecOnNode(node, req.Username, req.Password, cmd)
+	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, cmd)
 	if err != nil {
 		log.Printf("repo: ssh browse node=%d: %v", node.ID, err)
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
@@ -145,6 +145,70 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(output)
+}
+
+// sshExecOnNodeSudo connects to a node via its reverse tunnel and runs a
+// command with sudo, piping the password via stdin.
+func sshExecOnNodeSudo(node *models.Node, username, password, command string) ([]byte, error) {
+	if node.TunnelPort == nil || *node.TunnelPort == 0 {
+		return nil, fmt.Errorf("no tunnel port")
+	}
+
+	cfg := &ssh.ClientConfig{
+		User:            username,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         30 * time.Second,
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", *node.TunnelPort)
+	client, err := ssh.Dial("tcp", addr, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("dial: %w", err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("session: %w", err)
+	}
+	defer session.Close()
+
+	var stdout, stderr bytes.Buffer
+	session.Stdout = &stdout
+	session.Stderr = &stderr
+
+	// Pipe password to sudo -S via stdin.
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdin pipe: %w", err)
+	}
+
+	sudoCmd := fmt.Sprintf("sudo -S %s", command)
+	if err := session.Start(sudoCmd); err != nil {
+		return nil, fmt.Errorf("start: %w", err)
+	}
+
+	// Write password + newline for sudo prompt.
+	_, _ = fmt.Fprintf(stdin, "%s\n", password)
+	stdin.Close()
+
+	if err := session.Wait(); err != nil {
+		if stderr.Len() > 0 {
+			// Strip the sudo password prompt from stderr.
+			errStr := stderr.String()
+			if idx := bytes.Index([]byte(errStr), []byte("\n")); idx >= 0 {
+				errStr = errStr[idx+1:]
+			}
+			if errStr != "" {
+				return nil, fmt.Errorf("%s", errStr)
+			}
+		}
+		return nil, err
+	}
+
+	// stdout may contain the sudo password prompt on stderr, but stdout should be clean JSON.
+	return stdout.Bytes(), nil
 }
 
 // sshExecOnNode connects to a node via its reverse tunnel and runs a command.

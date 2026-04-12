@@ -141,9 +141,15 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// NB: never log the password. Log enough to audit who connected where.
+	mode := map[bool]string{true: "via-tunnel", false: "direct"}[viaTunnel]
 	log.Printf("terminal: user=%s opening ssh %s=%s@%s:%d",
-		user.Username, map[bool]string{true: "via-tunnel", false: "direct"}[viaTunnel],
-		auth.Username, dialHost, dialPort)
+		user.Username, mode, auth.Username, dialHost, dialPort)
+	sessionStart := time.Now()
+	defer func() {
+		log.Printf("terminal: user=%s closed ssh %s=%s@%s:%d duration=%s",
+			user.Username, mode, auth.Username, dialHost, dialPort,
+			time.Since(sessionStart).Truncate(time.Second))
+	}()
 
 	// Dial SSH.
 	sshCfg := &ssh.ClientConfig{

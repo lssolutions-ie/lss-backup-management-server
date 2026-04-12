@@ -18,6 +18,9 @@ import (
 	"github.com/lssolutions-ie/lss-management-server/internal/worker"
 )
 
+// Version is set at build time via -ldflags.
+var Version = "dev"
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("lss-mgmt: ")
@@ -128,7 +131,8 @@ func main() {
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
 
-	log.Printf("listening on %s", cfg.Server.ListenAddr)
+	log.Printf("starting server version=%s listen=%s tunnel_authkeys=%s",
+		Version, cfg.Server.ListenAddr, tunnelAuthKeysFile)
 	if err := http.ListenAndServe(cfg.Server.ListenAddr, mux); err != nil {
 		log.Fatalf("server: %v", err)
 	}

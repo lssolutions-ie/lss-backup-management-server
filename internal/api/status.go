@@ -105,6 +105,8 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		reportType = "post_run"
 	}
 
+	log.Printf("api: %s from node=%d uid=%s jobs=%d", reportType, node.ID, node.UID, len(status.Jobs))
+
 	// 5. Upsert job snapshots
 	for _, job := range status.Jobs {
 		if err := h.DB.UpsertJobSnapshot(node.ID, job); err != nil {

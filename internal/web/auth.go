@@ -108,6 +108,7 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user == nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		log.Printf("auth: login failed user=%q ip=%s", username, r.RemoteAddr)
 		s.renderStandalone(w, http.StatusUnauthorized, "login.html",
 			loginPageData{Error: "Invalid username or password."})
 		return
@@ -127,6 +128,7 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("auth: login ok user=%q role=%s ip=%s", user.Username, user.Role, r.RemoteAddr)
 	s.setSessionCookie(w, token)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

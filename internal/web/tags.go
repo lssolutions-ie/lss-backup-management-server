@@ -94,7 +94,12 @@ func (s *Server) HandleTagEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.DB.UpdateTag(id, name, color); err != nil {
+	textColor := r.FormValue("text_color")
+	if textColor == "" {
+		textColor = "#ffffff"
+	}
+
+	if err := s.DB.UpdateTag(id, name, color, textColor); err != nil {
 		log.Printf("tag edit: update: %v", err)
 	}
 
@@ -134,7 +139,11 @@ func (s *Server) HandleTagCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.DB.CreateTag(name, color); err != nil {
+	textColor := r.FormValue("text_color")
+	if textColor == "" {
+		textColor = "#ffffff"
+	}
+	if _, err := s.DB.CreateTagWithTextColor(name, color, textColor); err != nil {
 		log.Printf("tag create: %v", err)
 		setFlash(w, "Could not create tag (name may already exist).")
 	} else {

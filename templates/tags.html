@@ -23,7 +23,7 @@
           <tbody>
             {{range .Tags}}
             <tr>
-              <td><span class="badge" style="background-color: {{.Color}}; font-size: 0.9rem;">{{.Name}}</span></td>
+              <td><span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.9rem;">{{.Name}}</span></td>
               <td><code>{{.Color}}</code></td>
               <td class="text-nowrap">
                 <a href="/tags/{{.ID}}/edit" class="btn btn-sm">Edit</a>
@@ -53,8 +53,12 @@
             <input type="text" name="name" class="form-control" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Color</label>
+            <label class="form-label">Background</label>
             <input type="color" name="color" class="form-control form-control-color" value="#206bc4">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Text</label>
+            <input type="color" name="text_color" class="form-control form-control-color" value="#ffffff">
           </div>
           <button type="submit" class="btn btn-primary w-100">Create Tag</button>
         </form>

@@ -93,7 +93,7 @@
         <div class="dropdown-menu">
           {{range .AllTags}}
           <a class="dropdown-item" href="javascript:void(0)" onclick="filterByTag('{{.Name}}', '{{.Color}}')">
-            <span class="badge me-1" style="background-color: {{.Color}};">&nbsp;</span> {{.Name}}
+            <span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}};">&nbsp;</span> {{.Name}}
           </a>
           {{end}}
         </div>
@@ -120,7 +120,7 @@
         <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'" data-tags="{{range .Tags}}{{.Name}},{{end}}">
           <td>{{.Name}}</td>
           <td>{{.ClientGroup}}</td>
-          <td onclick="event.stopPropagation()">{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
+          <td onclick="event.stopPropagation()">{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
           <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
           <td>{{.JobCount}}</td>
           <td>

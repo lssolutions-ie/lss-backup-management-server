@@ -216,7 +216,11 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 		if newTagColor == "" {
 			newTagColor = "#206bc4"
 		}
-		if newID, err := s.DB.CreateTag(newTagName, newTagColor); err == nil {
+		newTagTextColor := r.FormValue("new_tag_text_color")
+		if newTagTextColor == "" {
+			newTagTextColor = "#ffffff"
+		}
+		if newID, err := s.DB.CreateTagWithTextColor(newTagName, newTagColor, newTagTextColor); err == nil {
 			tagIDs = append(tagIDs, newID)
 		}
 	}

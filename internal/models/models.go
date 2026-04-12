@@ -229,9 +229,10 @@ type SMTPConfig struct {
 
 // Tag represents a user-defined label that can be attached to nodes.
 type Tag struct {
-	ID   uint64
-	Name string
-	Color string // hex color e.g. "#206bc4"
+	ID        uint64
+	Name      string
+	Color     string // background hex color e.g. "#206bc4"
+	TextColor string // text hex color e.g. "#ffffff"
 }
 
 // ReportFilter holds query parameters for filtering check-in history.

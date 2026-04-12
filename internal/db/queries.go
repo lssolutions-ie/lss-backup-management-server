@@ -635,7 +635,11 @@ func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 // ─── Tags ───────────────────────────────────────────────────────────────────
 
 func (d *DB) CreateTag(name, color string) (uint64, error) {
-	res, err := d.db.Exec("INSERT INTO tags (name, color) VALUES (?, ?)", name, color)
+	return d.CreateTagWithTextColor(name, color, "#ffffff")
+}
+
+func (d *DB) CreateTagWithTextColor(name, color, textColor string) (uint64, error) {
+	res, err := d.db.Exec("INSERT INTO tags (name, color, text_color) VALUES (?, ?, ?)", name, color, textColor)
 	if err != nil {
 		return 0, err
 	}
@@ -644,7 +648,7 @@ func (d *DB) CreateTag(name, color string) (uint64, error) {
 }
 
 func (d *DB) ListTags() ([]*models.Tag, error) {
-	rows, err := d.db.Query("SELECT id, name, color FROM tags ORDER BY name")
+	rows, err := d.db.Query("SELECT id, name, color, text_color FROM tags ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -652,7 +656,7 @@ func (d *DB) ListTags() ([]*models.Tag, error) {
 	var tags []*models.Tag
 	for rows.Next() {
 		t := &models.Tag{}
-		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor); err != nil {
 			return nil, err
 		}
 		tags = append(tags, t)
@@ -667,7 +671,7 @@ func (d *DB) DeleteTag(id uint64) error {
 
 func (d *DB) GetNodeTags(nodeID uint64) ([]models.Tag, error) {
 	rows, err := d.db.Query(
-		"SELECT t.id, t.name, t.color FROM tags t JOIN node_tags nt ON nt.tag_id = t.id WHERE nt.node_id = ? ORDER BY t.name",
+		"SELECT t.id, t.name, t.color, t.text_color FROM tags t JOIN node_tags nt ON nt.tag_id = t.id WHERE nt.node_id = ? ORDER BY t.name",
 		nodeID,
 	)
 	if err != nil {
@@ -677,7 +681,7 @@ func (d *DB) GetNodeTags(nodeID uint64) ([]models.Tag, error) {
 	var tags []models.Tag
 	for rows.Next() {
 		var t models.Tag
-		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor); err != nil {
 			return nil, err
 		}
 		tags = append(tags, t)
@@ -701,7 +705,7 @@ func (d *DB) SetNodeTags(nodeID uint64, tagIDs []uint64) error {
 // GetAllNodeTags returns tags for all nodes in a single query, keyed by node ID.
 func (d *DB) GetAllNodeTags() (map[uint64][]models.Tag, error) {
 	rows, err := d.db.Query(
-		"SELECT nt.node_id, t.id, t.name, t.color FROM node_tags nt JOIN tags t ON t.id = nt.tag_id ORDER BY t.name",
+		"SELECT nt.node_id, t.id, t.name, t.color, t.text_color FROM node_tags nt JOIN tags t ON t.id = nt.tag_id ORDER BY t.name",
 	)
 	if err != nil {
 		return nil, err
@@ -711,7 +715,7 @@ func (d *DB) GetAllNodeTags() (map[uint64][]models.Tag, error) {
 	for rows.Next() {
 		var nodeID uint64
 		var t models.Tag
-		if err := rows.Scan(&nodeID, &t.ID, &t.Name, &t.Color); err != nil {
+		if err := rows.Scan(&nodeID, &t.ID, &t.Name, &t.Color, &t.TextColor); err != nil {
 			return nil, err
 		}
 		m[nodeID] = append(m[nodeID], t)
@@ -719,14 +723,14 @@ func (d *DB) GetAllNodeTags() (map[uint64][]models.Tag, error) {
 	return m, rows.Err()
 }
 
-func (d *DB) UpdateTag(id uint64, name, color string) error {
-	_, err := d.db.Exec("UPDATE tags SET name = ?, color = ? WHERE id = ?", name, color, id)
+func (d *DB) UpdateTag(id uint64, name, color, textColor string) error {
+	_, err := d.db.Exec("UPDATE tags SET name = ?, color = ?, text_color = ? WHERE id = ?", name, color, textColor, id)
 	return err
 }
 
 func (d *DB) GetTagByID(id uint64) (*models.Tag, error) {
 	t := &models.Tag{}
-	err := d.db.QueryRow("SELECT id, name, color FROM tags WHERE id = ?", id).Scan(&t.ID, &t.Name, &t.Color)
+	err := d.db.QueryRow("SELECT id, name, color, text_color FROM tags WHERE id = ?", id).Scan(&t.ID, &t.Name, &t.Color, &t.TextColor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

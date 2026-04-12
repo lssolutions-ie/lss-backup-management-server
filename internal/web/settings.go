@@ -1,8 +1,18 @@
 package web
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/smtp"
+	"strconv"
+	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"golang.org/x/crypto/bcrypt"
@@ -158,4 +168,234 @@ func (s *Server) HandleForcePassword(w http.ResponseWriter, r *http.Request) {
 	log.Printf("auth: forced password change user=%q", user.Username)
 	// Next request will hit RequireAuth which will redirect to 2FA setup.
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+type smtpPageData struct {
+	PageData
+	SMTP    *models.SMTPConfig
+	Error   string
+	Success string
+}
+
+// HandleSMTPSettings shows and processes the SMTP configuration form.
+func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
+	cfg, err := s.DB.GetSMTPConfig()
+	if err != nil {
+		log.Printf("smtp settings: get: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Decrypt password for display (masked in template).
+	if cfg.PasswordEnc != "" {
+		if pw, err := decryptSMTPPassword(cfg.PasswordEnc, s.AppKey); err == nil {
+			cfg.PasswordEnc = pw
+		}
+	}
+
+	if r.Method == http.MethodGet {
+		s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
+			PageData: s.newPageData(r),
+			SMTP:     cfg,
+		})
+		return
+	}
+
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	port, _ := strconv.Atoi(r.FormValue("port"))
+	if port == 0 {
+		port = 587
+	}
+
+	password := r.FormValue("password")
+	passwordEnc := ""
+	if password != "" {
+		enc, err := encryptSMTPPassword(password, s.AppKey)
+		if err != nil {
+			log.Printf("smtp settings: encrypt: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		passwordEnc = enc
+	} else if cfg.PasswordEnc != "" {
+		// Keep existing password if not changed. Re-encrypt from the decrypted value.
+		enc, err := encryptSMTPPassword(cfg.PasswordEnc, s.AppKey)
+		if err == nil {
+			passwordEnc = enc
+		}
+	}
+
+	cfg = &models.SMTPConfig{
+		Host:        r.FormValue("host"),
+		Port:        port,
+		Username:    r.FormValue("username"),
+		PasswordEnc: passwordEnc,
+		FromAddress: r.FormValue("from_address"),
+		FromName:    r.FormValue("from_name"),
+		UseTLS:      r.FormValue("use_tls") == "on",
+		Enabled:     r.FormValue("enabled") == "on",
+	}
+
+	if err := s.DB.SaveSMTPConfig(cfg); err != nil {
+		log.Printf("smtp settings: save: %v", err)
+		s.render(w, r, http.StatusInternalServerError, "smtp_settings.html", smtpPageData{
+			PageData: s.newPageData(r),
+			SMTP:     cfg,
+			Error:    "Failed to save configuration.",
+		})
+		return
+	}
+
+	log.Printf("smtp: config updated by user")
+	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
+		PageData: s.newPageData(r),
+		SMTP:     cfg,
+		Success:  "SMTP configuration saved.",
+	})
+}
+
+// HandleSMTPTest sends a test email using the saved SMTP config.
+func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	user, _ := r.Context().Value(ctxUser).(*models.User)
+
+	cfg, err := s.DB.GetSMTPConfig()
+	if err != nil || cfg.Host == "" {
+		s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
+			PageData: s.newPageData(r),
+			SMTP:     cfg,
+			Error:    "SMTP is not configured. Save configuration first.",
+		})
+		return
+	}
+
+	password := ""
+	if cfg.PasswordEnc != "" {
+		if pw, err := decryptSMTPPassword(cfg.PasswordEnc, s.AppKey); err == nil {
+			password = pw
+		}
+	}
+
+	to := ""
+	if user.Email != nil {
+		to = *user.Email
+	}
+	if to == "" {
+		to = cfg.FromAddress
+	}
+
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	auth := smtp.PlainAuth("", cfg.Username, password, cfg.Host)
+
+	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: LSS Backup — Test Email\r\n\r\nThis is a test email from LSS Backup Management Server.\r\nSent at: %s\r\n",
+		cfg.FromName, cfg.FromAddress, to, time.Now().Format(time.RFC3339))
+
+	var sendErr error
+	if cfg.UseTLS {
+		sendErr = smtp.SendMail(addr, auth, cfg.FromAddress, []string{to}, []byte(msg))
+	} else {
+		// Plain SMTP without TLS.
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+		if err != nil {
+			sendErr = err
+		} else {
+			c, err := smtp.NewClient(conn, cfg.Host)
+			if err != nil {
+				sendErr = err
+			} else {
+				defer c.Close()
+				if err := c.Auth(auth); err != nil {
+					sendErr = err
+				} else if err := c.Mail(cfg.FromAddress); err != nil {
+					sendErr = err
+				} else if err := c.Rcpt(to); err != nil {
+					sendErr = err
+				} else {
+					wc, err := c.Data()
+					if err != nil {
+						sendErr = err
+					} else {
+						_, _ = wc.Write([]byte(msg))
+						sendErr = wc.Close()
+					}
+				}
+			}
+		}
+	}
+
+	// Re-read config for display (password already decrypted above).
+	cfg.PasswordEnc = password
+
+	if sendErr != nil {
+		log.Printf("smtp test: failed: %v", sendErr)
+		s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
+			PageData: s.newPageData(r),
+			SMTP:     cfg,
+			Error:    "Test email failed: " + sendErr.Error(),
+		})
+		return
+	}
+
+	log.Printf("smtp test: sent to %s", to)
+	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
+		PageData: s.newPageData(r),
+		SMTP:     cfg,
+		Success:  "Test email sent to " + to,
+	})
+}
+
+// encryptSMTPPassword encrypts a password using AES-GCM with the app key.
+func encryptSMTPPassword(password string, key []byte) (string, error) {
+	block, err := aes.NewCipher(key[:32])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(password), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// decryptSMTPPassword decrypts a password using AES-GCM with the app key.
+func decryptSMTPPassword(encoded string, key []byte) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(key[:32])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+	plaintext, err := gcm.Open(nil, data[:nonceSize], data[nonceSize:], nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
 }

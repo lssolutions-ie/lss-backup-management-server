@@ -214,6 +214,18 @@ type JobStatus struct {
 	Config                 json.RawMessage `json:"config,omitempty"` // heartbeat-only; opaque passthrough
 }
 
+// SMTPConfig holds email server configuration.
+type SMTPConfig struct {
+	Host        string
+	Port        int
+	Username    string
+	PasswordEnc string // AES-encrypted
+	FromAddress string
+	FromName    string
+	UseTLS      bool
+	Enabled     bool
+}
+
 // DashboardStats holds summary counters for the dashboard header cards
 type DashboardStats struct {
 	TotalNodes    int

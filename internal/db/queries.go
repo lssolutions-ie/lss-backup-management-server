@@ -632,6 +632,31 @@ func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 	return nodes, rows.Err()
 }
 
+// ─── SMTP Config ────────────────────────────────────────────────────────────
+
+func (d *DB) GetSMTPConfig() (*models.SMTPConfig, error) {
+	c := &models.SMTPConfig{}
+	err := d.db.QueryRow(
+		"SELECT host, port, username, password_enc, from_address, from_name, use_tls, enabled FROM smtp_config WHERE id = 1",
+	).Scan(&c.Host, &c.Port, &c.Username, &c.PasswordEnc, &c.FromAddress, &c.FromName, &c.UseTLS, &c.Enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return &models.SMTPConfig{Port: 587, FromName: "LSS Backup", UseTLS: true}, nil
+	}
+	return c, err
+}
+
+func (d *DB) SaveSMTPConfig(c *models.SMTPConfig) error {
+	_, err := d.db.Exec(
+		`UPDATE smtp_config
+		 SET host = ?, port = ?, username = ?, password_enc = ?,
+		     from_address = ?, from_name = ?, use_tls = ?, enabled = ?
+		 WHERE id = 1`,
+		c.Host, c.Port, c.Username, c.PasswordEnc,
+		c.FromAddress, c.FromName, c.UseTLS, c.Enabled,
+	)
+	return err
+}
+
 // ─── SSH Host Keys (TOFU) ───────────────────────────────────────────────────
 
 // GetSSHHostKey returns the stored host key for the given host, or empty string if none.

@@ -109,6 +109,8 @@ func main() {
 	mux.HandleFunc("/settings/2fa/setup", webServer.RequireAuth(webServer.HandleTOTPSetup))
 	mux.HandleFunc("/settings/2fa/disable", webServer.RequireAuth(webServer.HandleTOTPDisable))
 	mux.HandleFunc("/settings/force-password", webServer.RequireAuth(webServer.HandleForcePassword))
+	mux.HandleFunc("/settings/smtp", webServer.RequireSuperAdmin(webServer.HandleSMTPSettings))
+	mux.HandleFunc("/settings/smtp/test", webServer.RequireSuperAdmin(webServer.HandleSMTPTest))
 
 	// Dashboard
 	mux.HandleFunc("/", webServer.RequireAuth(webServer.HandleDashboard))

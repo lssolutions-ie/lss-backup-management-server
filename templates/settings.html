@@ -4,6 +4,16 @@
 {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
+{{if .User.IsSuperAdmin}}
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">Email Server (SMTP)</h3></div>
+  <div class="card-body">
+    <p class="text-muted">Configure the SMTP server used for sending alert emails and notifications.</p>
+    <a href="/settings/smtp" class="btn btn-primary">Configure Email Server</a>
+  </div>
+</div>
+{{end}}
+
 <div class="card mb-3">
   <div class="card-header"><h3 class="card-title">Two-Factor Authentication</h3></div>
   <div class="card-body">

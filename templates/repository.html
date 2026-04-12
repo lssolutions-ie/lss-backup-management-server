@@ -64,7 +64,7 @@
       <span id="browse-title">Files</span>
     </h3>
     <div class="card-actions">
-      <button class="btn btn-sm btn-outline-secondary" onclick="closeBrowser()">Close</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="closeBrowser()"><i class="ti ti-arrow-left me-1"></i>Back to Jobs</button>
     </div>
   </div>
   <div id="browse-loading" class="text-center py-4" style="display:none;">
@@ -285,39 +285,72 @@
     filterSnapshots(jobIdx);
   }
 
+  // Browse state: simple nav stack approach.
   var _browseJobID = '';
   var _browseSnapID = '';
   var _browseSnapLabel = '';
   var _browsePath = '';
+  // _navStack: [{name: "Downloads", fullPath: "/home/user/Downloads"}, ...]
+  var _navStack = [];
 
-  window.browseSnapshot = function(jobID, snapshotID, label, path) {
+  // Called from snapshot list — opens the file browser.
+  window.browseSnapshot = function(jobID, snapshotID, label) {
     _browseJobID = jobID;
     _browseSnapID = snapshotID;
     _browseSnapLabel = label;
-    _browsePath = path || '';
-    loadBrowse();
+    _browsePath = '';
+    _navStack = [];
+
+    // Hide jobs, show browser.
+    if (_expandedJob !== null) {
+      var prevBody = document.getElementById('job-body-' + _expandedJob);
+      var prevChevron = document.getElementById('job-chevron-' + _expandedJob);
+      if (prevBody) prevBody.style.display = 'none';
+      if (prevChevron) prevChevron.style.transform = 'rotate(0deg)';
+      _expandedJob = null;
+    }
+    document.getElementById('repos-container').style.display = 'none';
+    fetchFiles();
   };
 
-  function loadBrowse() {
+  // Called when clicking a directory in the file listing.
+  window.openDir = function(name, fullPath) {
+    _navStack.push({ name: name, fullPath: fullPath });
+    _browsePath = fullPath;
+    fetchFiles();
+  };
+
+  // Called from breadcrumb — navigate to a specific level.
+  window.navTo = function(level) {
+    if (level < 0) {
+      // Root
+      _navStack = [];
+      _browsePath = '';
+    } else {
+      _navStack = _navStack.slice(0, level + 1);
+      _browsePath = _navStack[level].fullPath;
+    }
+    fetchFiles();
+  };
+
+  function fetchFiles() {
     var browseCard = document.getElementById('browse-card');
     browseCard.style.display = 'block';
-    browseCard.scrollIntoView({ behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     document.getElementById('browse-loading').style.display = 'block';
     document.getElementById('browse-content').style.display = 'none';
     document.getElementById('browse-body').innerHTML = '';
-    updateBreadcrumb();
-
-    var payload = Object.assign({}, creds, {
-      job_id: _browseJobID,
-      snapshot_id: _browseSnapID,
-      path: _browsePath
-    });
+    renderBreadcrumb();
 
     fetch('/nodes/' + nodeID + '/repo/browse', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(Object.assign({}, creds, {
+        job_id: _browseJobID,
+        snapshot_id: _browseSnapID,
+        path: _browsePath
+      })),
     })
     .then(function(r) {
       if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status + ': ' + t); });
@@ -339,18 +372,20 @@
     });
   }
 
-  function updateBreadcrumb() {
-    var parts = ['<a href="javascript:void(0)" onclick="browseSnapshot(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(_browseSnapLabel) + '\')"><i class="ti ti-archive me-1"></i>' + escHtml(_browseSnapLabel) + '</a>'];
-    if (_browsePath) {
-      var segments = _browsePath.replace(/^\/+/, '').split('/');
-      var accumulated = '';
-      segments.forEach(function(seg) {
-        accumulated += '/' + seg;
-        var p = accumulated;
-        parts.push(' <i class="ti ti-chevron-right" style="font-size:0.75rem;"></i> <a href="javascript:void(0)" onclick="browseSnapshot(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(_browseSnapLabel) + '\',\'' + escAttr(p) + '\')">' + escHtml(seg) + '</a>');
-      });
-    }
-    document.getElementById('browse-title').innerHTML = parts.join('');
+  function renderBreadcrumb() {
+    var sep = ' <i class="ti ti-chevron-right mx-1" style="font-size:0.7rem; opacity:0.5;"></i> ';
+    var html = '<a href="javascript:void(0)" onclick="navTo(-1)"><i class="ti ti-archive me-1"></i>Snapshot ' + escHtml(_browseSnapLabel) + '</a>';
+
+    _navStack.forEach(function(entry, i) {
+      html += sep;
+      if (i === _navStack.length - 1) {
+        html += '<strong>' + escHtml(entry.name) + '</strong>';
+      } else {
+        html += '<a href="javascript:void(0)" onclick="navTo(' + i + ')">' + escHtml(entry.name) + '</a>';
+      }
+    });
+
+    document.getElementById('browse-title').innerHTML = html;
   }
 
   function renderFiles(data) {
@@ -361,20 +396,46 @@
       return;
     }
 
-    // Filter out the current directory itself and any parent paths.
-    var currentPath = _browsePath.replace(/\/+$/, '');
+    // Determine the effective parent path.
+    // At root (_browsePath is empty): find the shortest directory path — that's the
+    // snapshot's source root (e.g. /home/parallels/Downloads). Show its direct children.
+    // When navigating deeper: _browsePath is already the full path.
+    var parentPath = _browsePath.replace(/\/+$/, '');
+    if (!parentPath) {
+      // Find the shortest dir path to use as root.
+      var shortest = null;
+      files.forEach(function(f) {
+        if (f.type === 'dir' && f.path) {
+          var p = f.path.replace(/\/+$/, '');
+          if (shortest === null || p.length < shortest.length) shortest = p;
+        }
+      });
+      // If we found a dir, its parent is our root. If not, use the shortest file's parent.
+      if (shortest === null) {
+        files.forEach(function(f) {
+          if (f.path) {
+            var p = f.path.replace(/\/+$/, '');
+            var dir = p.substring(0, p.lastIndexOf('/'));
+            if (shortest === null || dir.length < shortest.length) shortest = dir;
+          }
+        });
+        parentPath = shortest || '';
+      } else {
+        // shortest is the first child dir — its parent is the root.
+        parentPath = shortest.substring(0, shortest.lastIndexOf('/'));
+      }
+      // Store it so openDir can use it.
+      _browsePath = parentPath;
+    }
+
+    // Filter: only direct children of parentPath.
     files = files.filter(function(f) {
       var fp = (f.path || '').replace(/\/+$/, '');
-      // Skip if the entry IS the current directory
-      if (fp === currentPath) return false;
-      // Skip if the entry is a parent of the current directory
-      if (currentPath && currentPath.indexOf(fp + '/') === 0) return false;
-      // Only include direct children (one level deep)
-      if (currentPath) {
-        var rel = fp.replace(currentPath + '/', '');
-        if (rel.indexOf('/') !== -1) return false;
-      }
-      return true;
+      // Must start with parentPath + '/'
+      if (!fp.startsWith(parentPath + '/')) return false;
+      // Must be exactly one level deep.
+      var rel = fp.substring(parentPath.length + 1);
+      return rel.length > 0 && rel.indexOf('/') === -1;
     });
 
     if (files.length === 0) {
@@ -382,7 +443,6 @@
       return;
     }
 
-    // Sort: dirs first, then files, alphabetical
     files.sort(function(a, b) {
       if (a.type === 'dir' && b.type !== 'dir') return -1;
       if (a.type !== 'dir' && b.type === 'dir') return 1;
@@ -393,10 +453,10 @@
     files.forEach(function(f) {
       var icon = f.type === 'dir' ? 'ti-folder-filled text-warning' : 'ti-file';
       var size = f.type === 'dir' ? '' : formatBytes(f.size || 0);
-      var filePath = f.path || ((_browsePath || '') + '/' + f.name);
+      var filePath = f.path || (currentPath + '/' + f.name);
       html += '<tr>';
       if (f.type === 'dir') {
-        html += '<td style="cursor:pointer;" onclick="browseSnapshot(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(_browseSnapLabel) + '\',\'' + escAttr(filePath) + '\')"><i class="ti ' + icon + ' me-1"></i> <strong>' + escHtml(f.name) + '</strong></td>';
+        html += '<td style="cursor:pointer;" onclick="openDir(\'' + escAttr(f.name) + '\',\'' + escAttr(filePath) + '\')"><i class="ti ' + icon + ' me-1"></i> <strong>' + escHtml(f.name) + '</strong></td>';
       } else {
         html += '<td><i class="ti ' + icon + ' me-1"></i> ' + escHtml(f.name) + '</td>';
       }
@@ -414,7 +474,6 @@
   }
 
   window.downloadFile = function(jobID, snapshotID, filePath, fileName) {
-    // POST to download endpoint, receive file as blob
     fetch('/nodes/' + nodeID + '/repo/download', {
       method: 'POST',
       credentials: 'same-origin',
@@ -446,7 +505,9 @@
 
   window.closeBrowser = function() {
     document.getElementById('browse-card').style.display = 'none';
+    document.getElementById('repos-container').style.display = 'block';
     _browsePath = '';
+    _navStack = [];
   };
 
   window.filterSnapshots = function(jobIdx) {

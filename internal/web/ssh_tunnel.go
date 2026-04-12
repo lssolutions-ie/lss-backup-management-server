@@ -115,10 +115,19 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tcp.Close() //nolint:errcheck
 
+	// Mark tunnel as connected in the DB so the dashboard shows it as active.
+	if err := s.DB.SetTunnelConnected(node.ID, true); err != nil {
+		log.Printf("ssh-tunnel: set connected node=%d: %v", node.ID, err)
+	}
+
 	log.Printf("ssh-tunnel: open node=%d uid=%s peer=%s", node.ID, uid, r.RemoteAddr)
 
 	// Proxy bytes until either side closes.
 	proxySSHTunnelBytes(ws, tcp)
+
+	if err := s.DB.SetTunnelConnected(node.ID, false); err != nil {
+		log.Printf("ssh-tunnel: set disconnected node=%d: %v", node.ID, err)
+	}
 
 	log.Printf("ssh-tunnel: closed node=%d uid=%s", node.ID, uid)
 }

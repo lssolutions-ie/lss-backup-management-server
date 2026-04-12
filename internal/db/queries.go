@@ -384,6 +384,12 @@ func (d *DB) UpdateNodeTunnel(nodeID uint64, port int, publicKey string, connect
 	return publicKey != currentKey, nil
 }
 
+// SetTunnelConnected updates only the tunnel_connected flag for a node.
+func (d *DB) SetTunnelConnected(nodeID uint64, connected bool) error {
+	_, err := d.db.Exec("UPDATE nodes SET tunnel_connected = ? WHERE id = ?", connected, nodeID)
+	return err
+}
+
 // UpdateNodeHardware stores hardware info reported by a node on heartbeat.
 func (d *DB) UpdateNodeHardware(nodeID uint64, hw *models.HardwareInfo) error {
 	storageJSON := "[]"
@@ -444,7 +450,12 @@ func (d *DB) WriteTunnelAuthorizedKeys(path string) error {
 		return err
 	}
 	for _, k := range keys {
-		if _, err := f.WriteString(strings.TrimRight(k, "\n") + "\n"); err != nil {
+		key := strings.TrimRight(k, "\n")
+		// Enforce restrict,port-forwarding prefix server-side regardless of
+		// what the client sends. Strip any existing prefix to avoid duplication.
+		key = strings.TrimPrefix(key, "restrict,port-forwarding ")
+		line := "restrict,port-forwarding " + key + "\n"
+		if _, err := f.WriteString(line); err != nil {
 			f.Close() //nolint:errcheck
 			return err
 		}

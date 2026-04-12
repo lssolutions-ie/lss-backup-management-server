@@ -283,7 +283,7 @@ Match User $TUNNEL_USER
     AllowAgentForwarding no
     PermitTTY no
     PermitTunnel no
-    ForceCommand /bin/false
+    ForceCommand /usr/bin/sleep infinity
     AuthorizedKeysCommand $TUNNEL_AUTHKEYS_SCRIPT
     AuthorizedKeysCommandUser nobody
 EOF
@@ -303,8 +303,9 @@ fi
 step 7 "Building the binary"
 
 cd "$REPO_ROOT"
-info "Running: go build -o $BINARY_PATH ./cmd/server"
-LSS_ENV=production go build -o "$BINARY_PATH" ./cmd/server
+GIT_VERSION="$(cd "$REPO_ROOT" && git describe --tags --abbrev=0 2>/dev/null || echo 'dev')"
+info "Running: go build -ldflags \"-X main.Version=$GIT_VERSION\" -o $BINARY_PATH ./cmd/server"
+LSS_ENV=production go build -ldflags "-X main.Version=$GIT_VERSION" -o "$BINARY_PATH" ./cmd/server
 chown root:root "$BINARY_PATH"
 chmod 755 "$BINARY_PATH"
 info "Binary installed at $BINARY_PATH"
@@ -317,8 +318,8 @@ for asset in templates migrations static; do
         rm -rf "$CONFIG_DIR/$asset"
         cp -r "$REPO_ROOT/$asset" "$CONFIG_DIR/$asset"
         chown -R "$SERVICE_USER:$SERVICE_USER" "$CONFIG_DIR/$asset"
-        find "$CONFIG_DIR/$asset" -type d -exec chmod 750 {} \;
-        find "$CONFIG_DIR/$asset" -type f -exec chmod 640 {} \;
+        find "$CONFIG_DIR/$asset" -type d -exec chmod 755 {} \;
+        find "$CONFIG_DIR/$asset" -type f -exec chmod 644 {} \;
     fi
 done
 

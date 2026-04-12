@@ -311,19 +311,11 @@ func (s *Server) HandleRepoDownloadRsync(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "pipe failed", http.StatusInternalServerError)
 		return
 	}
-	stdin, err := session.StdinPipe()
+	stdin, err := sshStartWithSudo(session, node, password, fmt.Sprintf("cat %s", req.Path))
 	if err != nil {
-		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
-		return
-	}
-
-	cmd := fmt.Sprintf("sudo -S cat %s", req.Path)
-	if err := session.Start(cmd); err != nil {
 		http.Error(w, "command failed", http.StatusBadGateway)
 		return
 	}
-
-	fmt.Fprintf(stdin, "%s\n", password)
 	stdin.Close()
 
 	parts := bytes.Split([]byte(req.Path), []byte("/"))
@@ -395,25 +387,16 @@ func (s *Server) HandleRepoDownloadRsyncZip(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "pipe failed", http.StatusInternalServerError)
 		return
 	}
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
-		return
-	}
 
-	// Use tar to stream multiple files, pipe through gzip-less zip on the node.
 	pathArgs := ""
 	for _, p := range req.Paths {
 		pathArgs += " " + p
 	}
-	cmd := fmt.Sprintf("sudo -S tar cf - %s", pathArgs)
-
-	if err := session.Start(cmd); err != nil {
+	stdin, err := sshStartWithSudo(session, node, password, fmt.Sprintf("tar cf - %s", pathArgs))
+	if err != nil {
 		http.Error(w, "command failed", http.StatusBadGateway)
 		return
 	}
-
-	fmt.Fprintf(stdin, "%s\n", password)
 	stdin.Close()
 
 	w.Header().Set("Content-Type", "application/x-tar")
@@ -481,22 +464,13 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
-		return
-	}
-
-	cmd := fmt.Sprintf("sudo -S lss-backup-cli repo-dump --json %s %s --path %s",
+	cmd := fmt.Sprintf("lss-backup-cli repo-dump --json %s %s --path %s",
 		req.JobID, req.SnapshotID, req.Path)
-
-	if err := session.Start(cmd); err != nil {
+	stdin, err := sshStartWithSudo(session, node, password, cmd)
+	if err != nil {
 		http.Error(w, "command failed", http.StatusBadGateway)
 		return
 	}
-
-	// Send password for sudo.
-	fmt.Fprintf(stdin, "%s\n", password)
 	stdin.Close()
 
 	// Extract filename from path.
@@ -571,17 +545,11 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "pipe failed", http.StatusInternalServerError)
 		return
 	}
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
-		return
-	}
-
 	pathArgs := ""
 	for _, p := range req.Paths {
 		pathArgs += fmt.Sprintf(" --path %s", p)
 	}
-	cmd := fmt.Sprintf("sudo -S lss-backup-cli repo-dump-zip --json %s %s%s",
+	cmd := fmt.Sprintf("lss-backup-cli repo-dump-zip --json %s %s%s",
 		req.JobID, req.SnapshotID, pathArgs)
 
 	log.Printf("repo: zip cmd=%s", cmd)
@@ -589,13 +557,11 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
 
-	if err := session.Start(cmd); err != nil {
+	stdin, err := sshStartWithSudo(session, node, password, cmd)
+	if err != nil {
 		http.Error(w, "command failed", http.StatusBadGateway)
 		return
 	}
-
-	// Write password for sudo, then small delay to ensure sudo reads it.
-	fmt.Fprintf(stdin, "%s\n", password)
 	stdin.Close()
 
 	shortID := req.SnapshotID
@@ -614,6 +580,32 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 		log.Printf("repo: zip stderr node=%d: %s", node.ID, stderr.String())
 	}
 	log.Printf("repo: zip download node=%d paths=%d bytes=%d", node.ID, len(req.Paths), n)
+}
+
+// sshStartWithSudo starts a command on an SSH session, wrapping with sudo on
+// non-Windows nodes. Returns the stdin pipe for writing the sudo password.
+func sshStartWithSudo(session *ssh.Session, node *models.Node, password, command string) (io.WriteCloser, error) {
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+
+	var cmd string
+	if node.HwOS == "windows" {
+		cmd = command
+	} else {
+		cmd = fmt.Sprintf("sudo -S %s", command)
+	}
+
+	if err := session.Start(cmd); err != nil {
+		return nil, err
+	}
+
+	if node.HwOS != "windows" {
+		fmt.Fprintf(stdin, "%s\n", password)
+	}
+
+	return stdin, nil
 }
 
 // copyWithSessionKeepAlive copies data while periodically touching the session
@@ -645,8 +637,13 @@ func copyWithSessionKeepAlive(dst io.Writer, src io.Reader, sessionToken string,
 }
 
 // sshExecOnNodeSudo connects to a node via its reverse tunnel and runs a
-// command with sudo, piping the password via stdin.
+// command with sudo (or without on Windows), piping the password via stdin.
 func sshExecOnNodeSudo(node *models.Node, username, password, command string) ([]byte, error) {
+	// Windows doesn't have sudo — the SSH user is already admin.
+	if node.HwOS == "windows" {
+		return sshExecOnNode(node, username, password, command)
+	}
+
 	if node.TunnelPort == nil || *node.TunnelPort == 0 {
 		return nil, fmt.Errorf("no tunnel port")
 	}

@@ -212,8 +212,8 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Idle timeout: 5 minutes since last activity.
-		if now.Sub(sess.LastActiveAt) > 5*time.Minute {
+		// Idle timeout: 30 minutes since last activity.
+		if now.Sub(sess.LastActiveAt) > 30*time.Minute {
 			_ = s.DB.DeleteSession(token)
 			s.clearSessionCookie(w)
 			http.Redirect(w, r, "/login", http.StatusSeeOther)

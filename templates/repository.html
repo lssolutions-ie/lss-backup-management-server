@@ -27,7 +27,7 @@
 </div>
 {{else}}
 
-<div id="auth-card" class="card mb-3">
+<div id="auth-card" class="card mb-3" style="display:none;">
   <div class="card-header"><h3 class="card-title">SSH Credentials</h3></div>
   <div class="card-body">
     <p class="text-muted">Enter the node's SSH credentials to browse repositories. Credentials are used once and never stored.</p>
@@ -98,6 +98,7 @@
 
   // Try cached credentials on page load.
   (function() {
+    document.getElementById('loading').style.display = 'block';
     fetch('/nodes/' + nodeID + '/repo/jobs', {
       method: 'POST',
       credentials: 'same-origin',
@@ -106,12 +107,17 @@
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
+      document.getElementById('loading').style.display = 'none';
       if (!data.error && data.jobs) {
-        document.getElementById('auth-card').style.display = 'none';
         renderJobs(data);
+      } else {
+        document.getElementById('auth-card').style.display = 'block';
       }
     })
-    .catch(function() {});
+    .catch(function() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('auth-card').style.display = 'block';
+    });
   })();
 
   window.loadRepos = function() {

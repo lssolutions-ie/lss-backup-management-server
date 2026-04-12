@@ -367,11 +367,17 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	cmd := fmt.Sprintf("sudo -S lss-backup-cli repo-dump-zip --json %s %s%s",
 		req.JobID, req.SnapshotID, pathArgs)
 
+	log.Printf("repo: zip cmd=%s", cmd)
+
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
+
 	if err := session.Start(cmd); err != nil {
 		http.Error(w, "command failed", http.StatusBadGateway)
 		return
 	}
 
+	// Write password for sudo, then small delay to ensure sudo reads it.
 	fmt.Fprintf(stdin, "%s\n", password)
 	stdin.Close()
 
@@ -383,10 +389,13 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "snapshot-"+shortID+".zip"))
 
-	io.Copy(w, stdout)
+	n, _ := io.Copy(w, stdout)
 	session.Wait()
 
-	log.Printf("repo: zip download node=%d paths=%d", node.ID, len(req.Paths))
+	if stderr.Len() > 0 {
+		log.Printf("repo: zip stderr node=%d: %s", node.ID, stderr.String())
+	}
+	log.Printf("repo: zip download node=%d paths=%d bytes=%d", node.ID, len(req.Paths), n)
 }
 
 // sshExecOnNodeSudo connects to a node via its reverse tunnel and runs a

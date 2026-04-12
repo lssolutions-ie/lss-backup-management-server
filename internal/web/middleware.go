@@ -45,7 +45,11 @@ type PageData struct {
 	User      *models.User
 	CSRFToken string
 	Flash     string
+	Version   string
 }
+
+// ServerVersion is set at startup from main.Version.
+var ServerVersion = "dev"
 
 // newPageData builds PageData from the request context.
 func (s *Server) newPageData(r *http.Request) PageData {
@@ -56,7 +60,7 @@ func (s *Server) newPageData(r *http.Request) PageData {
 	if c, err := r.Cookie("flash"); err == nil {
 		flash = c.Value
 	}
-	return PageData{User: user, CSRFToken: csrf, Flash: flash}
+	return PageData{User: user, CSRFToken: csrf, Flash: flash, Version: ServerVersion}
 }
 
 // render executes the named template using base.html as the layout.

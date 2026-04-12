@@ -64,6 +64,8 @@ func main() {
 	offlineChecker := worker.NewOfflineChecker(database, notifier)
 	offlineChecker.Start()
 
+	web.ServerVersion = Version
+
 	// Wire HTTP handlers
 	webServer := &web.Server{
 		DB:     database,

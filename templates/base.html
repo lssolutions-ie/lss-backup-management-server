@@ -6,6 +6,7 @@
 <meta name="csrf-token" content="{{.CSRFToken}}">
 <title>LSS Management Server</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -15,37 +16,63 @@
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu">
         <span class="navbar-toggler-icon"></span>
       </button>
-      <h1 class="navbar-brand navbar-brand-autodark">
-        <a href="/">LSS Management</a>
-      </h1>
+      <a href="/" class="navbar-brand navbar-brand-autodark py-3">
+        <img src="/static/branding/Logo-White.png" alt="LSS Backup" style="max-height: 180px; width: auto;">
+      </a>
       <div class="collapse navbar-collapse" id="navbar-menu">
         <ul class="navbar-nav pt-lg-3">
           <li class="nav-item">
-            <a class="nav-link" href="/"><span class="nav-link-title">Dashboard</span></a>
+            <a class="nav-link" href="/">
+              <span class="nav-link-icon"><i class="ti ti-dashboard"></i></span>
+              <span class="nav-link-title">Dashboard</span>
+            </a>
           </li>
           {{if .User.CanWrite}}
           <li class="nav-item">
-            <a class="nav-link" href="/nodes/new"><span class="nav-link-title">Register Node</span></a>
+            <a class="nav-link" href="/nodes/new">
+              <span class="nav-link-icon"><i class="ti ti-server-bolt"></i></span>
+              <span class="nav-link-title">Register Node</span>
+            </a>
           </li>
           {{end}}
           {{if .User.IsSuperAdmin}}
           <li class="nav-item">
-            <a class="nav-link" href="/groups"><span class="nav-link-title">Client Groups</span></a>
+            <a class="nav-link" href="/groups">
+              <span class="nav-link-icon"><i class="ti ti-folders"></i></span>
+              <span class="nav-link-title">Client Groups</span>
+            </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="/users"><span class="nav-link-title">Users</span></a>
+            <a class="nav-link" href="/users">
+              <span class="nav-link-icon"><i class="ti ti-users"></i></span>
+              <span class="nav-link-title">Users</span>
+            </a>
           </li>
           {{end}}
           <li class="nav-item">
-            <a class="nav-link" href="/settings"><span class="nav-link-title">Settings</span></a>
+            <a class="nav-link" href="/settings">
+              <span class="nav-link-icon"><i class="ti ti-settings"></i></span>
+              <span class="nav-link-title">Settings</span>
+            </a>
           </li>
         </ul>
         <div class="mt-auto p-3">
-          <div class="text-muted small mb-2">Signed in as <strong>{{.User.Username}}</strong></div>
+          <div class="d-flex align-items-center mb-3">
+            <span class="avatar avatar-sm rounded-circle bg-primary-lt">
+              <i class="ti ti-user" style="font-size: 1.1rem;"></i>
+            </span>
+            <div class="ms-2">
+              <div class="small fw-bold">{{.User.Username}}</div>
+              <div class="text-muted" style="font-size: 0.75rem;">{{.User.Role}}</div>
+            </div>
+          </div>
           <form action="/logout" method="POST">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-            <button type="submit" class="btn btn-outline-danger w-100">Log out</button>
+            <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+              <i class="ti ti-logout me-1"></i>Log out
+            </button>
           </form>
+          <div class="text-muted text-center mt-2" style="font-size: 0.7rem;">Server {{.Version}}</div>
         </div>
       </div>
     </div>
@@ -55,11 +82,21 @@
     <div class="page-body">
       <div class="container-xl py-3">
         {{if .Flash}}
-        <div class="alert alert-info">{{.Flash}}</div>
+        <div class="alert alert-info alert-dismissible" role="alert">
+          {{.Flash}}
+          <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+        </div>
         {{end}}
         {{template "content" .}}
       </div>
     </div>
+    <footer class="footer footer-transparent d-print-none">
+      <div class="container-xl">
+        <div class="text-center text-muted" style="font-size: 0.8rem;">
+          &copy; 2026 LS Solutions. All rights reserved.
+        </div>
+      </div>
+    </footer>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/js/tabler.min.js" defer></script>

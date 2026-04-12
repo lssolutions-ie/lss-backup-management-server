@@ -96,12 +96,12 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 		role = "user"
 	}
 
-	if username == "" {
+	if username == "" || email == "" {
 		s.render(w, r, http.StatusUnprocessableEntity, "user_form.html", userFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
 			Assigned: formGroupSet(r),
-			Error:    "Username is required.",
+			Error:    "Username and email are required.",
 		})
 		return
 	}

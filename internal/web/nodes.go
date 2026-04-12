@@ -29,9 +29,10 @@ type nodeDetailPageData struct {
 
 type nodeFormPageData struct {
 	PageData
-	Groups []*models.ClientGroup
-	Node   *models.Node // nil when creating
-	Error  string
+	Groups  []*models.ClientGroup
+	AllTags []*models.Tag
+	Node    *models.Node // nil when creating
+	Error   string
 }
 
 type nodePSKPageData struct {
@@ -133,10 +134,13 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allTags, _ := s.DB.ListTags()
+
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "node_new.html", nodeFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
+			AllTags:  allTags,
 		})
 		return
 	}
@@ -154,6 +158,7 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, http.StatusUnprocessableEntity, "node_new.html", nodeFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
+			AllTags:  allTags,
 			Error:    "All fields are required.",
 		})
 		return
@@ -164,6 +169,7 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, http.StatusUnprocessableEntity, "node_new.html", nodeFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
+			AllTags:  allTags,
 			Error:    "Invalid client group.",
 		})
 		return
@@ -189,9 +195,34 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, http.StatusUnprocessableEntity, "node_new.html", nodeFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
+			AllTags:  allTags,
 			Error:    "Could not create node (UID may already be registered).",
 		})
 		return
+	}
+
+	// Assign existing tags.
+	var tagIDs []uint64
+	for _, v := range r.Form["tag_ids"] {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			tagIDs = append(tagIDs, id)
+		}
+	}
+
+	// Create new tag if provided.
+	newTagName := strings.TrimSpace(r.FormValue("new_tag_name"))
+	if newTagName != "" {
+		newTagColor := r.FormValue("new_tag_color")
+		if newTagColor == "" {
+			newTagColor = "#206bc4"
+		}
+		if newID, err := s.DB.CreateTag(newTagName, newTagColor); err == nil {
+			tagIDs = append(tagIDs, newID)
+		}
+	}
+
+	if len(tagIDs) > 0 {
+		_ = s.DB.SetNodeTags(nodeID, tagIDs)
 	}
 
 	s.setPSKFlash(w, psk)

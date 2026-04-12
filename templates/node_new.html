@@ -35,6 +35,26 @@
         {{end}}
       </div>
 
+      <div class="mb-3">
+        <label class="form-label">Tags</label>
+        {{if .AllTags}}
+        <div class="mb-2">
+          {{range .AllTags}}
+          <label class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" name="tag_ids" value="{{.ID}}">
+            <span class="form-check-label"><span class="badge" style="background-color: {{.Color}};">{{.Name}}</span></span>
+          </label>
+          {{end}}
+        </div>
+        {{else}}
+        <div class="text-muted small mb-2">No tags exist yet.</div>
+        {{end}}
+        <div class="d-flex gap-2 align-items-center">
+          <input type="text" name="new_tag_name" class="form-control form-control-sm" placeholder="Create new tag" style="max-width: 200px;">
+          <input type="color" name="new_tag_color" class="form-control form-control-sm form-control-color" value="#206bc4" style="width: 40px; padding: 2px;">
+        </div>
+      </div>
+
       <div class="form-footer">
         <button type="submit" class="btn btn-primary">Create & generate PSK</button>
         <a href="/" class="btn">Cancel</a>

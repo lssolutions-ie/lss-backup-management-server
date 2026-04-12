@@ -323,7 +323,7 @@
 
     // Table
     html += '<div class="table-responsive"><table class="table table-vcenter table-hover">';
-    html += '<thead><tr><th>Snapshot</th><th>Date</th><th>Hostname</th><th>Paths</th><th></th></tr></thead>';
+    html += '<thead><tr><th>Snapshot</th><th>Date</th><th>Hostname</th><th>Paths</th><th style="width:1px;"></th></tr></thead>';
     html += '<tbody id="snap-body-' + jobIdx + '">';
     snaps.forEach(function(snap) {
       var d = new Date(snap.time);

@@ -104,13 +104,17 @@
     document.getElementById('auth-card').style.display = 'none';
     document.getElementById('loading').style.display = 'block';
 
-    fetch('/nodes/' + nodeID + '/repo/snapshots', {
+    fetch('/nodes/' + nodeID + '/repo/jobs', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(creds),
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+      return r.json();
+    })
+    .then(function(data) {
       document.getElementById('loading').style.display = 'none';
       if (data.error) {
         errEl.textContent = data.error;
@@ -118,9 +122,9 @@
         document.getElementById('auth-card').style.display = 'block';
         return;
       }
-      renderRepos(data);
+      renderJobs(data);
     })
-    .catch(err => {
+    .catch(function(err) {
       document.getElementById('loading').style.display = 'none';
       errEl.textContent = 'Connection failed: ' + err.message;
       errEl.style.display = 'block';
@@ -128,85 +132,157 @@
     });
   };
 
-  function renderRepos(data) {
-    const container = document.getElementById('repos-container');
+  var _expandedJob = null;
+  var _jobsData = [];
+
+  function renderJobs(data) {
+    var container = document.getElementById('repos-container');
     container.style.display = 'block';
     container.innerHTML = '';
 
-    const jobs = data.jobs || [];
-    if (jobs.length === 0) {
-      container.innerHTML = '<div class="card"><div class="card-body text-muted">No repositories found on this node.</div></div>';
+    _jobsData = data.jobs || [];
+    if (_jobsData.length === 0) {
+      container.innerHTML = '<div class="card"><div class="card-body text-muted">No backup jobs found on this node.</div></div>';
       return;
     }
 
-    jobs.forEach(function(job, jobIdx) {
-      const card = document.createElement('div');
-      card.className = 'card mb-3';
+    _jobsData.forEach(function(job, idx) {
+      var card = document.createElement('div');
+      card.className = 'card mb-2';
+      card.id = 'job-card-' + idx;
 
-      let header = '<div class="card-header"><h3 class="card-title">';
-      header += '<i class="ti ti-archive me-1"></i> ' + escHtml(job.job_name || job.job_id);
+      var snapCount = job.snapshot_count || 0;
+      var header = '<div class="card-header" style="cursor:pointer;" onclick="toggleJob(' + idx + ',\'' + escAttr(job.job_id) + '\')">';
+      header += '<h3 class="card-title d-flex align-items-center">';
+      header += '<i class="ti ti-chevron-right me-2" id="job-chevron-' + idx + '" style="transition:transform 0.2s;"></i>';
+      header += '<i class="ti ti-archive me-2"></i>';
+      header += escHtml(job.job_name || job.job_id);
       header += ' <span class="badge text-bg-secondary ms-2">' + escHtml(job.program) + '</span>';
-      header += ' <span class="text-muted small ms-2">(' + (job.snapshots ? job.snapshots.length : 0) + ' snapshots)</span>';
-      if (job.destination) header += ' <code class="ms-2 small">' + escHtml(job.destination) + '</code>';
+      header += ' <span class="text-muted small ms-2">' + snapCount + ' snapshots</span>';
+      if (job.destination) header += ' <code class="ms-3 small text-muted">' + escHtml(job.destination) + '</code>';
+      if (job.error) header += ' <span class="badge text-bg-danger ms-2">Error</span>';
       header += '</h3></div>';
 
-      let body = '';
-      if (job.error) {
-        body = '<div class="card-body"><div class="alert alert-danger mb-0">' + escHtml(job.error) + '</div></div>';
-      } else if (!job.snapshots || job.snapshots.length === 0) {
-        body = '<div class="card-body text-muted">No snapshots found.</div>';
-      } else {
-        // Filter bar
-        body += '<div class="card-body border-bottom py-2">';
-        body += '<div class="row g-2 align-items-end">';
-        body += '<div class="col-auto"><label class="form-label small mb-0">From</label>';
-        body += '<input type="text" class="form-control form-control-sm snap-from" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
-        body += '<div class="col-auto"><label class="form-label small mb-0">To</label>';
-        body += '<input type="text" class="form-control form-control-sm snap-to" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
-        body += '<div class="col-auto"><label class="form-label small mb-0">Show</label>';
-        body += '<select class="form-select form-select-sm snap-limit" data-job="' + jobIdx + '">';
-        body += '<option value="10">Latest 10</option>';
-        body += '<option value="25">Latest 25</option>';
-        body += '<option value="50">Latest 50</option>';
-        body += '<option value="0" selected>All</option>';
-        body += '</select></div>';
-        body += '<div class="col-auto"><button class="btn btn-sm btn-primary" onclick="filterSnapshots(' + jobIdx + ')">Filter</button>';
-        body += ' <button class="btn btn-sm btn-outline-secondary" onclick="clearSnapFilter(' + jobIdx + ')">Clear</button></div>';
-        body += '<div class="col-auto text-muted small" id="snap-count-' + jobIdx + '"></div>';
-        body += '</div></div>';
-
-        // Table
-        body += '<div class="table-responsive"><table class="table table-vcenter table-hover">';
-        body += '<thead><tr><th>Snapshot</th><th>Date</th><th>Hostname</th><th>Paths</th><th></th></tr></thead>';
-        body += '<tbody id="snap-body-' + jobIdx + '">';
-        job.snapshots.forEach(function(snap) {
-          var d = new Date(snap.time);
-          var ts = d.getTime();
-          var dateStr = d.toLocaleDateString('en-IE', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-          body += '<tr data-ts="' + ts + '">';
-          body += '<td><code>' + escHtml(snap.short_id || snap.id.substring(0,8)) + '</code></td>';
-          body += '<td>' + dateStr + '</td>';
-          body += '<td>' + escHtml(snap.hostname || '') + '</td>';
-          body += '<td>' + escHtml((snap.paths || []).join(', ')) + '</td>';
-          body += '<td><button class="btn btn-sm btn-outline-primary" onclick="browseSnapshot(\'' + escAttr(job.job_id) + '\', \'' + escAttr(snap.id) + '\', \'' + escAttr(snap.short_id || snap.id.substring(0,8)) + '\')"><i class="ti ti-folder-open me-1"></i>Browse</button></td>';
-          body += '</tr>';
-        });
-        body += '</tbody></table></div>';
-      }
+      var body = '<div id="job-body-' + idx + '" style="display:none;"></div>';
 
       card.innerHTML = header + body;
       container.appendChild(card);
-
-      // Init flatpickr on the date inputs for this job
-      if (job.snapshots && job.snapshots.length > 0) {
-        flatpickr(card.querySelector('.snap-from[data-job="' + jobIdx + '"]'), {
-          dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
-        });
-        flatpickr(card.querySelector('.snap-to[data-job="' + jobIdx + '"]'), {
-          dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
-        });
-      }
     });
+  }
+
+  window.toggleJob = function(idx, jobID) {
+    var body = document.getElementById('job-body-' + idx);
+    var chevron = document.getElementById('job-chevron-' + idx);
+
+    if (_expandedJob === idx) {
+      // Collapse
+      body.style.display = 'none';
+      chevron.style.transform = 'rotate(0deg)';
+      _expandedJob = null;
+      return;
+    }
+
+    // Collapse previous
+    if (_expandedJob !== null) {
+      var prevBody = document.getElementById('job-body-' + _expandedJob);
+      var prevChevron = document.getElementById('job-chevron-' + _expandedJob);
+      if (prevBody) prevBody.style.display = 'none';
+      if (prevChevron) prevChevron.style.transform = 'rotate(0deg)';
+    }
+
+    _expandedJob = idx;
+    chevron.style.transform = 'rotate(90deg)';
+    body.style.display = 'block';
+
+    var job = _jobsData[idx];
+    if (job.error) {
+      body.innerHTML = '<div class="card-body"><div class="alert alert-danger mb-0">' + escHtml(job.error) + '</div></div>';
+      return;
+    }
+
+    // Check if already loaded
+    if (body.getAttribute('data-loaded') === 'true') return;
+
+    body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div><div class="text-muted mt-2">Loading snapshots...</div></div>';
+
+    fetch('/nodes/' + nodeID + '/repo/snapshots', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, creds, { job_id: jobID })),
+    })
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+      return r.json();
+    })
+    .then(function(data) {
+      body.setAttribute('data-loaded', 'true');
+      var jobData = (data.jobs && data.jobs[0]) || data;
+      renderJobSnapshots(body, idx, jobData);
+    })
+    .catch(function(err) {
+      body.innerHTML = '<div class="card-body"><div class="alert alert-danger mb-0">' + escHtml(err.message) + '</div></div>';
+    });
+  };
+
+  function renderJobSnapshots(container, jobIdx, job) {
+    var snaps = job.snapshots || [];
+    if (snaps.length === 0) {
+      container.innerHTML = '<div class="card-body text-muted">No snapshots found.</div>';
+      return;
+    }
+
+    var html = '';
+
+    // Filter bar
+    html += '<div class="card-body border-bottom py-2">';
+    html += '<div class="row g-2 align-items-end">';
+    html += '<div class="col-auto"><label class="form-label small mb-0">From</label>';
+    html += '<input type="text" class="form-control form-control-sm snap-from" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
+    html += '<div class="col-auto"><label class="form-label small mb-0">To</label>';
+    html += '<input type="text" class="form-control form-control-sm snap-to" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
+    html += '<div class="col-auto"><label class="form-label small mb-0">Show</label>';
+    html += '<select class="form-select form-select-sm snap-limit" data-job="' + jobIdx + '">';
+    html += '<option value="10" selected>Latest 10</option>';
+    html += '<option value="25">Latest 25</option>';
+    html += '<option value="50">Latest 50</option>';
+    html += '<option value="0">All</option>';
+    html += '</select></div>';
+    html += '<div class="col-auto"><button class="btn btn-sm btn-primary" onclick="filterSnapshots(' + jobIdx + ')">Filter</button>';
+    html += ' <button class="btn btn-sm btn-outline-secondary" onclick="clearSnapFilter(' + jobIdx + ')">Clear</button></div>';
+    html += '<div class="col-auto text-muted small" id="snap-count-' + jobIdx + '"></div>';
+    html += '</div></div>';
+
+    // Table
+    html += '<div class="table-responsive"><table class="table table-vcenter table-hover">';
+    html += '<thead><tr><th>Snapshot</th><th>Date</th><th>Hostname</th><th>Paths</th><th></th></tr></thead>';
+    html += '<tbody id="snap-body-' + jobIdx + '">';
+    snaps.forEach(function(snap) {
+      var d = new Date(snap.time);
+      var ts = d.getTime();
+      var dateStr = d.toLocaleDateString('en-IE', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      html += '<tr data-ts="' + ts + '">';
+      html += '<td><code>' + escHtml(snap.short_id || snap.id.substring(0,8)) + '</code></td>';
+      html += '<td>' + dateStr + '</td>';
+      html += '<td>' + escHtml(snap.hostname || '') + '</td>';
+      html += '<td>' + escHtml((snap.paths || []).join(', ')) + '</td>';
+      html += '<td><button class="btn btn-sm btn-outline-primary" onclick="browseSnapshot(\'' + escAttr(job.job_id) + '\', \'' + escAttr(snap.id) + '\', \'' + escAttr(snap.short_id || snap.id.substring(0,8)) + '\')"><i class="ti ti-folder-open me-1"></i>Browse</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+
+    container.innerHTML = html;
+
+    // Init flatpickr
+    flatpickr(container.querySelector('.snap-from[data-job="' + jobIdx + '"]'), {
+      dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
+    });
+    flatpickr(container.querySelector('.snap-to[data-job="' + jobIdx + '"]'), {
+      dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
+    });
+
+    // Auto-filter to latest 10 on load
+    filterSnapshots(jobIdx);
   }
 
   var _browseJobID = '';
@@ -282,6 +358,27 @@
     var files = data.files || data || [];
     if (!Array.isArray(files) || files.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No files found.</td></tr>';
+      return;
+    }
+
+    // Filter out the current directory itself and any parent paths.
+    var currentPath = _browsePath.replace(/\/+$/, '');
+    files = files.filter(function(f) {
+      var fp = (f.path || '').replace(/\/+$/, '');
+      // Skip if the entry IS the current directory
+      if (fp === currentPath) return false;
+      // Skip if the entry is a parent of the current directory
+      if (currentPath && currentPath.indexOf(fp + '/') === 0) return false;
+      // Only include direct children (one level deep)
+      if (currentPath) {
+        var rel = fp.replace(currentPath + '/', '');
+        if (rel.indexOf('/') !== -1) return false;
+      }
+      return true;
+    });
+
+    if (files.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">Empty directory.</td></tr>';
       return;
     }
 

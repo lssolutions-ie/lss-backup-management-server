@@ -227,6 +227,8 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodeTags(w, r)
 		case "repo":
 			s.HandleRepoPage(w, r)
+		case "repo/jobs":
+			s.HandleRepoJobs(w, r)
 		case "repo/snapshots":
 			s.HandleRepoSnapshots(w, r)
 		case "repo/browse":

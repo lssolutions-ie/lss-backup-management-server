@@ -63,9 +63,9 @@ func (s *Server) HandleRepoPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleRepoSnapshots is an API endpoint that SSHes into the node and
-// retrieves repository snapshots for all jobs.
-func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
+// HandleRepoJobs is an API endpoint that SSHes into the node and
+// retrieves job list with metadata (no snapshots).
+func (s *Server) HandleRepoJobs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -90,14 +90,53 @@ func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, "lss-backup-cli repo-info --json")
+	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, "lss-backup-cli repo-info --json --summary")
 	if err != nil {
 		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
-	// The CLI returns JSON directly — pass it through.
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(output)
+}
+
+// HandleRepoSnapshots is an API endpoint that SSHes into the node and
+// retrieves snapshots for a single job.
+func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		JobID    string `json:"job_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if !node.TunnelReady() {
+		jsonError(w, "node has no active tunnel", http.StatusBadGateway)
+		return
+	}
+
+	cmd := fmt.Sprintf("lss-backup-cli repo-info --json --job %s", req.JobID)
+	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, cmd)
+	if err != nil {
+		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
+		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(output)
 }

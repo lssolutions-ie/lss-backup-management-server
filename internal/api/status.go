@@ -159,9 +159,17 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	resp := map[string]any{"ok": true}
+
+	// If the node reported a tunnel public key, confirm it's registered so the
+	// client knows it's safe to start the SSH tunnel without an auth race.
+	if status.Tunnel != nil && status.Tunnel.PublicKey != "" {
+		resp["tunnel_key_registered"] = true
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true}) //nolint:errcheck
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 }
 
 func apiError(w http.ResponseWriter, code int) {

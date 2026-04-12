@@ -13,13 +13,14 @@ import (
 
 type nodeDetailPageData struct {
 	PageData
-	Node       *models.Node
-	Jobs       []models.JobSnapshot
-	Reports    []*models.NodeReport
-	Total      int
-	Page       int
-	Pages      int
-	PerPage    int
+	Node         *models.Node
+	Jobs         []models.JobSnapshot
+	Reports      []*models.NodeReport
+	AllTags      []*models.Tag
+	Total        int
+	Page         int
+	Pages        int
+	PerPage      int
 	FilterType   string
 	FilterStatus string
 	FilterFrom   string
@@ -52,6 +53,11 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	// Load tags for this node and all available tags.
+	nodeTags, _ := s.DB.GetNodeTags(node.ID)
+	node.Tags = nodeTags
+	allTags, _ := s.DB.ListTags()
 
 	q := r.URL.Query()
 
@@ -103,6 +109,7 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		Node:         node,
 		Jobs:         jobs,
 		Reports:      reports,
+		AllTags:      allTags,
 		Total:        total,
 		Page:         page,
 		Pages:        pages,
@@ -358,6 +365,109 @@ func (s *Server) HandleNodeRegeneratePSK(w http.ResponseWriter, r *http.Request)
 
 	s.setPSKFlash(w, psk)
 	http.Redirect(w, r, fmt.Sprintf("/nodes/%d/psk", node.ID), http.StatusSeeOther)
+}
+
+// HandleNodeTags updates tags for a node.
+func (s *Server) HandleNodeTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.EnforceWrite(w, r) {
+		return
+	}
+
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	// Collect selected tag IDs from form.
+	var tagIDs []uint64
+	for _, v := range r.Form["tag_ids"] {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			tagIDs = append(tagIDs, id)
+		}
+	}
+
+	if err := s.DB.SetNodeTags(node.ID, tagIDs); err != nil {
+		log.Printf("node tags: %v", err)
+	}
+
+	setFlash(w, "Tags updated.")
+	http.Redirect(w, r, fmt.Sprintf("/nodes/%d", node.ID), http.StatusSeeOther)
+}
+
+// HandleTagCreate creates a new tag (superadmin only).
+func (s *Server) HandleTagCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	color := r.FormValue("color")
+	if color == "" {
+		color = "#206bc4"
+	}
+	if name == "" {
+		http.Error(w, "Tag name is required", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := s.DB.CreateTag(name, color); err != nil {
+		log.Printf("tag create: %v", err)
+		setFlash(w, "Could not create tag (name may already exist).")
+	} else {
+		setFlash(w, "Tag created.")
+	}
+
+	// Redirect back to referrer.
+	ref := r.Header.Get("Referer")
+	if ref == "" {
+		ref = "/"
+	}
+	http.Redirect(w, r, ref, http.StatusSeeOther)
+}
+
+// HandleTagDelete deletes a tag (superadmin only).
+func (s *Server) HandleTagDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/tags/")
+	idStr = strings.TrimSuffix(idStr, "/delete")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := s.DB.DeleteTag(id); err != nil {
+		log.Printf("tag delete: %v", err)
+	}
+	setFlash(w, "Tag deleted.")
+
+	ref := r.Header.Get("Referer")
+	if ref == "" {
+		ref = "/"
+	}
+	http.Redirect(w, r, ref, http.StatusSeeOther)
 }
 
 // nodeFromPath extracts a node ID from the URL path and returns the node.

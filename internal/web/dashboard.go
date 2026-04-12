@@ -9,9 +9,10 @@ import (
 
 type dashboardPageData struct {
 	PageData
-	Stats  *models.DashboardStats
-	Groups []*models.GroupWithStats
-	Nodes  []*models.NodeWithStatus
+	Stats   *models.DashboardStats
+	Groups  []*models.GroupWithStats
+	Nodes   []*models.NodeWithStatus
+	AllTags []*models.Tag
 }
 
 func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -55,10 +56,18 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load tags for all nodes in one query.
+	allNodeTags, _ := s.DB.GetAllNodeTags()
+	for _, n := range nodes {
+		n.Tags = allNodeTags[n.ID]
+	}
+	allTags, _ := s.DB.ListTags()
+
 	s.render(w, r, http.StatusOK, "dashboard.html", dashboardPageData{
 		PageData: pd,
 		Stats:    stats,
 		Groups:   groups,
 		Nodes:    nodes,
+		AllTags:  allTags,
 	})
 }

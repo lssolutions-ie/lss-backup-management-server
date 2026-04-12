@@ -632,6 +632,93 @@ func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 	return nodes, rows.Err()
 }
 
+// ─── Tags ───────────────────────────────────────────────────────────────────
+
+func (d *DB) CreateTag(name, color string) (uint64, error) {
+	res, err := d.db.Exec("INSERT INTO tags (name, color) VALUES (?, ?)", name, color)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	return uint64(id), err
+}
+
+func (d *DB) ListTags() ([]*models.Tag, error) {
+	rows, err := d.db.Query("SELECT id, name, color FROM tags ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []*models.Tag
+	for rows.Next() {
+		t := &models.Tag{}
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
+func (d *DB) DeleteTag(id uint64) error {
+	_, err := d.db.Exec("DELETE FROM tags WHERE id = ?", id)
+	return err
+}
+
+func (d *DB) GetNodeTags(nodeID uint64) ([]models.Tag, error) {
+	rows, err := d.db.Query(
+		"SELECT t.id, t.name, t.color FROM tags t JOIN node_tags nt ON nt.tag_id = t.id WHERE nt.node_id = ? ORDER BY t.name",
+		nodeID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []models.Tag
+	for rows.Next() {
+		var t models.Tag
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
+func (d *DB) SetNodeTags(nodeID uint64, tagIDs []uint64) error {
+	_, err := d.db.Exec("DELETE FROM node_tags WHERE node_id = ?", nodeID)
+	if err != nil {
+		return err
+	}
+	for _, tid := range tagIDs {
+		if _, err := d.db.Exec("INSERT INTO node_tags (node_id, tag_id) VALUES (?, ?)", nodeID, tid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetAllNodeTags returns tags for all nodes in a single query, keyed by node ID.
+func (d *DB) GetAllNodeTags() (map[uint64][]models.Tag, error) {
+	rows, err := d.db.Query(
+		"SELECT nt.node_id, t.id, t.name, t.color FROM node_tags nt JOIN tags t ON t.id = nt.tag_id ORDER BY t.name",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := make(map[uint64][]models.Tag)
+	for rows.Next() {
+		var nodeID uint64
+		var t models.Tag
+		if err := rows.Scan(&nodeID, &t.ID, &t.Name, &t.Color); err != nil {
+			return nil, err
+		}
+		m[nodeID] = append(m[nodeID], t)
+	}
+	return m, rows.Err()
+}
+
 // ─── SMTP Config ────────────────────────────────────────────────────────────
 
 func (d *DB) GetSMTPConfig() (*models.SMTPConfig, error) {

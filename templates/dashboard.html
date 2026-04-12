@@ -49,7 +49,7 @@
 <div class="row row-deck row-cards mb-3">
   {{range .Groups}}
   <div class="col-sm-6 col-lg-3">
-    <div class="card">
+    <div class="card group-card" data-group="{{.Name}}" style="cursor: pointer; transition: box-shadow 0.15s;" onclick="filterByGroup('{{.Name}}', this)">
       <div class="card-body">
         <h3 class="card-title">{{.Name}}</h3>
         <div class="text-muted">{{.NodeCount}} nodes</div>
@@ -73,9 +73,33 @@
 
 <div class="card">
   <div class="card-header">
-    <h3 class="card-title">Nodes</h3>
-    <div class="card-actions">
-      <input type="text" id="node-search" class="form-control form-control-sm" placeholder="Search nodes…">
+    <h3 class="card-title">
+      Nodes
+      <span id="group-filter-label" class="ms-2 badge text-bg-primary" style="display: none;">
+        <span id="group-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearGroupFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
+      <span id="tag-filter-label" class="ms-2 badge" style="display: none;">
+        <span id="tag-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearTagFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
+    </h3>
+    <div class="card-actions d-flex gap-2 align-items-center">
+      {{if .AllTags}}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-tag"></i> Filter by tag
+        </button>
+        <div class="dropdown-menu">
+          {{range .AllTags}}
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByTag('{{.Name}}', '{{.Color}}')">
+            <span class="badge me-1" style="background-color: {{.Color}};">&nbsp;</span> {{.Name}}
+          </a>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+      <input type="text" id="node-search" class="form-control form-control-sm" placeholder="Search nodes…" style="width: 200px;">
     </div>
   </div>
   <div class="table-responsive">
@@ -84,6 +108,7 @@
         <tr>
           <th>Node Name</th>
           <th>Client Group</th>
+          <th>Tags</th>
           <th>Last Seen</th>
           <th>Jobs</th>
           <th>Status</th>
@@ -92,9 +117,10 @@
       </thead>
       <tbody>
         {{range .Nodes}}
-        <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'">
+        <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'" data-tags="{{range .Tags}}{{.Name}},{{end}}">
           <td>{{.Name}}</td>
           <td>{{.ClientGroup}}</td>
+          <td onclick="event.stopPropagation()">{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
           <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
           <td>{{.JobCount}}</td>
           <td>
@@ -117,7 +143,7 @@
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="6" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
+        <tr><td colspan="7" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
         {{end}}
       </tbody>
     </table>
@@ -129,12 +155,73 @@
   const input = document.getElementById('node-search');
   const rows  = document.querySelectorAll('#node-table tbody tr');
   if (!input) return;
-  input.addEventListener('input', function() {
-    const q = this.value.toLowerCase();
-    rows.forEach(function(row) {
-      row.style.display = row.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+  input.addEventListener('input', applyFilters);
+
+  window._activeGroup = '';
+  window._activeTag = '';
+
+  window.filterByTag = function(tag, color) {
+    if (window._activeTag === tag) {
+      clearTagFilter();
+      return;
+    }
+    window._activeTag = tag;
+    var label = document.getElementById('tag-filter-label');
+    var nameEl = document.getElementById('tag-filter-name');
+    nameEl.textContent = tag;
+    label.style.display = '';
+    label.style.backgroundColor = color;
+    applyFilters();
+  };
+
+  window.clearTagFilter = function() {
+    window._activeTag = '';
+    document.getElementById('tag-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  window.filterByGroup = function(group, card) {
+    // Toggle: click same card again to clear.
+    if (window._activeGroup === group) {
+      clearGroupFilter();
+      return;
+    }
+    window._activeGroup = group;
+    document.querySelectorAll('.group-card').forEach(function(c) {
+      c.style.boxShadow = '';
+      c.style.outline = '';
     });
-  });
+    card.style.boxShadow = '0 0 0 3px rgba(32, 107, 196, 0.5)';
+    document.getElementById('group-filter-label').style.display = '';
+    document.getElementById('group-filter-name').textContent = group;
+    applyFilters();
+  };
+
+  window.clearGroupFilter = function() {
+    window._activeGroup = '';
+    document.querySelectorAll('.group-card').forEach(function(c) {
+      c.style.boxShadow = '';
+    });
+    document.getElementById('group-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  function applyFilters() {
+    const q = (input.value || '').toLowerCase();
+    const group = window._activeGroup;
+    const tag = window._activeTag;
+    rows.forEach(function(row) {
+      const cells = row.querySelectorAll('td');
+      if (cells.length < 2) { row.style.display = ''; return; }
+      const text = row.textContent.toLowerCase();
+      const rowGroup = cells[1].textContent.trim();
+      const rowTags = (row.getAttribute('data-tags') || '');
+      const matchSearch = !q || text.indexOf(q) !== -1;
+      const matchGroup = !group || rowGroup === group;
+      const matchTag = !tag || rowTags.indexOf(tag + ',') !== -1;
+      row.style.display = (matchSearch && matchGroup && matchTag) ? '' : 'none';
+    });
+  }
 })();
 </script>
 {{end}}

@@ -121,6 +121,10 @@ func main() {
 	mux.HandleFunc("/nodes/new", webServer.RequireAuth(webServer.HandleNodeNew))
 	mux.HandleFunc("/nodes/", webServer.RequireAuth(nodeRouter(webServer)))
 
+	// Tags
+	mux.HandleFunc("/tags/new", webServer.RequireAuth(webServer.HandleTagCreate))
+	mux.HandleFunc("/tags/", webServer.RequireAuth(webServer.HandleTagDelete))
+
 	// Terminal WebSocket (separate from /nodes/ tree because it uses a different path style)
 	mux.HandleFunc("/ws/terminal", webServer.RequireAuth(webServer.HandleTerminalWS))
 
@@ -218,6 +222,8 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodePSK(w, r)
 		case "terminal":
 			s.HandleTerminalPage(w, r)
+		case "tags":
+			s.HandleNodeTags(w, r)
 		default:
 			http.NotFound(w, r)
 		}

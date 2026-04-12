@@ -70,6 +70,7 @@ type Node struct {
 	HwLANIP    string
 	HwPublicIP string
 	HwStorageJSON string // JSON array of StorageInfo
+	Tags          []Tag  // populated separately, not from the main query
 }
 
 // TunnelReady returns true if the server can dial 127.0.0.1:TunnelPort and expect to reach the node.
@@ -224,6 +225,13 @@ type SMTPConfig struct {
 	FromName    string
 	UseTLS      bool
 	Enabled     bool
+}
+
+// Tag represents a user-defined label that can be attached to nodes.
+type Tag struct {
+	ID   uint64
+	Name string
+	Color string // hex color e.g. "#206bc4"
 }
 
 // ReportFilter holds query parameters for filtering check-in history.

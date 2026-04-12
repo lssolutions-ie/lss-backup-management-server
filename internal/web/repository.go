@@ -308,26 +308,64 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build a command that dumps each path and pipes through tar/zip on the node.
-	// Use restic dump with --archive tar for the snapshot subset.
-	// We pass multiple --path flags or use a single parent path.
+	cfg := &ssh.ClientConfig{
+		User:            req.Username,
+		Auth:            []ssh.AuthMethod{ssh.Password(req.Password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         30 * time.Second,
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", *node.TunnelPort)
+	client, err := ssh.Dial("tcp", addr, cfg)
+	if err != nil {
+		http.Error(w, "ssh dial failed", http.StatusBadGateway)
+		return
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		http.Error(w, "ssh session failed", http.StatusBadGateway)
+		return
+	}
+	defer session.Close()
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		return
+	}
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
+		return
+	}
+
 	pathArgs := ""
 	for _, p := range req.Paths {
 		pathArgs += fmt.Sprintf(" --path %s", p)
 	}
-	cmd := fmt.Sprintf("lss-backup-cli repo-dump-zip --json %s %s%s",
+	cmd := fmt.Sprintf("sudo -S lss-backup-cli repo-dump-zip --json %s %s%s",
 		req.JobID, req.SnapshotID, pathArgs)
 
-	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, cmd)
-	if err != nil {
-		log.Printf("repo: zip download node=%d: %v", node.ID, err)
-		http.Error(w, "download failed: "+err.Error(), http.StatusBadGateway)
+	if err := session.Start(cmd); err != nil {
+		http.Error(w, "command failed", http.StatusBadGateway)
 		return
 	}
 
+	fmt.Fprintf(stdin, "%s\n", req.Password)
+	stdin.Close()
+
+	shortID := req.SnapshotID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "snapshot-"+req.SnapshotID[:8]+".zip"))
-	w.Write(output)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "snapshot-"+shortID+".zip"))
+
+	io.Copy(w, stdout)
+	session.Wait()
 
 	log.Printf("repo: zip download node=%d paths=%d", node.ID, len(req.Paths))
 }

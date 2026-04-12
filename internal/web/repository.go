@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/db"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"golang.org/x/crypto/ssh"
 )
@@ -293,8 +294,9 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 
-	// Stream the file content.
-	io.Copy(w, stdout)
+	// Stream the file content, periodically touching the session to prevent idle timeout.
+	sessionToken, _ := r.Context().Value(ctxSession).(string)
+	copyWithSessionKeepAlive(w, stdout, sessionToken, s.DB)
 	session.Wait()
 
 	log.Printf("repo: download node=%d file=%s", node.ID, req.Path)
@@ -389,13 +391,42 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "snapshot-"+shortID+".zip"))
 
-	n, _ := io.Copy(w, stdout)
+	sessionToken, _ := r.Context().Value(ctxSession).(string)
+	n, _ := copyWithSessionKeepAlive(w, stdout, sessionToken, s.DB)
 	session.Wait()
 
 	if stderr.Len() > 0 {
 		log.Printf("repo: zip stderr node=%d: %s", node.ID, stderr.String())
 	}
 	log.Printf("repo: zip download node=%d paths=%d bytes=%d", node.ID, len(req.Paths), n)
+}
+
+// copyWithSessionKeepAlive copies data while periodically touching the session
+// to prevent idle timeout during long downloads.
+func copyWithSessionKeepAlive(dst io.Writer, src io.Reader, sessionToken string, db *db.DB) (int64, error) {
+	buf := make([]byte, 32*1024)
+	var total int64
+	lastTouch := time.Now()
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return total, werr
+			}
+			total += int64(n)
+			// Touch session every 60 seconds during streaming.
+			if time.Since(lastTouch) > 60*time.Second {
+				_ = db.TouchSession(sessionToken)
+				lastTouch = time.Now()
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				return total, nil
+			}
+			return total, err
+		}
+	}
 }
 
 // sshExecOnNodeSudo connects to a node via its reverse tunnel and runs a

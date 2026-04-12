@@ -8,6 +8,14 @@
   .flatpickr-day:hover { background: #f0f0f0 !important; }
   .flatpickr-months { padding: 8px 0 !important; }
   .flatpickr-current-month { font-size: 1.1rem !important; }
+  .progress-bar-indeterminate {
+    background: linear-gradient(90deg, transparent, #206bc4, transparent);
+    animation: indeterminate 1.5s infinite;
+  }
+  @keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+  }
 </style>
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
@@ -56,6 +64,17 @@
 </div>
 
 <div id="repos-container" style="display:none;"></div>
+
+<div id="download-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; display:none; justify-content:center; align-items:center;">
+  <div style="background:#fff; border-radius:12px; padding:2rem; width:360px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="font-size:2rem; margin-bottom:0.5rem;"><i class="ti ti-download"></i></div>
+    <h3 id="download-filename" style="margin:0 0 1rem 0;">Downloading...</h3>
+    <div style="background:#e9ecef; border-radius:4px; height:8px; overflow:hidden; margin-bottom:0.5rem;">
+      <div id="download-progress-bar" style="height:100%; width:0%; background:#206bc4; transition:width 0.3s;"></div>
+    </div>
+    <div id="download-status" class="text-muted" style="font-size:0.85rem;">Connecting...</div>
+  </div>
+</div>
 
 <div id="browse-card" class="card mb-3" style="display:none;">
   <div class="card-header">
@@ -498,7 +517,7 @@
       html += '<td>' + size + '</td>';
       html += '<td>' + escHtml(f.mtime || '') + '</td>';
       if (f.type !== 'dir') {
-        html += '<td><button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="downloadFile(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(filePath) + '\',\'' + escAttr(f.name) + '\')"><i class="ti ti-download me-1"></i>Download</button></td>';
+        html += '<td><button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="downloadFile(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(filePath) + '\',\'' + escAttr(f.name) + '\',' + (f.size || 0) + ')"><i class="ti ti-download me-1"></i>Download</button></td>';
       } else {
         html += '<td></td>';
       }
@@ -539,72 +558,92 @@
       }
     }
 
-    // Multiple items or directories — zip download.
-    var btn = document.getElementById('bulk-download-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="ti ti-loader me-1"></i>Preparing...';
-
-    fetch('/nodes/' + nodeID + '/repo/download-zip', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({}, creds, {
-        job_id: _browseJobID,
-        snapshot_id: _browseSnapID,
-        paths: paths
-      })),
-    })
-    .then(function(r) {
-      if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
-      return r.blob();
-    })
-    .then(function(blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'snapshot-' + _browseSnapLabel + '.zip';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    })
-    .catch(function(err) {
-      alert('Download failed: ' + err.message);
-    })
-    .finally(function() {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="ti ti-download me-1"></i>Download Selected (<span id="bulk-count">' + paths.length + '</span>)';
-    });
+    // Multiple items or directories — zip download with progress.
+    streamDownload(
+      '/nodes/' + nodeID + '/repo/download-zip',
+      Object.assign({}, creds, { job_id: _browseJobID, snapshot_id: _browseSnapID, paths: paths }),
+      'snapshot-' + _browseSnapLabel + '.zip',
+      0
+    );
   };
 
-  window.downloadFile = function(jobID, snapshotID, filePath, fileName) {
-    fetch('/nodes/' + nodeID + '/repo/download', {
+  function showDownloadModal(filename) {
+    document.getElementById('download-filename').textContent = filename;
+    document.getElementById('download-progress-bar').style.width = '0%';
+    document.getElementById('download-progress-bar').classList.remove('progress-bar-indeterminate');
+    document.getElementById('download-status').textContent = 'Connecting...';
+    document.getElementById('download-overlay').style.display = 'flex';
+  }
+
+  function hideDownloadModal() {
+    document.getElementById('download-overlay').style.display = 'none';
+  }
+
+  function updateDownloadProgress(received, total) {
+    var bar = document.getElementById('download-progress-bar');
+    var status = document.getElementById('download-status');
+    var receivedStr = formatBytes(received);
+    if (total > 0) {
+      var pct = Math.min(100, Math.round((received / total) * 100));
+      bar.style.width = pct + '%';
+      status.textContent = receivedStr + ' / ' + formatBytes(total) + ' (' + pct + '%)';
+    } else {
+      // Indeterminate — pulse the bar.
+      bar.style.width = '100%';
+      bar.classList.add('progress-bar-indeterminate');
+      status.textContent = receivedStr + ' downloaded...';
+    }
+  }
+
+  function streamDownload(url, body, filename, expectedSize) {
+    showDownloadModal(filename);
+    fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({}, creds, {
-        job_id: jobID,
-        snapshot_id: snapshotID,
-        path: filePath
-      })),
+      body: JSON.stringify(body),
     })
     .then(function(r) {
       if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
-      return r.blob();
+      var total = parseInt(r.headers.get('Content-Length')) || expectedSize || 0;
+      var reader = r.body.getReader();
+      var chunks = [];
+      var received = 0;
+      function pump() {
+        return reader.read().then(function(result) {
+          if (result.done) return new Blob(chunks);
+          chunks.push(result.value);
+          received += result.value.length;
+          updateDownloadProgress(received, total);
+          return pump();
+        });
+      }
+      return pump();
     })
     .then(function(blob) {
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = fileName;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      hideDownloadModal();
     })
     .catch(function(err) {
+      hideDownloadModal();
       alert('Download failed: ' + err.message);
     });
+  }
+
+  window.downloadFile = function(jobID, snapshotID, filePath, fileName, fileSize) {
+    streamDownload(
+      '/nodes/' + nodeID + '/repo/download',
+      Object.assign({}, creds, { job_id: jobID, snapshot_id: snapshotID, path: filePath }),
+      fileName,
+      fileSize || 0
+    );
   };
 
   window.closeBrowser = function() {

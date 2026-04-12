@@ -247,6 +247,24 @@
       return;
     }
 
+    // Rsync jobs: go straight to file browser (no snapshots).
+    if (job.program === 'rsync') {
+      _browseJobID = jobID;
+      _browseSnapID = '';
+      _browseSnapLabel = job.job_name || jobID;
+      _browsePath = '';
+      _navStack = [];
+
+      if (_expandedJob !== null) {
+        body.style.display = 'none';
+        chevron.style.transform = 'rotate(0deg)';
+        _expandedJob = null;
+      }
+      document.getElementById('repos-container').style.display = 'none';
+      fetchFiles();
+      return;
+    }
+
     // Check if already loaded
     if (body.getAttribute('data-loaded') === 'true') return;
 
@@ -393,15 +411,21 @@
     document.getElementById('browse-body').innerHTML = '';
     renderBreadcrumb();
 
-    fetch('/nodes/' + nodeID + '/repo/browse', {
+    var browseUrl = _browseSnapID
+      ? '/nodes/' + nodeID + '/repo/browse'
+      : '/nodes/' + nodeID + '/repo/browse-rsync';
+
+    var browseBody = Object.assign({}, creds, {
+      job_id: _browseJobID,
+      path: _browsePath
+    });
+    if (_browseSnapID) browseBody.snapshot_id = _browseSnapID;
+
+    fetch(browseUrl, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({}, creds, {
-        job_id: _browseJobID,
-        snapshot_id: _browseSnapID,
-        path: _browsePath
-      })),
+      body: JSON.stringify(browseBody),
     })
     .then(function(r) {
       if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status + ': ' + t); });
@@ -425,7 +449,8 @@
 
   function renderBreadcrumb() {
     var sep = ' <i class="ti ti-chevron-right mx-1" style="font-size:0.7rem; opacity:0.5;"></i> ';
-    var html = '<a href="javascript:void(0)" onclick="navTo(-1)"><i class="ti ti-archive me-1"></i>Snapshot ' + escHtml(_browseSnapLabel) + '</a>';
+    var rootLabel = _browseSnapID ? 'Snapshot ' + escHtml(_browseSnapLabel) : escHtml(_browseSnapLabel);
+    var html = '<a href="javascript:void(0)" onclick="navTo(-1)"><i class="ti ti-archive me-1"></i>' + rootLabel + '</a>';
 
     _navStack.forEach(function(entry, i) {
       html += sep;
@@ -521,7 +546,7 @@
       html += '<td>' + size + '</td>';
       html += '<td>' + escHtml(f.mtime || '') + '</td>';
       if (f.type !== 'dir') {
-        html += '<td><button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="downloadFile(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(filePath) + '\',\'' + escAttr(f.name) + '\',' + (f.size || 0) + ')"><i class="ti ti-download me-1"></i>Download</button></td>';
+        html += '<td><button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="downloadFile(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID || '') + '\',\'' + escAttr(filePath) + '\',\'' + escAttr(f.name) + '\',' + (f.size || 0) + ')"><i class="ti ti-download me-1"></i>Download</button></td>';
       } else {
         html += '<td></td>';
       }
@@ -563,12 +588,13 @@
     }
 
     // Multiple items or directories — zip download with progress.
-    streamDownload(
-      '/nodes/' + nodeID + '/repo/download-zip',
-      Object.assign({}, creds, { job_id: _browseJobID, snapshot_id: _browseSnapID, paths: paths }),
-      'snapshot-' + _browseSnapLabel + '.zip',
-      0
-    );
+    var zipUrl = _browseSnapID
+      ? '/nodes/' + nodeID + '/repo/download-zip'
+      : '/nodes/' + nodeID + '/repo/download-rsync-zip';
+    var zipBody = Object.assign({}, creds, { job_id: _browseJobID, paths: paths });
+    if (_browseSnapID) zipBody.snapshot_id = _browseSnapID;
+    var zipName = _browseSnapID ? 'snapshot-' + _browseSnapLabel + '.zip' : _browseSnapLabel + '.zip';
+    streamDownload(zipUrl, zipBody, zipName, 0);
   };
 
   function showDownloadModal(filename) {
@@ -642,12 +668,12 @@
   }
 
   window.downloadFile = function(jobID, snapshotID, filePath, fileName, fileSize) {
-    streamDownload(
-      '/nodes/' + nodeID + '/repo/download',
-      Object.assign({}, creds, { job_id: jobID, snapshot_id: snapshotID, path: filePath }),
-      fileName,
-      fileSize || 0
-    );
+    var url = snapshotID
+      ? '/nodes/' + nodeID + '/repo/download'
+      : '/nodes/' + nodeID + '/repo/download-rsync';
+    var body = Object.assign({}, creds, { job_id: jobID, path: filePath });
+    if (snapshotID) body.snapshot_id = snapshotID;
+    streamDownload(url, body, fileName, fileSize || 0);
   };
 
   window.closeBrowser = function() {

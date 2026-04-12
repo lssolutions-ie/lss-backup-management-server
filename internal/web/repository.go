@@ -163,6 +163,53 @@ func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 	w.Write(output)
 }
 
+// HandleRepoBrowseRsync is an API endpoint that lists files in an rsync
+// job's destination directory.
+func (s *Server) HandleRepoBrowseRsync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+	if username == "" {
+		jsonError(w, "ssh credentials required", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		JobID string `json:"job_id"`
+		Path  string `json:"path"`
+	}
+	json.Unmarshal(body, &req)
+
+	if !node.TunnelReady() {
+		jsonError(w, "node has no active tunnel", http.StatusBadGateway)
+		return
+	}
+
+	cmd := fmt.Sprintf("lss-backup-cli repo-ls-rsync --json %s", req.JobID)
+	if req.Path != "" {
+		cmd += fmt.Sprintf(" --path %s", req.Path)
+	}
+
+	output, err := sshExecOnNodeSudo(node, username, password, cmd)
+	if err != nil {
+		log.Printf("repo: rsync browse node=%d: %v", node.ID, err)
+		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(output)
+}
+
 // HandleRepoBrowse is an API endpoint that retrieves file listing for a
 // specific snapshot.
 func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +256,174 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(output)
+}
+
+// HandleRepoDownloadRsync streams a single file from an rsync destination via SSH.
+func (s *Server) HandleRepoDownloadRsync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+
+	var req struct {
+		JobID string `json:"job_id"`
+		Path  string `json:"path"`
+	}
+	json.Unmarshal(body, &req)
+
+	if !node.TunnelReady() || req.Path == "" || username == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	cfg := &ssh.ClientConfig{
+		User:            username,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         30 * time.Second,
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", *node.TunnelPort)
+	client, err := ssh.Dial("tcp", addr, cfg)
+	if err != nil {
+		http.Error(w, "ssh dial failed", http.StatusBadGateway)
+		return
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		http.Error(w, "ssh session failed", http.StatusBadGateway)
+		return
+	}
+	defer session.Close()
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		return
+	}
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
+		return
+	}
+
+	cmd := fmt.Sprintf("sudo -S cat %s", req.Path)
+	if err := session.Start(cmd); err != nil {
+		http.Error(w, "command failed", http.StatusBadGateway)
+		return
+	}
+
+	fmt.Fprintf(stdin, "%s\n", password)
+	stdin.Close()
+
+	parts := bytes.Split([]byte(req.Path), []byte("/"))
+	filename := string(parts[len(parts)-1])
+	if filename == "" {
+		filename = "download"
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+
+	sessionToken, _ := r.Context().Value(ctxSession).(string)
+	copyWithSessionKeepAlive(w, stdout, sessionToken, s.DB)
+	session.Wait()
+
+	log.Printf("repo: rsync download node=%d file=%s", node.ID, req.Path)
+}
+
+// HandleRepoDownloadRsyncZip streams multiple files/dirs from rsync destination as zip.
+func (s *Server) HandleRepoDownloadRsyncZip(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+
+	var req struct {
+		JobID string   `json:"job_id"`
+		Paths []string `json:"paths"`
+	}
+	json.Unmarshal(body, &req)
+
+	if !node.TunnelReady() || len(req.Paths) == 0 || username == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	cfg := &ssh.ClientConfig{
+		User:            username,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         30 * time.Second,
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", *node.TunnelPort)
+	client, err := ssh.Dial("tcp", addr, cfg)
+	if err != nil {
+		http.Error(w, "ssh dial failed", http.StatusBadGateway)
+		return
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		http.Error(w, "ssh session failed", http.StatusBadGateway)
+		return
+	}
+	defer session.Close()
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		return
+	}
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		http.Error(w, "stdin pipe failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Use tar to stream multiple files, pipe through gzip-less zip on the node.
+	pathArgs := ""
+	for _, p := range req.Paths {
+		pathArgs += " " + p
+	}
+	cmd := fmt.Sprintf("sudo -S tar cf - %s", pathArgs)
+
+	if err := session.Start(cmd); err != nil {
+		http.Error(w, "command failed", http.StatusBadGateway)
+		return
+	}
+
+	fmt.Fprintf(stdin, "%s\n", password)
+	stdin.Close()
+
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", req.JobID+".tar"))
+
+	sessionToken, _ := r.Context().Value(ctxSession).(string)
+	copyWithSessionKeepAlive(w, stdout, sessionToken, s.DB)
+	session.Wait()
+
+	log.Printf("repo: rsync zip download node=%d paths=%d", node.ID, len(req.Paths))
 }
 
 // HandleRepoDownload streams a single file from a restic snapshot via SSH.

@@ -233,10 +233,16 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleRepoSnapshots(w, r)
 		case "repo/browse":
 			s.HandleRepoBrowse(w, r)
+		case "repo/browse-rsync":
+			s.HandleRepoBrowseRsync(w, r)
 		case "repo/download":
 			s.HandleRepoDownload(w, r)
+		case "repo/download-rsync":
+			s.HandleRepoDownloadRsync(w, r)
 		case "repo/download-zip":
 			s.HandleRepoDownloadZip(w, r)
+		case "repo/download-rsync-zip":
+			s.HandleRepoDownloadRsyncZip(w, r)
 		default:
 			http.NotFound(w, r)
 		}

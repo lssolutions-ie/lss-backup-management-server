@@ -1,0 +1,65 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">Tags</h2>
+      <div class="text-muted">Manage tags and control which users can see nodes with each tag.</div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead>
+            <tr>
+              <th>Tag</th>
+              <th>Color</th>
+              <th class="w-1">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Tags}}
+            <tr>
+              <td><span class="badge" style="background-color: {{.Color}}; font-size: 0.9rem;">{{.Name}}</span></td>
+              <td><code>{{.Color}}</code></td>
+              <td class="text-nowrap">
+                <a href="/tags/{{.ID}}/edit" class="btn btn-sm">Edit</a>
+                <form action="/tags/{{.ID}}/delete" method="POST" class="d-inline" onsubmit="return confirm('Delete tag &quot;{{.Name}}&quot;? It will be removed from all nodes.');">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {{else}}
+            <tr><td colspan="3" class="text-center text-muted">No tags yet.</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Create Tag</h3></div>
+      <div class="card-body">
+        <form action="/tags/new" method="POST" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text" name="name" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Color</label>
+            <input type="color" name="color" class="form-control form-control-color" value="#206bc4">
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Create Tag</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

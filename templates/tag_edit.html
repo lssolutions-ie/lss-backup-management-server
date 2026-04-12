@@ -1,0 +1,61 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">Edit Tag — <span class="badge" style="background-color: {{.Tag.Color}};">{{.Tag.Name}}</span></h2>
+    </div>
+    <div class="col-auto">
+      <a href="/tags" class="btn">Back to Tags</a>
+    </div>
+  </div>
+</div>
+
+{{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Tag Details</h3></div>
+      <div class="card-body">
+        <form action="/tags/{{.Tag.ID}}/edit" method="POST" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text" name="name" class="form-control" value="{{.Tag.Name}}" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Color</label>
+            <input type="color" name="color" class="form-control form-control-color" value="{{.Tag.Color}}">
+          </div>
+
+          <h3 class="card-title mt-4">User Permissions</h3>
+          <p class="text-muted">Select which users can see nodes with this tag. Superadmins always see everything.</p>
+
+          <div class="mb-3">
+            {{$assigned := .Assigned}}
+            {{range .Users}}
+            {{if not .IsSuperAdmin}}
+            <label class="form-check">
+              <input class="form-check-input" type="checkbox" name="user_ids" value="{{.ID}}"
+                {{if index $assigned .ID}}checked{{end}}>
+              <span class="form-check-label">
+                {{.Username}}
+                <span class="text-muted small">({{.Role}})</span>
+              </span>
+            </label>
+            {{end}}
+            {{end}}
+          </div>
+
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="/tags" class="btn">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

@@ -719,6 +719,84 @@ func (d *DB) GetAllNodeTags() (map[uint64][]models.Tag, error) {
 	return m, rows.Err()
 }
 
+func (d *DB) UpdateTag(id uint64, name, color string) error {
+	_, err := d.db.Exec("UPDATE tags SET name = ?, color = ? WHERE id = ?", name, color, id)
+	return err
+}
+
+func (d *DB) GetTagByID(id uint64) (*models.Tag, error) {
+	t := &models.Tag{}
+	err := d.db.QueryRow("SELECT id, name, color FROM tags WHERE id = ?", id).Scan(&t.ID, &t.Name, &t.Color)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
+// GetUserTagIDs returns the tag IDs a user has access to.
+func (d *DB) GetUserTagIDs(userID uint64) ([]uint64, error) {
+	rows, err := d.db.Query("SELECT tag_id FROM user_tags WHERE user_id = ?", userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SetUserTags sets the tags a user has access to.
+func (d *DB) SetUserTags(userID uint64, tagIDs []uint64) error {
+	_, err := d.db.Exec("DELETE FROM user_tags WHERE user_id = ?", userID)
+	if err != nil {
+		return err
+	}
+	for _, tid := range tagIDs {
+		if _, err := d.db.Exec("INSERT INTO user_tags (user_id, tag_id) VALUES (?, ?)", userID, tid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetTagUsers returns user IDs that have access to a tag.
+func (d *DB) GetTagUserIDs(tagID uint64) ([]uint64, error) {
+	rows, err := d.db.Query("SELECT user_id FROM user_tags WHERE tag_id = ?", tagID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SetTagUsers sets which users have access to a tag.
+func (d *DB) SetTagUsers(tagID uint64, userIDs []uint64) error {
+	_, err := d.db.Exec("DELETE FROM user_tags WHERE tag_id = ?", tagID)
+	if err != nil {
+		return err
+	}
+	for _, uid := range userIDs {
+		if _, err := d.db.Exec("INSERT INTO user_tags (user_id, tag_id) VALUES (?, ?)", uid, tagID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ─── SMTP Config ────────────────────────────────────────────────────────────
 
 func (d *DB) GetSMTPConfig() (*models.SMTPConfig, error) {

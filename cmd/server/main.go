@@ -122,8 +122,9 @@ func main() {
 	mux.HandleFunc("/nodes/", webServer.RequireAuth(nodeRouter(webServer)))
 
 	// Tags
-	mux.HandleFunc("/tags/new", webServer.RequireAuth(webServer.HandleTagCreate))
-	mux.HandleFunc("/tags/", webServer.RequireAuth(webServer.HandleTagDelete))
+	mux.HandleFunc("/tags", webServer.RequireAuth(webServer.HandleTags))
+	mux.HandleFunc("/tags/new", webServer.RequireSuperAdmin(webServer.HandleTagCreate))
+	mux.HandleFunc("/tags/", webServer.RequireSuperAdmin(tagRouter(webServer)))
 
 	// Terminal WebSocket (separate from /nodes/ tree because it uses a different path style)
 	mux.HandleFunc("/ws/terminal", webServer.RequireAuth(webServer.HandleTerminalWS))
@@ -224,6 +225,25 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleTerminalPage(w, r)
 		case "tags":
 			s.HandleNodeTags(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func tagRouter(s *web.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/tags/")
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[1] {
+		case "edit":
+			s.HandleTagEdit(w, r)
+		case "delete":
+			s.HandleTagDelete(w, r)
 		default:
 			http.NotFound(w, r)
 		}

@@ -73,6 +73,7 @@
       <div id="download-progress-bar" style="height:100%; width:0%; background:#206bc4; transition:width 0.3s;"></div>
     </div>
     <div id="download-status" class="text-muted" style="font-size:0.85rem;">Connecting...</div>
+    <button id="download-cancel-btn" class="btn btn-outline-danger btn-sm mt-3" onclick="cancelDownload()">Cancel</button>
   </div>
 </div>
 
@@ -592,9 +593,21 @@
     }
   }
 
+  var _downloadAbort = null;
+
+  window.cancelDownload = function() {
+    if (_downloadAbort) {
+      _downloadAbort.abort();
+      _downloadAbort = null;
+    }
+    hideDownloadModal();
+  };
+
   function streamDownload(url, body, filename, expectedSize) {
     showDownloadModal(filename);
+    _downloadAbort = new AbortController();
     fetch(url, {
+      signal: _downloadAbort.signal,
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -626,10 +639,13 @@
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      _downloadAbort = null;
       hideDownloadModal();
     })
     .catch(function(err) {
+      _downloadAbort = null;
       hideDownloadModal();
+      if (err.name === 'AbortError') return; // user cancelled
       alert('Download failed: ' + err.message);
     });
   }

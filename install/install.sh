@@ -448,6 +448,14 @@ cat <<SUMMARY
         sudo certbot --nginx -d $DISPLAY_DOMAIN
         sudo systemctl reload nginx
    3. Visit https://$DISPLAY_DOMAIN/setup to create your superadmin account.
+      Default password: lssbackuppassword (must be changed on first login).
+
+ If behind a reverse proxy (e.g. HAProxy / OPNsense):
+   Add these to the backend configuration for this server:
+     option http-server-close
+     timeout tunnel 24h
+   Without these, WebSocket connections (SSH tunnels, terminal)
+   will be killed after the proxy's default idle timeout.
 
  Important files to back up:
    $SECRET_KEY_FILE   (losing this = re-register all nodes)

@@ -90,32 +90,23 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := strings.TrimSpace(r.FormValue("username"))
-	password := r.FormValue("password")
 	role := r.FormValue("role")
 	if role != "superadmin" && role != "user" && role != "viewer" {
 		role = "user"
 	}
 
-	if username == "" || password == "" {
+	if username == "" {
 		s.render(w, r, http.StatusUnprocessableEntity, "user_form.html", userFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
 			Assigned: formGroupSet(r),
-			Error:    "Username and password are required.",
-		})
-		return
-	}
-	if len(password) < 8 {
-		s.render(w, r, http.StatusUnprocessableEntity, "user_form.html", userFormPageData{
-			PageData: s.newPageData(r),
-			Groups:   groups,
-			Assigned: formGroupSet(r),
-			Error:    "Password must be at least 8 characters.",
+			Error:    "Username is required.",
 		})
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	// All new users get the default password and are forced to change it on first login.
+	hash, err := bcrypt.GenerateFromPassword([]byte("lssbackuppassword"), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("user new: bcrypt: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)

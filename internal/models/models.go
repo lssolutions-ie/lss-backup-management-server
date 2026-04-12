@@ -12,6 +12,7 @@ type User struct {
 	PasswordHash string
 	TOTPSecret   string
 	TOTPEnabled  bool
+	ForceSetup   bool   // true = must change password and enable 2FA before using dashboard
 	Role         string // "superadmin" | "user"
 	CreatedAt    time.Time
 	UpdatedAt    time.Time

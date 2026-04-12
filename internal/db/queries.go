@@ -36,9 +36,9 @@ func (d *DB) CreateUser(username, passwordHash, role string) (uint64, error) {
 func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 	u := &models.User{}
 	err := d.db.QueryRow(
-		"SELECT id, username, password_hash, totp_secret, totp_enabled, role, created_at, updated_at FROM users WHERE username = ?",
+		"SELECT id, username, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users WHERE username = ?",
 		username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -48,9 +48,9 @@ func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 func (d *DB) GetUserByID(id uint64) (*models.User, error) {
 	u := &models.User{}
 	err := d.db.QueryRow(
-		"SELECT id, username, password_hash, totp_secret, totp_enabled, role, created_at, updated_at FROM users WHERE id = ?",
+		"SELECT id, username, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users WHERE id = ?",
 		id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -59,7 +59,7 @@ func (d *DB) GetUserByID(id uint64) (*models.User, error) {
 
 func (d *DB) ListUsers() ([]*models.User, error) {
 	rows, err := d.db.Query(
-		"SELECT id, username, password_hash, totp_secret, totp_enabled, role, created_at, updated_at FROM users ORDER BY username",
+		"SELECT id, username, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users ORDER BY username",
 	)
 	if err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func (d *DB) ListUsers() ([]*models.User, error) {
 	var users []*models.User
 	for rows.Next() {
 		u := &models.User{}
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -83,6 +83,11 @@ func (d *DB) SetTOTPSecret(userID uint64, secret string) error {
 
 func (d *DB) EnableTOTP(userID uint64) error {
 	_, err := d.db.Exec("UPDATE users SET totp_enabled = 1 WHERE id = ?", userID)
+	return err
+}
+
+func (d *DB) ClearForceSetup(userID uint64) error {
+	_, err := d.db.Exec("UPDATE users SET force_setup = 0 WHERE id = ?", userID)
 	return err
 }
 

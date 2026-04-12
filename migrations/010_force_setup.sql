@@ -1,0 +1,2 @@
+ALTER TABLE users
+  ADD COLUMN force_setup TINYINT(1) NOT NULL DEFAULT 1 AFTER totp_enabled;

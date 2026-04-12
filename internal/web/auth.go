@@ -69,26 +69,15 @@ func (s *Server) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := r.FormValue("username")
-	password := r.FormValue("password")
-	confirm := r.FormValue("confirm_password")
 
-	if username == "" || password == "" {
+	if username == "" {
 		s.renderStandalone(w, http.StatusUnprocessableEntity, "setup.html",
-			setupPageData{Error: "Username and password are required."})
-		return
-	}
-	if password != confirm {
-		s.renderStandalone(w, http.StatusUnprocessableEntity, "setup.html",
-			setupPageData{Error: "Passwords do not match."})
-		return
-	}
-	if len(password) < 8 {
-		s.renderStandalone(w, http.StatusUnprocessableEntity, "setup.html",
-			setupPageData{Error: "Password must be at least 8 characters."})
+			setupPageData{Error: "Username is required."})
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	// Default password — user will be forced to change it on first login.
+	hash, err := bcrypt.GenerateFromPassword([]byte("lssbackuppassword"), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("setup: bcrypt: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)

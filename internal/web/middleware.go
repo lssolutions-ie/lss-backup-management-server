@@ -23,6 +23,7 @@ import (
 	"github.com/lssolutions-ie/lss-management-server/internal/config"
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type contextKey int
@@ -167,6 +168,33 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 		if err != nil || user == nil {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
+		}
+
+		// Force setup: redirect to password change or 2FA setup if needed.
+		// Allow access to the setup endpoints themselves to avoid redirect loops.
+		if user.ForceSetup {
+			path := r.URL.Path
+			allowed := path == "/settings/force-password" || path == "/settings/2fa/setup" || path == "/logout"
+			if !allowed {
+				if user.ForceSetup && !user.TOTPEnabled {
+					// Step 1: if password is still the default, change it first.
+					// Step 2: then set up 2FA.
+					// We check password_hash against the default to decide which step.
+					if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("lssbackuppassword")) == nil {
+						http.Redirect(w, r, "/settings/force-password", http.StatusSeeOther)
+						return
+					}
+					http.Redirect(w, r, "/settings/2fa/setup", http.StatusSeeOther)
+					return
+				}
+				// Password changed but 2FA still not enabled.
+				if !user.TOTPEnabled {
+					http.Redirect(w, r, "/settings/2fa/setup", http.StatusSeeOther)
+					return
+				}
+				// Both done — clear the flag.
+				_ = s.DB.ClearForceSetup(user.ID)
+			}
 		}
 
 		ctx := context.WithValue(r.Context(), ctxUser, user)

@@ -24,10 +24,16 @@
       </div>
       {{end}}
 
+      {{if .TargetUser}}
       <div class="mb-3">
-        <label class="form-label">Password {{if .TargetUser}}<small class="text-muted">(leave blank to keep current)</small>{{end}}</label>
-        <input type="password" name="password" class="form-control" {{if not .TargetUser}}required{{end}}>
+        <label class="form-label">Password <small class="text-muted">(leave blank to keep current)</small></label>
+        <input type="password" name="password" class="form-control">
       </div>
+      {{else}}
+      <div class="alert alert-info">
+        Default password: <strong>lssbackuppassword</strong>. The user will be required to change it and set up 2FA on first login.
+      </div>
+      {{end}}
 
       <div class="mb-3">
         <label class="form-label">Role</label>

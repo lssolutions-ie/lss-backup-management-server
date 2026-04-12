@@ -80,3 +80,82 @@ func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 		Success:  "Password updated successfully.",
 	})
 }
+
+type forcePasswordPageData struct {
+	PageData
+	Error string
+}
+
+// HandleForcePassword handles the mandatory password change on first login.
+func (s *Server) HandleForcePassword(w http.ResponseWriter, r *http.Request) {
+	user, _ := r.Context().Value(ctxUser).(*models.User)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		s.render(w, r, http.StatusOK, "force_password.html", forcePasswordPageData{
+			PageData: s.newPageData(r),
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	newPw := r.FormValue("new_password")
+	confirm := r.FormValue("confirm_password")
+
+	if newPw == "" {
+		s.render(w, r, http.StatusUnprocessableEntity, "force_password.html", forcePasswordPageData{
+			PageData: s.newPageData(r),
+			Error:    "Password is required.",
+		})
+		return
+	}
+	if newPw != confirm {
+		s.render(w, r, http.StatusUnprocessableEntity, "force_password.html", forcePasswordPageData{
+			PageData: s.newPageData(r),
+			Error:    "Passwords do not match.",
+		})
+		return
+	}
+	if len(newPw) < 8 {
+		s.render(w, r, http.StatusUnprocessableEntity, "force_password.html", forcePasswordPageData{
+			PageData: s.newPageData(r),
+			Error:    "Password must be at least 8 characters.",
+		})
+		return
+	}
+	if newPw == "lssbackuppassword" {
+		s.render(w, r, http.StatusUnprocessableEntity, "force_password.html", forcePasswordPageData{
+			PageData: s.newPageData(r),
+			Error:    "You cannot reuse the default password.",
+		})
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("force-password: bcrypt: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if err := s.DB.UpdateUserPassword(user.ID, string(hash)); err != nil {
+		log.Printf("force-password: update: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("auth: forced password change user=%q", user.Username)
+	// Next request will hit RequireAuth which will redirect to 2FA setup.
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}

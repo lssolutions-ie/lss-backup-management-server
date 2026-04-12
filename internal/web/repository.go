@@ -279,6 +279,59 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 	log.Printf("repo: download node=%d file=%s", node.ID, req.Path)
 }
 
+// HandleRepoDownloadZip streams multiple files/dirs from a restic snapshot as a zip.
+func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Username   string   `json:"username"`
+		Password   string   `json:"password"`
+		JobID      string   `json:"job_id"`
+		SnapshotID string   `json:"snapshot_id"`
+		Paths      []string `json:"paths"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if !node.TunnelReady() || len(req.Paths) == 0 {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Build a command that dumps each path and pipes through tar/zip on the node.
+	// Use restic dump with --archive tar for the snapshot subset.
+	// We pass multiple --path flags or use a single parent path.
+	pathArgs := ""
+	for _, p := range req.Paths {
+		pathArgs += fmt.Sprintf(" --path %s", p)
+	}
+	cmd := fmt.Sprintf("lss-backup-cli repo-dump-zip --json %s %s%s",
+		req.JobID, req.SnapshotID, pathArgs)
+
+	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, cmd)
+	if err != nil {
+		log.Printf("repo: zip download node=%d: %v", node.ID, err)
+		http.Error(w, "download failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "snapshot-"+req.SnapshotID[:8]+".zip"))
+	w.Write(output)
+
+	log.Printf("repo: zip download node=%d paths=%d", node.ID, len(req.Paths))
+}
+
 // sshExecOnNodeSudo connects to a node via its reverse tunnel and runs a
 // command with sudo, piping the password via stdin.
 func sshExecOnNodeSudo(node *models.Node, username, password, command string) ([]byte, error) {

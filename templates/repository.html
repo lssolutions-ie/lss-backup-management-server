@@ -63,7 +63,10 @@
       <i class="ti ti-folder me-1"></i>
       <span id="browse-title">Files</span>
     </h3>
-    <div class="card-actions">
+    <div class="card-actions d-flex gap-2">
+      <button id="bulk-download-btn" class="btn btn-sm btn-primary" style="display:none;" onclick="bulkDownload()">
+        <i class="ti ti-download me-1"></i>Download Selected (<span id="bulk-count">0</span>)
+      </button>
       <button class="btn btn-sm btn-outline-secondary" onclick="closeBrowser()"><i class="ti ti-arrow-left me-1"></i>Back to Jobs</button>
     </div>
   </div>
@@ -75,11 +78,12 @@
     <table class="table table-vcenter">
       <thead>
         <tr>
+          <th style="width:1px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
           <th>Name</th>
           <th>Type</th>
           <th>Size</th>
           <th>Modified</th>
-          <th></th>
+          <th style="width:1px;"></th>
         </tr>
       </thead>
       <tbody id="browse-body"></tbody>
@@ -449,12 +453,18 @@
       return (a.name || '').localeCompare(b.name || '');
     });
 
+    // Reset select-all and bulk button.
+    var selectAll = document.getElementById('select-all');
+    if (selectAll) selectAll.checked = false;
+    updateBulkButton();
+
     var html = '';
     files.forEach(function(f) {
       var icon = f.type === 'dir' ? 'ti-folder-filled text-warning' : 'ti-file';
       var size = f.type === 'dir' ? '' : formatBytes(f.size || 0);
-      var filePath = f.path || (currentPath + '/' + f.name);
+      var filePath = f.path || (parentPath + '/' + f.name);
       html += '<tr>';
+      html += '<td><input type="checkbox" class="file-check" data-path="' + escAttr(filePath) + '" data-name="' + escAttr(f.name) + '" data-type="' + escAttr(f.type) + '" onchange="updateBulkButton()"></td>';
       if (f.type === 'dir') {
         html += '<td style="cursor:pointer;" onclick="openDir(\'' + escAttr(f.name) + '\',\'' + escAttr(filePath) + '\')"><i class="ti ' + icon + ' me-1"></i> <strong>' + escHtml(f.name) + '</strong></td>';
       } else {
@@ -464,7 +474,7 @@
       html += '<td>' + size + '</td>';
       html += '<td>' + escHtml(f.mtime || '') + '</td>';
       if (f.type !== 'dir') {
-        html += '<td><button class="btn btn-sm btn-outline-secondary" onclick="downloadFile(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(filePath) + '\',\'' + escAttr(f.name) + '\')"><i class="ti ti-download me-1"></i>Download</button></td>';
+        html += '<td><button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="downloadFile(\'' + escAttr(_browseJobID) + '\',\'' + escAttr(_browseSnapID) + '\',\'' + escAttr(filePath) + '\',\'' + escAttr(f.name) + '\')"><i class="ti ti-download me-1"></i>Download</button></td>';
       } else {
         html += '<td></td>';
       }
@@ -472,6 +482,76 @@
     });
     tbody.innerHTML = html;
   }
+
+  window.toggleSelectAll = function(el) {
+    document.querySelectorAll('.file-check').forEach(function(cb) { cb.checked = el.checked; });
+    updateBulkButton();
+  };
+
+  window.updateBulkButton = function() {
+    var checked = document.querySelectorAll('.file-check:checked');
+    var btn = document.getElementById('bulk-download-btn');
+    var count = document.getElementById('bulk-count');
+    if (checked.length > 0) {
+      btn.style.display = '';
+      count.textContent = checked.length;
+    } else {
+      btn.style.display = 'none';
+    }
+  };
+
+  window.bulkDownload = function() {
+    var checked = document.querySelectorAll('.file-check:checked');
+    var paths = [];
+    checked.forEach(function(cb) { paths.push(cb.getAttribute('data-path')); });
+    if (paths.length === 0) return;
+
+    // Single file — use direct download.
+    if (paths.length === 1) {
+      var cb = checked[0];
+      if (cb.getAttribute('data-type') !== 'dir') {
+        downloadFile(_browseJobID, _browseSnapID, paths[0], cb.getAttribute('data-name'));
+        return;
+      }
+    }
+
+    // Multiple items or directories — zip download.
+    var btn = document.getElementById('bulk-download-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader me-1"></i>Preparing...';
+
+    fetch('/nodes/' + nodeID + '/repo/download-zip', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, creds, {
+        job_id: _browseJobID,
+        snapshot_id: _browseSnapID,
+        paths: paths
+      })),
+    })
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+      return r.blob();
+    })
+    .then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'snapshot-' + _browseSnapLabel + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    })
+    .catch(function(err) {
+      alert('Download failed: ' + err.message);
+    })
+    .finally(function() {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-download me-1"></i>Download Selected (<span id="bulk-count">' + paths.length + '</span>)';
+    });
+  };
 
   window.downloadFile = function(jobID, snapshotID, filePath, fileName) {
     fetch('/nodes/' + nodeID + '/repo/download', {

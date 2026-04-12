@@ -139,6 +139,13 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 7c. If the node reported hardware info, persist it.
+	if status.Hardware != nil {
+		if err := h.DB.UpdateNodeHardware(node.ID, status.Hardware); err != nil {
+			log.Printf("api: update hardware node=%d: %v", node.ID, err)
+		}
+	}
+
 	// 8. Notify on job failures
 	for _, job := range status.Jobs {
 		if job.LastStatus == "failure" {

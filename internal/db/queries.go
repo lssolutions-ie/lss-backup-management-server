@@ -258,6 +258,8 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
 		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
 		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
+		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
 		       n.created_at
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
@@ -265,6 +267,8 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 		Scan(&n.ID, &n.UID, &n.Name, &n.ClientGroupID, &n.ClientGroup,
 			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt,
 			&tPort, &n.TunnelConnected, &tKey,
+			&n.HwOS, &n.HwArch, &n.HwCPUs, &n.HwHostname,
+			&n.HwRAMBytes, &n.HwLANIP, &n.HwPublicIP, &n.HwStorageJSON,
 			&n.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -281,6 +285,8 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
 		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
 		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
+		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
 		       n.created_at
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
@@ -288,6 +294,8 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 		Scan(&n.ID, &n.UID, &n.Name, &n.ClientGroupID, &n.ClientGroup,
 			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt,
 			&tPort, &n.TunnelConnected, &tKey,
+			&n.HwOS, &n.HwArch, &n.HwCPUs, &n.HwHostname,
+			&n.HwRAMBytes, &n.HwLANIP, &n.HwPublicIP, &n.HwStorageJSON,
 			&n.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -376,6 +384,25 @@ func (d *DB) UpdateNodeTunnel(nodeID uint64, port int, publicKey string, connect
 	return publicKey != currentKey, nil
 }
 
+// UpdateNodeHardware stores hardware info reported by a node on heartbeat.
+func (d *DB) UpdateNodeHardware(nodeID uint64, hw *models.HardwareInfo) error {
+	storageJSON := "[]"
+	if len(hw.Storage) > 0 {
+		b, _ := json.Marshal(hw.Storage)
+		storageJSON = string(b)
+	}
+	_, err := d.db.Exec(
+		`UPDATE nodes
+		   SET hw_os = ?, hw_arch = ?, hw_cpus = ?, hw_hostname = ?,
+		       hw_ram_bytes = ?, hw_lan_ip = ?, hw_public_ip = ?, hw_storage_json = ?
+		 WHERE id = ?`,
+		hw.OS, hw.Arch, hw.CPUs, hw.Hostname,
+		hw.RAMBytes, hw.LANIP, hw.PublicIP, storageJSON,
+		nodeID,
+	)
+	return err
+}
+
 // ListTunnelPublicKeys returns all non-empty tunnel public keys stored in the
 // nodes table. Used to regenerate the authorized_keys file.
 func (d *DB) ListTunnelPublicKeys() ([]string, error) {
@@ -436,6 +463,8 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
 		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
 		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
+		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
 		       n.created_at,
 		       COUNT(js.id) AS job_count,
 		       CASE
@@ -457,6 +486,8 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 	query += ` GROUP BY n.id, n.uid, n.name, n.client_group_id, cg.name,
 	                    n.psk_encrypted, n.first_seen_at, n.last_seen_at,
 	                    n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+	                    n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
+	                    n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
 	                    n.created_at
 	          ORDER BY n.name`
 
@@ -475,6 +506,8 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 			&ns.ID, &ns.UID, &ns.Name, &ns.ClientGroupID, &ns.ClientGroup,
 			&ns.PSKEncrypted, &ns.FirstSeenAt, &ns.LastSeenAt,
 			&tPort, &ns.TunnelConnected, &tKey,
+			&ns.HwOS, &ns.HwArch, &ns.HwCPUs, &ns.HwHostname,
+			&ns.HwRAMBytes, &ns.HwLANIP, &ns.HwPublicIP, &ns.HwStorageJSON,
 			&ns.CreatedAt,
 			&ns.JobCount, &ns.WorstStatus,
 		); err != nil {
@@ -493,6 +526,8 @@ func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 		SELECT n.id, n.uid, n.name, n.client_group_id, cg.name,
 		       n.psk_encrypted, n.first_seen_at, n.last_seen_at,
 		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
+		       n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
+		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
 		       n.created_at
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
@@ -511,6 +546,8 @@ func (d *DB) ListOfflineNodes() ([]*models.Node, error) {
 			&n.ID, &n.UID, &n.Name, &n.ClientGroupID, &n.ClientGroup,
 			&n.PSKEncrypted, &n.FirstSeenAt, &n.LastSeenAt,
 			&tPort, &n.TunnelConnected, &tKey,
+			&n.HwOS, &n.HwArch, &n.HwCPUs, &n.HwHostname,
+			&n.HwRAMBytes, &n.HwLANIP, &n.HwPublicIP, &n.HwStorageJSON,
 			&n.CreatedAt,
 		); err != nil {
 			return nil, err

@@ -76,6 +76,20 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 			}
 			return fmt.Sprintf("%dm %ds", secs/60, secs%60)
 		},
+		"bytesFmt": func(b int64) string {
+			const (
+				gb = 1024 * 1024 * 1024
+				mb = 1024 * 1024
+			)
+			switch {
+			case b >= gb:
+				return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
+			case b >= mb:
+				return fmt.Sprintf("%.0f MB", float64(b)/float64(mb))
+			default:
+				return fmt.Sprintf("%d B", b)
+			}
+		},
 		"prettyJSON": func(s string) string {
 			if s == "" {
 				return ""

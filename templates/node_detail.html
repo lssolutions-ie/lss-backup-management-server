@@ -59,6 +59,37 @@
       </div>
     </div>
   </div>
+  {{if .Node.HasHardware}}
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <h3 class="card-title">Hardware</h3>
+        <dl class="row">
+          <dt class="col-4">OS</dt>
+          <dd class="col-8">{{.Node.HwOSFormatted}} ({{.Node.HwArch}})</dd>
+          <dt class="col-4">Hostname</dt>
+          <dd class="col-8">{{.Node.HwHostname}}</dd>
+          <dt class="col-4">CPUs</dt>
+          <dd class="col-8">{{.Node.HwCPUs}}</dd>
+          <dt class="col-4">RAM</dt>
+          <dd class="col-8">{{.Node.HwRAMFormatted}}</dd>
+          {{range .Node.HwStorage}}
+          <dt class="col-4">Disk {{.Path}}</dt>
+          <dd class="col-8">{{bytesFmt .UsedBytes}} / {{bytesFmt .TotalBytes}} ({{bytesFmt .FreeBytes}} free)</dd>
+          {{end}}
+          {{if .Node.HwLANIP}}
+          <dt class="col-4">LAN IP</dt>
+          <dd class="col-8">{{.Node.HwLANIP}}</dd>
+          {{end}}
+          {{if .Node.HwPublicIP}}
+          <dt class="col-4">Public IP</dt>
+          <dd class="col-8">{{.Node.HwPublicIP}}</dd>
+          {{end}}
+        </dl>
+      </div>
+    </div>
+  </div>
+  {{end}}
 </div>
 
 <div class="card mb-3">

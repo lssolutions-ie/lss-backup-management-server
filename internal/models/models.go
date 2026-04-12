@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -48,6 +49,15 @@ type Node struct {
 	TunnelConnected bool   // last-reported tunnel-connected flag from the node
 	TunnelPublicKey string // ssh public key registered for the reverse tunnel
 	CreatedAt       time.Time
+	// Hardware info (updated on each heartbeat)
+	HwOS       string
+	HwArch     string
+	HwCPUs     int
+	HwHostname string
+	HwRAMBytes int64
+	HwLANIP    string
+	HwPublicIP string
+	HwStorageJSON string // JSON array of StorageInfo
 }
 
 // TunnelReady returns true if the server can dial 127.0.0.1:TunnelPort and expect to reach the node.
@@ -64,6 +74,44 @@ func (n *Node) IsOnline() bool {
 
 func (n *Node) NeverSeen() bool {
 	return n.FirstSeenAt == nil
+}
+
+// HwRAMFormatted returns RAM in a human-readable format (e.g. "16.0 GB").
+func (n *Node) HwRAMFormatted() string {
+	if n.HwRAMBytes == 0 {
+		return ""
+	}
+	gb := float64(n.HwRAMBytes) / (1024 * 1024 * 1024)
+	return fmt.Sprintf("%.1f GB", gb)
+}
+
+// HwStorage parses the stored JSON into a slice of StorageInfo.
+func (n *Node) HwStorage() []StorageInfo {
+	if n.HwStorageJSON == "" {
+		return nil
+	}
+	var s []StorageInfo
+	_ = json.Unmarshal([]byte(n.HwStorageJSON), &s)
+	return s
+}
+
+// HwOSFormatted returns a user-friendly OS name.
+func (n *Node) HwOSFormatted() string {
+	switch n.HwOS {
+	case "linux":
+		return "Linux"
+	case "darwin":
+		return "macOS"
+	case "windows":
+		return "Windows"
+	default:
+		return n.HwOS
+	}
+}
+
+// HasHardware returns true if hardware info has been reported.
+func (n *Node) HasHardware() bool {
+	return n.HwOS != ""
 }
 
 type JobSnapshot struct {
@@ -103,12 +151,33 @@ type Session struct {
 
 // NodeStatus is the decrypted inner payload sent by a node
 type NodeStatus struct {
-	PayloadVersion string      `json:"payload_version"`
-	ReportType     string      `json:"report_type"` // "heartbeat" | "post_run"; empty treated as "post_run"
-	NodeName       string      `json:"node_name"`
-	ReportedAt     time.Time   `json:"reported_at"`
-	Jobs           []JobStatus `json:"jobs"`
-	Tunnel         *TunnelInfo `json:"tunnel,omitempty"`
+	PayloadVersion string        `json:"payload_version"`
+	ReportType     string        `json:"report_type"` // "heartbeat" | "post_run"; empty treated as "post_run"
+	NodeName       string        `json:"node_name"`
+	ReportedAt     time.Time     `json:"reported_at"`
+	Jobs           []JobStatus   `json:"jobs"`
+	Tunnel         *TunnelInfo   `json:"tunnel,omitempty"`
+	Hardware       *HardwareInfo `json:"hardware,omitempty"`
+}
+
+// HardwareInfo is collected on heartbeats (not post_run).
+type HardwareInfo struct {
+	OS       string        `json:"os"`        // "linux", "darwin", "windows"
+	Arch     string        `json:"arch"`      // "amd64", "arm64"
+	CPUs     int           `json:"cpus"`      // logical CPU count
+	Hostname string        `json:"hostname"`
+	RAMBytes int64         `json:"ram_bytes"`
+	Storage  []StorageInfo `json:"storage"`
+	LANIP    string        `json:"lan_ip"`
+	PublicIP string        `json:"public_ip"`
+}
+
+// StorageInfo represents a single disk/mount point.
+type StorageInfo struct {
+	Path       string `json:"path"`
+	TotalBytes int64  `json:"total_bytes"`
+	FreeBytes  int64  `json:"free_bytes"`
+	UsedBytes  int64  `json:"used_bytes"`
 }
 
 // TunnelInfo is carried on heartbeats by nodes running the reverse-tunnel daemon.

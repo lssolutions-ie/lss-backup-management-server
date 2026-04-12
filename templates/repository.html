@@ -283,21 +283,23 @@
 
     // Filter bar
     html += '<div class="card-body border-bottom py-2">';
-    html += '<div class="row g-2 align-items-end">';
-    html += '<div class="col-auto"><label class="form-label small mb-0">From</label>';
-    html += '<input type="text" class="form-control form-control-sm snap-from" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
-    html += '<div class="col-auto"><label class="form-label small mb-0">To</label>';
-    html += '<input type="text" class="form-control form-control-sm snap-to" data-job="' + jobIdx + '" placeholder="Select date" autocomplete="off"></div>';
-    html += '<div class="col-auto"><label class="form-label small mb-0">Show</label>';
-    html += '<select class="form-select form-select-sm snap-limit" data-job="' + jobIdx + '">';
+    html += '<div class="d-flex align-items-center gap-2" style="flex-wrap:nowrap; overflow-x:auto;">';
+    html += '<div class="btn-group btn-group-sm">';
+    html += '<button class="btn btn-outline-secondary" onclick="snapPreset(' + jobIdx + ',\'today\')">Today</button>';
+    html += '<button class="btn btn-outline-secondary" onclick="snapPreset(' + jobIdx + ',\'week\')">This Week</button>';
+    html += '<button class="btn btn-outline-secondary" onclick="snapPreset(' + jobIdx + ',\'month\')">This Month</button>';
+    html += '<button class="btn btn-outline-secondary" onclick="snapPreset(' + jobIdx + ',\'year\')">This Year</button>';
+    html += '</div>';
+    html += '<div style="width:220px; flex-shrink:0;"><input type="text" class="form-control form-control-sm snap-range" data-job="' + jobIdx + '" placeholder="Custom Date Range" autocomplete="off" style="cursor:pointer;" readonly></div>';
+    html += '<select class="form-select form-select-sm snap-limit" data-job="' + jobIdx + '" style="width:110px;">';
     html += '<option value="10" selected>Latest 10</option>';
     html += '<option value="25">Latest 25</option>';
     html += '<option value="50">Latest 50</option>';
     html += '<option value="0">All</option>';
-    html += '</select></div>';
-    html += '<div class="col-auto"><button class="btn btn-sm btn-primary" onclick="filterSnapshots(' + jobIdx + ')">Filter</button>';
-    html += ' <button class="btn btn-sm btn-outline-secondary" onclick="clearSnapFilter(' + jobIdx + ')">Clear</button></div>';
-    html += '<div class="col-auto text-muted small" id="snap-count-' + jobIdx + '"></div>';
+    html += '</select>';
+    html += '<button class="btn btn-sm btn-primary" onclick="filterSnapshots(' + jobIdx + ')">Filter</button>';
+    html += '<button class="btn btn-sm btn-outline-secondary" onclick="clearSnapFilter(' + jobIdx + ')">Clear</button>';
+    html += '<span class="text-muted small" id="snap-count-' + jobIdx + '"></span>';
     html += '</div></div>';
 
     // Table
@@ -320,12 +322,14 @@
 
     container.innerHTML = html;
 
-    // Init flatpickr
-    flatpickr(container.querySelector('.snap-from[data-job="' + jobIdx + '"]'), {
-      dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
-    });
-    flatpickr(container.querySelector('.snap-to[data-job="' + jobIdx + '"]'), {
-      dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today'
+    // Init flatpickr range picker
+    flatpickr(container.querySelector('.snap-range[data-job="' + jobIdx + '"]'), {
+      mode: 'range',
+      dateFormat: 'Y-m-d',
+      altInput: true,
+      altFormat: 'd M Y',
+      maxDate: 'today',
+      onClose: function() { filterSnapshots(jobIdx); }
     });
 
     // Auto-filter to latest 10 on load
@@ -653,22 +657,64 @@
     _navStack = [];
   };
 
+  window.snapPreset = function(jobIdx, preset) {
+    var rangeEl = document.querySelector('.snap-range[data-job="' + jobIdx + '"]');
+    var limitEl = document.querySelector('.snap-limit[data-job="' + jobIdx + '"]');
+    var now = new Date();
+    var today = now.toISOString().substring(0, 10);
+    var from = '';
+
+    switch (preset) {
+      case 'today':
+        from = today;
+        break;
+      case 'week':
+        var d = new Date(now);
+        d.setDate(d.getDate() - d.getDay() + 1);
+        from = d.toISOString().substring(0, 10);
+        break;
+      case 'month':
+        from = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+        break;
+      case 'year':
+        from = now.getFullYear() + '-01-01';
+        break;
+    }
+
+    if (rangeEl._flatpickr) rangeEl._flatpickr.setDate([from, today]);
+    limitEl.value = '0';
+    filterSnapshots(jobIdx);
+  };
+
   window.filterSnapshots = function(jobIdx) {
-    var fromEl = document.querySelector('.snap-from[data-job="' + jobIdx + '"]');
-    var toEl = document.querySelector('.snap-to[data-job="' + jobIdx + '"]');
+    var rangeEl = document.querySelector('.snap-range[data-job="' + jobIdx + '"]');
     var limitEl = document.querySelector('.snap-limit[data-job="' + jobIdx + '"]');
     var tbody = document.getElementById('snap-body-' + jobIdx);
     var countEl = document.getElementById('snap-count-' + jobIdx);
     if (!tbody) return;
 
-    // Get the hidden flatpickr input value (the original input, not the alt).
-    var fromVal = fromEl._flatpickr ? fromEl._flatpickr.input.value : fromEl.value;
-    var toVal = toEl._flatpickr ? toEl._flatpickr.input.value : toEl.value;
-    var fromTs = fromVal ? new Date(fromVal + 'T00:00:00').getTime() : 0;
-    var toTs = toVal ? new Date(toVal + 'T23:59:59').getTime() : Infinity;
+    var fromTs = 0;
+    var toTs = Infinity;
+    if (rangeEl._flatpickr && rangeEl._flatpickr.selectedDates.length > 0) {
+      var dates = rangeEl._flatpickr.selectedDates;
+      fromTs = dates[0].getTime();
+      if (dates.length > 1) {
+        toTs = dates[1].getTime() + 86400000 - 1; // end of day
+      } else {
+        toTs = fromTs + 86400000 - 1;
+      }
+    }
     var limit = parseInt(limitEl.value) || 0;
 
-    var rows = tbody.querySelectorAll('tr');
+    // Collect rows with timestamps, sort newest first.
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+      return parseInt(b.getAttribute('data-ts')) - parseInt(a.getAttribute('data-ts'));
+    });
+    // Re-append in sorted order.
+    rows.forEach(function(row) { tbody.appendChild(row); });
+
+    // Apply filters — iterate newest first so "Latest N" gets the newest.
     var shown = 0;
     rows.forEach(function(row) {
       var ts = parseInt(row.getAttribute('data-ts'));
@@ -685,12 +731,10 @@
   };
 
   window.clearSnapFilter = function(jobIdx) {
-    var fromEl = document.querySelector('.snap-from[data-job="' + jobIdx + '"]');
-    var toEl = document.querySelector('.snap-to[data-job="' + jobIdx + '"]');
+    var rangeEl = document.querySelector('.snap-range[data-job="' + jobIdx + '"]');
     var limitEl = document.querySelector('.snap-limit[data-job="' + jobIdx + '"]');
     var countEl = document.getElementById('snap-count-' + jobIdx);
-    if (fromEl._flatpickr) fromEl._flatpickr.clear();
-    if (toEl._flatpickr) toEl._flatpickr.clear();
+    if (rangeEl._flatpickr) rangeEl._flatpickr.clear();
     limitEl.value = '0';
     var tbody = document.getElementById('snap-body-' + jobIdx);
     if (tbody) tbody.querySelectorAll('tr').forEach(function(r) { r.style.display = ''; });

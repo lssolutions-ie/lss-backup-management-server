@@ -116,7 +116,7 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.DB.GetUserByUsername(username)
+	user, err := s.DB.GetUserByLogin(username)
 	if err != nil {
 		log.Printf("login: get user: %v", err)
 		s.renderStandalone(w, http.StatusInternalServerError, "login.html",

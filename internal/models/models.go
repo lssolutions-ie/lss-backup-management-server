@@ -9,6 +9,7 @@ import (
 type User struct {
 	ID           uint64
 	Username     string
+	Email        *string // nullable
 	PasswordHash string
 	TOTPSecret   string
 	TOTPEnabled  bool
@@ -16,6 +17,14 @@ type User struct {
 	Role         string // "superadmin" | "user"
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+// EmailStr returns the email or empty string if nil.
+func (u *User) EmailStr() string {
+	if u.Email == nil {
+		return ""
+	}
+	return *u.Email
 }
 
 func (u *User) IsSuperAdmin() bool {

@@ -33,12 +33,41 @@ func (d *DB) CreateUser(username, passwordHash, role string) (uint64, error) {
 	return uint64(id), err
 }
 
+func (d *DB) CreateUserWithEmail(username, email, passwordHash, role string) (uint64, error) {
+	var emailVal *string
+	if email != "" {
+		emailVal = &email
+	}
+	res, err := d.db.Exec(
+		"INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+		username, emailVal, passwordHash, role,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	return uint64(id), err
+}
+
+// GetUserByLogin finds a user by username or email (for login).
+func (d *DB) GetUserByLogin(login string) (*models.User, error) {
+	u := &models.User{}
+	err := d.db.QueryRow(
+		"SELECT id, username, email, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users WHERE username = ? OR email = ?",
+		login, login,
+	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return u, err
+}
+
 func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 	u := &models.User{}
 	err := d.db.QueryRow(
-		"SELECT id, username, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users WHERE username = ?",
+		"SELECT id, username, email, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users WHERE username = ?",
 		username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -48,9 +77,9 @@ func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 func (d *DB) GetUserByID(id uint64) (*models.User, error) {
 	u := &models.User{}
 	err := d.db.QueryRow(
-		"SELECT id, username, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users WHERE id = ?",
+		"SELECT id, username, email, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users WHERE id = ?",
 		id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -59,7 +88,7 @@ func (d *DB) GetUserByID(id uint64) (*models.User, error) {
 
 func (d *DB) ListUsers() ([]*models.User, error) {
 	rows, err := d.db.Query(
-		"SELECT id, username, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users ORDER BY username",
+		"SELECT id, username, email, password_hash, totp_secret, totp_enabled, force_setup, role, created_at, updated_at FROM users ORDER BY username",
 	)
 	if err != nil {
 		return nil, err
@@ -68,7 +97,7 @@ func (d *DB) ListUsers() ([]*models.User, error) {
 	var users []*models.User
 	for rows.Next() {
 		u := &models.User{}
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.TOTPSecret, &u.TOTPEnabled, &u.ForceSetup, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -93,6 +122,15 @@ func (d *DB) ClearForceSetup(userID uint64) error {
 
 func (d *DB) DisableTOTP(userID uint64) error {
 	_, err := d.db.Exec("UPDATE users SET totp_enabled = 0, totp_secret = '' WHERE id = ?", userID)
+	return err
+}
+
+func (d *DB) UpdateUserEmail(id uint64, email string) error {
+	var emailVal *string
+	if email != "" {
+		emailVal = &email
+	}
+	_, err := d.db.Exec("UPDATE users SET email = ? WHERE id = ?", emailVal, id)
 	return err
 }
 

@@ -90,6 +90,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := strings.TrimSpace(r.FormValue("username"))
+	email := strings.TrimSpace(r.FormValue("email"))
 	role := r.FormValue("role")
 	if role != "superadmin" && role != "user" && role != "viewer" {
 		role = "user"
@@ -113,7 +114,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := s.DB.CreateUser(username, string(hash), role)
+	userID, err := s.DB.CreateUserWithEmail(username, email, string(hash), role)
 	if err != nil {
 		log.Printf("user new: create: %v", err)
 		s.render(w, r, http.StatusUnprocessableEntity, "user_form.html", userFormPageData{
@@ -175,10 +176,15 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	email := strings.TrimSpace(r.FormValue("email"))
 	password := r.FormValue("password")
 	role := r.FormValue("role")
 	if role != "superadmin" && role != "user" && role != "viewer" {
 		role = "user"
+	}
+
+	if err := s.DB.UpdateUserEmail(target.ID, email); err != nil {
+		log.Printf("user edit: update email: %v", err)
 	}
 
 	if password != "" {

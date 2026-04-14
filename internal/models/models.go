@@ -214,6 +214,33 @@ type JobSnapshot struct {
 	RepoSizeObservedAt   *time.Time // when we last got an authoritative reading
 	ErrorCategory        string     // server-classified (network/auth/disk_full/...)
 	RepoStatsIntervalSec uint32     // 0 = inherit global, non-zero = per-job override
+	SnapshotCount        uint32     // restic snapshot count (most recent)
+}
+
+// AnomalyType enumerates security-relevant deltas we flag.
+type AnomalyType string
+
+const (
+	AnomalySnapshotDrop AnomalyType = "snapshot_drop"
+	AnomalyFilesDrop    AnomalyType = "files_drop"
+	AnomalyBytesDrop    AnomalyType = "bytes_drop"
+)
+
+// JobAnomaly is one row in the audit log.
+type JobAnomaly struct {
+	ID             uint64
+	NodeID         uint64
+	JobID          string
+	DetectedAt     time.Time
+	AnomalyType    AnomalyType
+	PrevValue      int64
+	CurrValue      int64
+	DeltaValue     int64
+	DeltaPct       float64
+	SnapshotID     string
+	Acknowledged   bool
+	AcknowledgedBy *uint64
+	AcknowledgedAt *time.Time
 }
 
 type NodeReport struct {
@@ -293,11 +320,12 @@ type JobStatus struct {
 
 // JobResult is the per-run summary reported after a backup completes.
 type JobResult struct {
-	BytesTotal uint64 `json:"bytes_total,omitempty"`
-	BytesNew   uint64 `json:"bytes_new,omitempty"`
-	FilesTotal uint64 `json:"files_total,omitempty"`
-	FilesNew   uint64 `json:"files_new,omitempty"`
-	SnapshotID string `json:"snapshot_id,omitempty"`
+	BytesTotal    uint64 `json:"bytes_total,omitempty"`
+	BytesNew      uint64 `json:"bytes_new,omitempty"`
+	FilesTotal    uint64 `json:"files_total,omitempty"`
+	FilesNew      uint64 `json:"files_new,omitempty"`
+	SnapshotID    string `json:"snapshot_id,omitempty"`
+	SnapshotCount uint32 `json:"snapshot_count,omitempty"` // restic-only; total snapshots in repo
 }
 
 // JobDailyStats is an aggregate row for one (node, job, day).
@@ -356,6 +384,11 @@ type ServerTuning struct {
 	OfflineThresholdMinutes      uint32
 	OfflineCheckIntervalMinutes  uint32
 	DefaultSilenceSeconds        uint32
+	AnomalySnapshotDropThreshold uint32
+	AnomalyFilesDropPct          uint32
+	AnomalyFilesDropMin          uint32
+	AnomalyBytesDropPct          uint32
+	AnomalyBytesDropMinMB        uint32
 }
 
 // SMTPConfig holds email server configuration.

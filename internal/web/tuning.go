@@ -47,6 +47,11 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 		t.OfflineThresholdMinutes = parse("offline_threshold_minutes", t.OfflineThresholdMinutes)
 		t.OfflineCheckIntervalMinutes = parse("offline_check_interval_minutes", t.OfflineCheckIntervalMinutes)
 		t.DefaultSilenceSeconds = parse("default_silence_seconds", t.DefaultSilenceSeconds)
+		t.AnomalySnapshotDropThreshold = parse("anomaly_snapshot_drop_threshold", t.AnomalySnapshotDropThreshold)
+		t.AnomalyFilesDropPct = parse("anomaly_files_drop_pct", t.AnomalyFilesDropPct)
+		t.AnomalyFilesDropMin = parse("anomaly_files_drop_min", t.AnomalyFilesDropMin)
+		t.AnomalyBytesDropPct = parse("anomaly_bytes_drop_pct", t.AnomalyBytesDropPct)
+		t.AnomalyBytesDropMinMB = parse("anomaly_bytes_drop_min_mb", t.AnomalyBytesDropMinMB)
 		if err := s.DB.UpdateServerTuning(t); err != nil {
 			log.Printf("tuning: save: %v", err)
 			s.render(w, r, http.StatusInternalServerError, "tuning.html", tuningPageData{

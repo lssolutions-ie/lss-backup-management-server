@@ -991,7 +991,7 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 		       last_error, next_run_at, schedule_description, config_json, updated_at,
 		       bytes_total, bytes_new, files_total, files_new, snapshot_id,
 		       repo_size_observed, repo_size_estimated, repo_size_observed_at,
-		       error_category, repo_stats_interval_seconds
+		       error_category, repo_stats_interval_seconds, snapshot_count
 		FROM job_snapshots WHERE node_id = ? ORDER BY job_id`, nodeID)
 	if err != nil {
 		return nil, err
@@ -1007,7 +1007,7 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 			&j.LastError, &j.NextRunAt, &j.ScheduleDescription, &config, &j.UpdatedAt,
 			&j.BytesTotal, &j.BytesNew, &j.FilesTotal, &j.FilesNew, &j.SnapshotID,
 			&j.RepoSizeObserved, &j.RepoSizeEstimated, &j.RepoSizeObservedAt,
-			&j.ErrorCategory, &j.RepoStatsIntervalSec,
+			&j.ErrorCategory, &j.RepoStatsIntervalSec, &j.SnapshotCount,
 		); err != nil {
 			return nil, err
 		}
@@ -1061,12 +1061,14 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 	// Pull result fields (optional).
 	var bytesTotal, bytesNew, filesTotal, filesNew uint64
 	var snapshotID string
+	var snapshotCount uint32
 	if job.Result != nil {
 		bytesTotal = job.Result.BytesTotal
 		bytesNew = job.Result.BytesNew
 		filesTotal = job.Result.FilesTotal
 		filesNew = job.Result.FilesNew
 		snapshotID = job.Result.SnapshotID
+		snapshotCount = job.Result.SnapshotCount
 	}
 
 	// If the CLI sent an authoritative repo size, mark it observed NOW and reset the estimate to match.
@@ -1084,11 +1086,11 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 		   schedule_description, config_json,
 		   bytes_total, bytes_new, files_total, files_new, snapshot_id,
 		   repo_size_observed, repo_size_estimated, repo_size_observed_at,
-		   error_category)
+		   error_category, snapshot_count)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		        ?, ?, ?, ?, ?,
 		        COALESCE(?, 0), COALESCE(?, 0), ?,
-		        ?)
+		        ?, ?)
 		ON DUPLICATE KEY UPDATE
 		  job_name                  = VALUES(job_name),
 		  program                   = VALUES(program),
@@ -1100,22 +1102,23 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 		  next_run_at               = VALUES(next_run_at),
 		  schedule_description      = VALUES(schedule_description),
 		  config_json               = COALESCE(VALUES(config_json), config_json),
-		  bytes_total               = IF(VALUES(bytes_total) > 0, VALUES(bytes_total), bytes_total),
-		  bytes_new                 = IF(VALUES(bytes_new)   > 0, VALUES(bytes_new),   bytes_new),
-		  files_total               = IF(VALUES(files_total) > 0, VALUES(files_total), files_total),
-		  files_new                 = IF(VALUES(files_new)   > 0, VALUES(files_new),   files_new),
+		  bytes_total               = VALUES(bytes_total),
+		  bytes_new                 = VALUES(bytes_new),
+		  files_total               = VALUES(files_total),
+		  files_new                 = VALUES(files_new),
 		  snapshot_id               = IF(VALUES(snapshot_id) <> '', VALUES(snapshot_id), snapshot_id),
 		  repo_size_observed        = IF(? IS NOT NULL, VALUES(repo_size_observed), repo_size_observed),
 		  repo_size_observed_at     = IF(? IS NOT NULL, VALUES(repo_size_observed_at), repo_size_observed_at),
 		  repo_size_estimated       = IF(? IS NOT NULL, VALUES(repo_size_observed), repo_size_estimated + VALUES(bytes_new)),
 		  error_category            = VALUES(error_category),
+		  snapshot_count            = VALUES(snapshot_count),
 		  updated_at                = CURRENT_TIMESTAMP`,
 		nodeID, job.ID, job.Name, job.Program, job.Enabled, job.LastStatus,
 		job.LastRunAt, job.LastRunDurationSeconds, job.LastError, job.NextRunAt,
 		job.ScheduleDescription, configArg,
 		bytesTotal, bytesNew, filesTotal, filesNew, snapshotID,
 		repoSizeObservedArg, repoSizeObservedArg, repoSizeObservedAtArg,
-		errorCategory,
+		errorCategory, snapshotCount,
 		// args for the three IF(? IS NOT NULL, ...) checks in ON DUPLICATE KEY UPDATE:
 		repoSizeObservedArg, repoSizeObservedAtArg, repoSizeObservedArg,
 	)
@@ -1123,6 +1126,41 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 }
 
 // ─── Node reports ────────────────────────────────────────────────────────────
+
+// ListRecentPostRunReports returns the most recent post_run payloads for a node
+// (optionally within a date range). Used by the per-job history endpoint which
+// parses the payload JSON to extract that specific job's state at each run.
+func (d *DB) ListRecentPostRunReports(nodeID uint64, fromDate, toDate string, limit int) ([]*models.NodeReport, error) {
+	args := []interface{}{nodeID}
+	where := "WHERE node_id = ? AND report_type = 'post_run'"
+	if fromDate != "" {
+		where += " AND reported_at >= ?"
+		args = append(args, fromDate)
+	}
+	if toDate != "" {
+		where += " AND reported_at < DATE_ADD(?, INTERVAL 1 DAY)"
+		args = append(args, toDate)
+	}
+	args = append(args, limit)
+	rows, err := d.db.Query(`
+		SELECT id, node_id, reported_at, received_at, report_type, payload_json
+		FROM node_reports `+where+`
+		ORDER BY reported_at DESC
+		LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.NodeReport
+	for rows.Next() {
+		r := &models.NodeReport{}
+		if err := rows.Scan(&r.ID, &r.NodeID, &r.ReportedAt, &r.ReceivedAt, &r.ReportType, &r.PayloadJSON); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
 
 func (d *DB) InsertNodeReport(nodeID uint64, reportedAt time.Time, reportType, payloadJSON string) error {
 	_, err := d.db.Exec(
@@ -1587,22 +1625,30 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		SELECT repo_stats_interval_seconds, repo_stats_timeout_seconds,
 		       retention_raw_days, retention_post_run_days,
 		       offline_threshold_minutes, offline_check_interval_minutes,
-		       default_silence_seconds
+		       default_silence_seconds,
+		       anomaly_snapshot_drop_threshold, anomaly_files_drop_pct, anomaly_files_drop_min,
+		       anomaly_bytes_drop_pct, anomaly_bytes_drop_min_mb
 		FROM server_tuning WHERE id = 1`).
 		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
 			&t.RetentionRawDays, &t.RetentionPostRunDays,
 			&t.OfflineThresholdMinutes, &t.OfflineCheckIntervalMinutes,
-			&t.DefaultSilenceSeconds)
+			&t.DefaultSilenceSeconds,
+			&t.AnomalySnapshotDropThreshold, &t.AnomalyFilesDropPct, &t.AnomalyFilesDropMin,
+			&t.AnomalyBytesDropPct, &t.AnomalyBytesDropMinMB)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Shouldn't happen (seeded by migration) but fall back to defaults.
 		return &models.ServerTuning{
-			RepoStatsIntervalSeconds:    86400,
-			RepoStatsTimeoutSeconds:     300,
-			RetentionRawDays:            7,
-			RetentionPostRunDays:        30,
-			OfflineThresholdMinutes:     10,
-			OfflineCheckIntervalMinutes: 5,
-			DefaultSilenceSeconds:       3600,
+			RepoStatsIntervalSeconds:     86400,
+			RepoStatsTimeoutSeconds:      300,
+			RetentionRawDays:             7,
+			RetentionPostRunDays:         30,
+			OfflineThresholdMinutes:      10,
+			OfflineCheckIntervalMinutes:  5,
+			DefaultSilenceSeconds:        3600,
+			AnomalySnapshotDropThreshold: 1,
+			AnomalyFilesDropPct:          5,
+			AnomalyFilesDropMin:          10,
+			AnomalyBytesDropPct:          10,
+			AnomalyBytesDropMinMB:        100,
 		}, nil
 	}
 	return t, err
@@ -1617,13 +1663,147 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		  retention_post_run_days        = ?,
 		  offline_threshold_minutes      = ?,
 		  offline_check_interval_minutes = ?,
-		  default_silence_seconds        = ?
+		  default_silence_seconds        = ?,
+		  anomaly_snapshot_drop_threshold = ?,
+		  anomaly_files_drop_pct         = ?,
+		  anomaly_files_drop_min         = ?,
+		  anomaly_bytes_drop_pct         = ?,
+		  anomaly_bytes_drop_min_mb      = ?
 		WHERE id = 1`,
 		t.RepoStatsIntervalSeconds, t.RepoStatsTimeoutSeconds,
 		t.RetentionRawDays, t.RetentionPostRunDays,
 		t.OfflineThresholdMinutes, t.OfflineCheckIntervalMinutes,
-		t.DefaultSilenceSeconds)
+		t.DefaultSilenceSeconds,
+		t.AnomalySnapshotDropThreshold, t.AnomalyFilesDropPct, t.AnomalyFilesDropMin,
+		t.AnomalyBytesDropPct, t.AnomalyBytesDropMinMB)
 	return err
+}
+
+// ─── Anomaly detection ──────────────────────────────────────────────────────
+
+// GetJobSnapshotPrev returns the current job_snapshots row (BEFORE we upsert) so
+// we can compute deltas. Returns nil if not found.
+func (d *DB) GetJobSnapshotPrev(nodeID uint64, jobID string) (*models.JobSnapshot, error) {
+	rows, err := d.db.Query(`
+		SELECT id, node_id, job_id, job_name, program, enabled,
+		       last_status, last_run_at, last_run_duration_seconds,
+		       last_error, next_run_at, schedule_description, config_json, updated_at,
+		       bytes_total, bytes_new, files_total, files_new, snapshot_id,
+		       repo_size_observed, repo_size_estimated, repo_size_observed_at,
+		       error_category, repo_stats_interval_seconds, snapshot_count
+		FROM job_snapshots WHERE node_id = ? AND job_id = ? LIMIT 1`, nodeID, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	j := &models.JobSnapshot{}
+	var config sql.NullString
+	if err := rows.Scan(
+		&j.ID, &j.NodeID, &j.JobID, &j.JobName, &j.Program, &j.Enabled,
+		&j.LastStatus, &j.LastRunAt, &j.LastRunDurationSeconds,
+		&j.LastError, &j.NextRunAt, &j.ScheduleDescription, &config, &j.UpdatedAt,
+		&j.BytesTotal, &j.BytesNew, &j.FilesTotal, &j.FilesNew, &j.SnapshotID,
+		&j.RepoSizeObserved, &j.RepoSizeEstimated, &j.RepoSizeObservedAt,
+		&j.ErrorCategory, &j.RepoStatsIntervalSec, &j.SnapshotCount,
+	); err != nil {
+		return nil, err
+	}
+	if config.Valid {
+		j.ConfigJSON = config.String
+	}
+	return j, nil
+}
+
+// InsertJobAnomaly creates a new anomaly row, but skips if an unacknowledged
+// anomaly of the same (node, job, type) already exists in the last 24h.
+// Prevents alert spam from re-reported pre-wipe state.
+func (d *DB) InsertJobAnomaly(a *models.JobAnomaly) error {
+	var dupCount int
+	err := d.db.QueryRow(`
+		SELECT COUNT(*) FROM job_anomalies
+		WHERE node_id = ? AND job_id = ? AND anomaly_type = ?
+		  AND acknowledged = 0
+		  AND detected_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
+		a.NodeID, a.JobID, string(a.AnomalyType)).Scan(&dupCount)
+	if err != nil {
+		return err
+	}
+	if dupCount > 0 {
+		return nil // dedup — already an open alert
+	}
+	_, err = d.db.Exec(`
+		INSERT INTO job_anomalies (node_id, job_id, anomaly_type, prev_value, curr_value, delta_value, delta_pct, snapshot_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.NodeID, a.JobID, string(a.AnomalyType), a.PrevValue, a.CurrValue, a.DeltaValue, a.DeltaPct, a.SnapshotID)
+	return err
+}
+
+// ListJobAnomalies returns recent anomalies, optionally filtered.
+func (d *DB) ListJobAnomalies(nodeID uint64, jobID string, onlyUnacked bool, limit int) ([]*models.JobAnomaly, error) {
+	args := []interface{}{}
+	where := "WHERE 1=1"
+	if nodeID > 0 {
+		where += " AND node_id = ?"
+		args = append(args, nodeID)
+	}
+	if jobID != "" {
+		where += " AND job_id = ?"
+		args = append(args, jobID)
+	}
+	if onlyUnacked {
+		where += " AND acknowledged = 0"
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	args = append(args, limit)
+	rows, err := d.db.Query(`
+		SELECT id, node_id, job_id, detected_at, anomaly_type, prev_value, curr_value,
+		       delta_value, delta_pct, snapshot_id, acknowledged, acknowledged_by, acknowledged_at
+		FROM job_anomalies `+where+`
+		ORDER BY detected_at DESC LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.JobAnomaly
+	for rows.Next() {
+		a := &models.JobAnomaly{}
+		var atype string
+		var ackedBy sql.NullInt64
+		var ackedAt sql.NullTime
+		var acked int
+		if err := rows.Scan(&a.ID, &a.NodeID, &a.JobID, &a.DetectedAt, &atype, &a.PrevValue, &a.CurrValue,
+			&a.DeltaValue, &a.DeltaPct, &a.SnapshotID, &acked, &ackedBy, &ackedAt); err != nil {
+			return nil, err
+		}
+		a.AnomalyType = models.AnomalyType(atype)
+		a.Acknowledged = acked != 0
+		if ackedBy.Valid {
+			v := uint64(ackedBy.Int64)
+			a.AcknowledgedBy = &v
+		}
+		if ackedAt.Valid {
+			t := ackedAt.Time
+			a.AcknowledgedAt = &t
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) AcknowledgeAnomaly(id uint64, userID uint64) error {
+	_, err := d.db.Exec("UPDATE job_anomalies SET acknowledged = 1, acknowledged_by = ?, acknowledged_at = NOW() WHERE id = ?", userID, id)
+	return err
+}
+
+func (d *DB) CountUnackedAnomalies() (int, error) {
+	var n int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM job_anomalies WHERE acknowledged = 0").Scan(&n)
+	return n, err
 }
 
 // JobsNeedingRepoStats returns the job_ids for a node where repo stats are stale

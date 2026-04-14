@@ -159,6 +159,9 @@ func main() {
 	mux.HandleFunc("/users/new", webServer.RequireManagerOrAbove(webServer.HandleUserNew))
 	mux.HandleFunc("/users/", webServer.RequireManagerOrAbove(userRouter(webServer)))
 
+	// Anomaly ack
+	mux.HandleFunc("/anomalies/", webServer.RequireAuth(webServer.HandleAnomalyAck))
+
 	// Permissions (manager+ can edit unlocked rules; superadmin can lock)
 	mux.HandleFunc("/permissions", webServer.RequireManagerOrAbove(webServer.HandlePermissions))
 	mux.HandleFunc("/permissions/rule", webServer.RequireManagerOrAbove(webServer.HandlePermissionRuleSave))
@@ -242,6 +245,16 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 		// Per-job silence: /nodes/{id}/jobs/{jobID}/silence
 		if strings.HasPrefix(parts[1], "jobs/") && strings.HasSuffix(parts[1], "/silence") {
 			s.HandleJobSilence(w, r)
+			return
+		}
+		// Per-job history: /nodes/{id}/jobs/{jobID}/history
+		if strings.HasPrefix(parts[1], "jobs/") && strings.HasSuffix(parts[1], "/history") {
+			s.HandleJobHistory(w, r)
+			return
+		}
+		// Anomalies (Security tab) for the node.
+		if parts[1] == "anomalies" {
+			s.HandleNodeAnomalies(w, r)
 			return
 		}
 		switch parts[1] {

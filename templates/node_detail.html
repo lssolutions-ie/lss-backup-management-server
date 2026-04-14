@@ -20,6 +20,7 @@
     {{if eq (printf "%s" .NodeAccess) "manage"}}
     <div class="col-auto">
       <div class="btn-list flex-nowrap">
+        <a href="/nodes/{{.Node.ID}}/anomalies" class="btn btn-outline-danger" title="Security anomalies"><i class="ti ti-shield"></i> Security</a>
         {{if .User.CanTerminal}}<a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>{{end}}
         <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
         <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">
@@ -283,6 +284,7 @@
             {{if .ConfigJSON}}
               <button type="button" class="btn btn-sm" onclick="toggleJobConfig('{{.JobID}}')">Config</button>
             {{end}}
+            <button type="button" class="btn btn-sm" onclick="toggleJobHistory('{{.JobID}}')">History</button>
           </td>
         </tr>
         {{if .ConfigJSON}}
@@ -293,6 +295,42 @@
           </td>
         </tr>
         {{end}}
+        <tr id="job-history-{{.JobID}}" class="job-history-row" data-job-id="{{.JobID}}" data-program="{{.Program}}" style="display:none;">
+          <td colspan="10" class="bg-body-tertiary p-3">
+            <div class="d-flex gap-2 mb-2 align-items-end flex-wrap">
+              <div>
+                <label class="form-label small mb-0">Status</label>
+                <select class="form-select form-select-sm jh-status" style="width: 140px;">
+                  <option value="">All</option>
+                  <option value="success">Success</option>
+                  <option value="warning">Warning</option>
+                  <option value="failure">Failure</option>
+                  <option value="skipped">Skipped</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="paused">Paused</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label small mb-0">From</label>
+                <input type="text" class="form-control form-control-sm jh-from" placeholder="Select date" autocomplete="off" style="width: 150px;">
+              </div>
+              <div>
+                <label class="form-label small mb-0">To</label>
+                <input type="text" class="form-control form-control-sm jh-to" placeholder="Select date" autocomplete="off" style="width: 150px;">
+              </div>
+              <div>
+                <label class="form-label small mb-0">Limit</label>
+                <select class="form-select form-select-sm jh-limit" style="width: 80px;">
+                  <option>10</option><option>25</option><option>50</option><option>100</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-sm btn-primary jh-apply">Apply</button>
+            </div>
+            <div class="jh-results">
+              <div class="text-muted small">Click Apply to load history…</div>
+            </div>
+          </td>
+        </tr>
         {{else}}
         <tr><td colspan="10" class="text-center text-muted">No jobs reported yet.</td></tr>
         {{end}}
@@ -353,6 +391,152 @@ function toggleJobConfig(jobID) {
   if (!row) return;
   row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
 }
+
+function toggleJobHistory(jobID) {
+  const row = document.getElementById('job-history-' + jobID);
+  if (!row) return;
+  const opening = row.style.display === 'none';
+  row.style.display = opening ? 'table-row' : 'none';
+  if (opening) {
+    // Auto-load on first open if results haven't been fetched yet.
+    const results = row.querySelector('.jh-results');
+    if (results && results.dataset.loaded !== '1') {
+      loadJobHistory(row, jobID);
+    }
+  }
+}
+
+function loadJobHistory(row, jobID) {
+  const status = row.querySelector('.jh-status').value;
+  const from = row.querySelector('.jh-from').value;
+  const to = row.querySelector('.jh-to').value;
+  const limit = row.querySelector('.jh-limit').value || '10';
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  params.set('limit', limit);
+  const results = row.querySelector('.jh-results');
+  results.innerHTML = '<div class="text-muted small">Loading…</div>';
+  fetch('/nodes/' + __nodeID + '/jobs/' + encodeURIComponent(jobID) + '/history?' + params.toString(),
+        { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+    .then(function(res){ if(!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(function(data){
+      results.dataset.loaded = '1';
+      var rows = (data.entries || []);
+      if (rows.length === 0) { results.innerHTML = '<div class="text-muted small">No matching history.</div>'; return; }
+
+      // Cache on the row element so the sort handler can re-render without refetching.
+      row._jhRows = rows;
+      row._jhSortKey = 'reported_at';
+      row._jhSortDir = 'desc';
+
+      renderJobHistory(row);
+    })
+    .catch(function(err){ results.innerHTML = '<div class="text-danger small">Failed to load: ' + escapeHtml(err.message) + '</div>'; });
+}
+
+function renderJobHistory(row) {
+  var results = row.querySelector('.jh-results');
+  var rows = row._jhRows || [];
+  var key = row._jhSortKey || 'reported_at';
+  var dir = row._jhSortDir || 'desc';
+
+  // Sort copy of rows.
+  var sortType = ({
+    reported_at: 'str', last_run_at: 'str', last_status: 'str', last_error: 'str',
+    last_run_duration_seconds: 'num', bytes_new: 'num', files_new: 'num',
+  })[key] || 'str';
+  var sorted = rows.slice().sort(function(a, b){
+    var av = a[key], bv = b[key];
+    if (sortType === 'num') { av = +(av || 0); bv = +(bv || 0); return dir === 'asc' ? av - bv : bv - av; }
+    av = (av || '').toString(); bv = (bv || '').toString();
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  var program = (row.getAttribute('data-program') || '').toLowerCase();
+  var showSnapshot = program !== 'rsync';
+
+  function arrow(k){ return key === k ? (dir === 'asc' ? ' ▲' : ' ▼') : ''; }
+  var head = '<tr>' +
+    '<th class="jh-sort" data-key="reported_at" style="cursor:pointer">Reported' + arrow('reported_at') + '</th>' +
+    '<th class="jh-sort" data-key="last_run_at" style="cursor:pointer">Last Run' + arrow('last_run_at') + '</th>' +
+    '<th class="jh-sort" data-key="last_status" style="cursor:pointer">Status' + arrow('last_status') + '</th>' +
+    '<th class="jh-sort" data-key="last_run_duration_seconds" style="cursor:pointer">Dur.' + arrow('last_run_duration_seconds') + '</th>' +
+    '<th class="jh-sort" data-key="bytes_new" style="cursor:pointer">Bytes New' + arrow('bytes_new') + '</th>' +
+    '<th class="jh-sort" data-key="files_new" style="cursor:pointer">Files' + arrow('files_new') + '</th>';
+  if (showSnapshot) head += '<th>Snapshot</th>';
+  head += '<th class="jh-sort" data-key="last_error" style="cursor:pointer">Error' + arrow('last_error') + '</th></tr>';
+
+  var html = '<table class="table table-sm table-vcenter mb-0" style="font-size: 0.85rem;"><thead>' + head + '</thead><tbody>';
+  sorted.forEach(function(e){
+    var statusBadge = '<span class="badge text-bg-secondary">' + escapeHtml(e.last_status || '—') + '</span>';
+    if (e.last_status === 'success') statusBadge = '<span class="badge text-bg-success">Success</span>';
+    else if (e.last_status === 'warning') statusBadge = '<span class="badge text-bg-warning">Warning</span>';
+    else if (e.last_status === 'failure') statusBadge = '<span class="badge text-bg-danger">Failure</span>';
+    else if (e.last_status === 'skipped') statusBadge = '<span class="badge text-bg-info">Skipped</span>';
+    else if (e.last_status === 'cancelled') statusBadge = '<span class="badge text-bg-secondary">Cancelled</span>';
+    html += '<tr>' +
+      '<td>' + escapeHtml(e.reported_at || '') + '</td>' +
+      '<td>' + escapeHtml(e.last_run_at || '—') + '</td>' +
+      '<td>' + statusBadge + '</td>' +
+      '<td>' + (e.last_run_duration_seconds || 0) + 's</td>' +
+      '<td>' + (e.bytes_new ? formatBytes(e.bytes_new) : '—') + '</td>' +
+      '<td>' + (e.files_new || '—') + '</td>';
+    if (showSnapshot) html += '<td>' + (e.snapshot_id ? '<code>' + escapeHtml(e.snapshot_id) + '</code>' : '—') + '</td>';
+    var errCell = '';
+    if (e.error_category) {
+      errCell += '<span class="badge text-bg-secondary me-1" style="font-size: 0.65rem;">' + escapeHtml(e.error_category) + '</span>';
+    }
+    if (e.last_error) {
+      errCell += '<span class="text-danger" style="display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;" title="' + escapeHtml(e.last_error) + '">' + escapeHtml(e.last_error) + '</span>';
+    }
+    if (!errCell) errCell = '—';
+    html += '<td>' + errCell + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  results.innerHTML = html;
+
+  // Wire up sort handlers on the freshly rendered headers.
+  results.querySelectorAll('.jh-sort').forEach(function(th){
+    th.addEventListener('click', function(){
+      var k = th.getAttribute('data-key');
+      if (row._jhSortKey === k) {
+        row._jhSortDir = row._jhSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        row._jhSortKey = k;
+        row._jhSortDir = (k === 'reported_at' || k === 'last_run_at') ? 'desc' : 'asc';
+      }
+      renderJobHistory(row);
+    });
+  });
+}
+
+function formatBytes(b) {
+  if (b >= 1073741824) return (b/1073741824).toFixed(1) + ' GB';
+  if (b >= 1048576) return (b/1048576).toFixed(1) + ' MB';
+  if (b >= 1024) return (b/1024).toFixed(0) + ' KB';
+  return b + ' B';
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; });
+}
+
+// Wire Apply buttons + enter-on-search + flatpickr for all history rows once DOM is ready.
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.job-history-row').forEach(function(row){
+    var jobID = row.getAttribute('data-job-id');
+    var apply = row.querySelector('.jh-apply');
+    if (apply) apply.addEventListener('click', function(){ loadJobHistory(row, jobID); });
+    if (typeof flatpickr === 'function') {
+      flatpickr(row.querySelector('.jh-from'), { dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today' });
+      flatpickr(row.querySelector('.jh-to'),   { dateFormat: 'Y-m-d', allowInput: true, altInput: true, altFormat: 'd M Y', maxDate: 'today' });
+    }
+  });
+});
 (function(){
   function syncColorPair(pickerId, hexId) {
     var picker = document.getElementById(pickerId);

@@ -1,0 +1,64 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">Security — Anomalies for {{.Node.Name}}</h2>
+      <div class="text-muted">Possible deletion / corruption / tampering signals. Review and acknowledge each one.</div>
+    </div>
+    <div class="col-auto"><a href="/nodes/{{.Node.ID}}" class="btn">Back to Node</a></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-vcenter">
+      <thead>
+        <tr>
+          <th>Detected</th>
+          <th>Job</th>
+          <th>Type</th>
+          <th>Previous</th>
+          <th>Current</th>
+          <th>Δ</th>
+          <th>%</th>
+          <th>Status</th>
+          <th class="w-1"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{$csrf := .CSRFToken}}
+        {{range .Anomalies}}
+        <tr class="{{if .Acknowledged}}text-muted{{else}}table-danger{{end}}">
+          <td>{{.DetectedAt.Format "2006-01-02 15:04:05"}}</td>
+          <td><code>{{.JobID}}</code></td>
+          <td>
+            {{if eq (printf "%s" .AnomalyType) "snapshot_drop"}}<span class="badge text-bg-danger">Snapshot deletion</span>
+            {{else if eq (printf "%s" .AnomalyType) "files_drop"}}<span class="badge text-bg-warning">Files removed</span>
+            {{else if eq (printf "%s" .AnomalyType) "bytes_drop"}}<span class="badge text-bg-warning">Bytes shrunk</span>
+            {{else}}{{.AnomalyType}}{{end}}
+          </td>
+          <td>{{.PrevValue}}</td>
+          <td>{{.CurrValue}}</td>
+          <td class="text-danger fw-bold">{{.DeltaValue}}</td>
+          <td>{{printf "%.1f" .DeltaPct}}%</td>
+          <td>
+            {{if .Acknowledged}}<span class="badge text-bg-secondary">Ack'd</span>
+            {{else}}<span class="badge text-bg-danger">Unreviewed</span>{{end}}
+          </td>
+          <td>
+            {{if not .Acknowledged}}
+            <form action="/anomalies/{{.ID}}/ack" method="POST" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <button type="submit" class="btn btn-sm btn-success">Acknowledge</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="9" class="text-center text-muted py-3">No anomalies detected. 🛡️</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

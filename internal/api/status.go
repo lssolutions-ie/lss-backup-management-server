@@ -110,14 +110,25 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("api: %s from node=%d uid=%s jobs=%d", reportType, node.ID, node.UID, len(status.Jobs))
 
-	// 5. Upsert job snapshots and remove stale jobs no longer reported by the node.
+	// 5. Upsert job snapshots, detect anomalies, and remove stale jobs.
+	tuning, _ := h.DB.GetServerTuning()
 	reportedJobIDs := make([]string, 0, len(status.Jobs))
 	for _, job := range status.Jobs {
 		cat := classify.Classify(job.LastError)
+
+		// Capture previous state BEFORE the upsert for delta comparison.
+		prev, _ := h.DB.GetJobSnapshotPrev(node.ID, job.ID)
+
 		if err := h.DB.UpsertJobSnapshotWithCategory(node.ID, job, cat); err != nil {
 			log.Printf("api: upsert job %s node=%d: %v", job.ID, node.ID, err)
 		}
 		reportedJobIDs = append(reportedJobIDs, job.ID)
+
+		// Anomaly detection — only if we have a previous snapshot to compare against
+		// and the CLI provided fresh result data.
+		if prev != nil && job.Result != nil && tuning != nil {
+			detectAnomalies(h.DB, node.ID, job, prev, tuning)
+		}
 	}
 	if deleted, err := h.DB.DeleteStaleJobSnapshots(node.ID, reportedJobIDs); err != nil {
 		log.Printf("api: delete stale jobs node=%d: %v", node.ID, err)
@@ -200,6 +211,95 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+}
+
+// detectAnomalies compares the incoming job state against the previous job_snapshots
+// row and inserts job_anomalies rows when configured thresholds are breached.
+func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *models.JobSnapshot, tuning *models.ServerTuning) {
+	if job.Result == nil {
+		return
+	}
+
+	// Snapshot count drop. Only check if previous was non-zero (rsync stays at 0 forever).
+	if prev.SnapshotCount > 0 {
+		if uint32Diff := int64(prev.SnapshotCount) - int64(job.Result.SnapshotCount); uint32Diff > 0 && uint32Diff > int64(tuning.AnomalySnapshotDropThreshold) {
+			a := &models.JobAnomaly{
+				NodeID:      nodeID,
+				JobID:       job.ID,
+				AnomalyType: models.AnomalySnapshotDrop,
+				PrevValue:   int64(prev.SnapshotCount),
+				CurrValue:   int64(job.Result.SnapshotCount),
+				DeltaValue:  -uint32Diff,
+				DeltaPct:    pct(uint32Diff, int64(prev.SnapshotCount)),
+				SnapshotID:  job.Result.SnapshotID,
+			}
+			if err := db.InsertJobAnomaly(a); err != nil {
+				log.Printf("anomaly: insert snapshot_drop: %v", err)
+			} else {
+				log.Printf("anomaly: SNAPSHOT_DROP node=%d job=%s prev=%d curr=%d (delta=-%d)",
+					nodeID, job.ID, prev.SnapshotCount, job.Result.SnapshotCount, uint32Diff)
+			}
+		}
+	}
+
+	// Files total drop. Don't gate on curr > 0 — a true wipe legitimately
+	// reports zero (CLI omits the field via omitempty when value is 0).
+	if prev.FilesTotal > 0 {
+		if filesDiff := int64(prev.FilesTotal) - int64(job.Result.FilesTotal); filesDiff > 0 {
+			pctDrop := pct(filesDiff, int64(prev.FilesTotal))
+			if filesDiff >= int64(tuning.AnomalyFilesDropMin) && pctDrop >= float64(tuning.AnomalyFilesDropPct) {
+				a := &models.JobAnomaly{
+					NodeID:      nodeID,
+					JobID:       job.ID,
+					AnomalyType: models.AnomalyFilesDrop,
+					PrevValue:   int64(prev.FilesTotal),
+					CurrValue:   int64(job.Result.FilesTotal),
+					DeltaValue:  -filesDiff,
+					DeltaPct:    pctDrop,
+					SnapshotID:  job.Result.SnapshotID,
+				}
+				if err := db.InsertJobAnomaly(a); err != nil {
+					log.Printf("anomaly: insert files_drop: %v", err)
+				} else {
+					log.Printf("anomaly: FILES_DROP node=%d job=%s prev=%d curr=%d (delta=-%d, %.1f%%)",
+						nodeID, job.ID, prev.FilesTotal, job.Result.FilesTotal, filesDiff, pctDrop)
+				}
+			}
+		}
+	}
+
+	// Bytes total drop. Same — don't gate on curr > 0.
+	if prev.BytesTotal > 0 {
+		if bytesDiff := int64(prev.BytesTotal) - int64(job.Result.BytesTotal); bytesDiff > 0 {
+			pctDrop := pct(bytesDiff, int64(prev.BytesTotal))
+			minBytes := int64(tuning.AnomalyBytesDropMinMB) * 1024 * 1024
+			if bytesDiff >= minBytes && pctDrop >= float64(tuning.AnomalyBytesDropPct) {
+				a := &models.JobAnomaly{
+					NodeID:      nodeID,
+					JobID:       job.ID,
+					AnomalyType: models.AnomalyBytesDrop,
+					PrevValue:   int64(prev.BytesTotal),
+					CurrValue:   int64(job.Result.BytesTotal),
+					DeltaValue:  -bytesDiff,
+					DeltaPct:    pctDrop,
+					SnapshotID:  job.Result.SnapshotID,
+				}
+				if err := db.InsertJobAnomaly(a); err != nil {
+					log.Printf("anomaly: insert bytes_drop: %v", err)
+				} else {
+					log.Printf("anomaly: BYTES_DROP node=%d job=%s prev=%d curr=%d (delta=-%d, %.1f%%)",
+						nodeID, job.ID, prev.BytesTotal, job.Result.BytesTotal, bytesDiff, pctDrop)
+				}
+			}
+		}
+	}
+}
+
+func pct(part, whole int64) float64 {
+	if whole == 0 {
+		return 0
+	}
+	return float64(part) * 100 / float64(whole)
 }
 
 func apiError(w http.ResponseWriter, code int) {

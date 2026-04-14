@@ -1,0 +1,64 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">Edit Job Tag — <span class="badge" style="background-color: {{.Tag.Color}}; color: {{.Tag.TextColor}};">{{.Tag.Name}}</span></h2>
+    </div>
+    <div class="col-auto"><a href="/job-tags" class="btn">Back</a></div>
+  </div>
+</div>
+
+{{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <form action="/job-tags/{{.Tag.ID}}/edit" method="POST">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text" name="name" class="form-control" value="{{.Tag.Name}}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Priority</label>
+            <select name="priority" class="form-select">
+              <option value="0" {{if eq .Tag.Priority 0}}selected{{end}}>Low</option>
+              <option value="1" {{if eq .Tag.Priority 1}}selected{{end}}>Normal</option>
+              <option value="2" {{if eq .Tag.Priority 2}}selected{{end}}>High</option>
+              <option value="3" {{if eq .Tag.Priority 3}}selected{{end}}>Critical</option>
+            </select>
+          </div>
+          <div class="row mb-3">
+            <div class="col-6">
+              <label class="form-label">Background</label>
+              <input type="color" name="color" id="jt-bg" class="form-control form-control-color w-100" value="{{.Tag.Color}}">
+              <input type="text" id="jt-bg-hex" class="form-control form-control-sm mt-1" value="{{.Tag.Color}}" maxlength="7">
+            </div>
+            <div class="col-6">
+              <label class="form-label">Text</label>
+              <input type="color" name="text_color" id="jt-text" class="form-control form-control-color w-100" value="{{.Tag.TextColor}}">
+              <input type="text" id="jt-text-hex" class="form-control form-control-sm mt-1" value="{{.Tag.TextColor}}" maxlength="7">
+            </div>
+          </div>
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="/job-tags" class="btn">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function sync(pid, hid){
+    var p=document.getElementById(pid), h=document.getElementById(hid);
+    p.addEventListener('input', function(){ h.value=p.value; });
+    h.addEventListener('input', function(){ if(/^#[0-9a-fA-F]{6}$/.test(h.value)) p.value=h.value; });
+  }
+  sync('jt-bg','jt-bg-hex');
+  sync('jt-text','jt-text-hex');
+})();
+</script>
+{{end}}

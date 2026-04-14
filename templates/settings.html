@@ -8,6 +8,14 @@
   <div class="col-lg-6 d-flex flex-column">
     {{if .User.IsSuperAdmin}}
     <div class="card mb-3">
+      <div class="card-header"><h3 class="card-title">Server Tuning</h3></div>
+      <div class="card-body">
+        <p class="text-muted">Global knobs for retention, repository stats cadence, offline detection, and alerts.</p>
+        <a href="/settings/tuning" class="btn btn-primary w-100"><i class="ti ti-adjustments"></i> Open Server Tuning</a>
+      </div>
+    </div>
+
+    <div class="card mb-3">
       <div class="card-header"><h3 class="card-title">Email Server (SMTP)</h3></div>
       <div class="card-body">
         <p class="text-muted">Configure the SMTP server used for sending alert emails and notifications.</p>

@@ -18,6 +18,9 @@ type nodeDetailPageData struct {
 	Reports      []*models.NodeReport
 	AllTags      []*models.Tag
 	NodeAccess   models.AccessLevel
+	Silences     map[string]*models.JobSilence // keyed by jobID
+	JobTagsByID  map[string][]models.JobTag    // keyed by jobID
+	AllJobTags   []*models.JobTag
 	Total        int
 	Page         int
 	Pages        int
@@ -112,6 +115,19 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(ctxUser).(*models.User)
 	access := s.EffectiveNodeAccess(user, node.ID)
 
+	// Per-job silences + job tag links
+	silenceMap := make(map[string]*models.JobSilence)
+	jobTagMap := make(map[string][]models.JobTag)
+	for _, j := range jobs {
+		if sil, _ := s.DB.GetJobSilence(node.ID, j.JobID); sil != nil && sil.IsActive() {
+			silenceMap[j.JobID] = sil
+		}
+		if jt, _ := s.DB.GetJobTags(node.ID, j.JobID); len(jt) > 0 {
+			jobTagMap[j.JobID] = jt
+		}
+	}
+	allJobTags, _ := s.DB.ListJobTags()
+
 	s.render(w, r, http.StatusOK, "node_detail.html", nodeDetailPageData{
 		PageData:     s.newPageData(r),
 		Node:         node,
@@ -119,6 +135,9 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		Reports:      reports,
 		AllTags:      allTags,
 		NodeAccess:   access,
+		Silences:     silenceMap,
+		JobTagsByID:  jobTagMap,
+		AllJobTags:   allJobTags,
 		Total:        total,
 		Page:         page,
 		Pages:        pages,

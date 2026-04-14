@@ -202,6 +202,18 @@ type JobSnapshot struct {
 	ScheduleDescription    string
 	ConfigJSON             string // latest heartbeat-carried job config; empty if never received
 	UpdatedAt              time.Time
+
+	// Extended from CLI v2.2.0+
+	BytesTotal           uint64
+	BytesNew             uint64
+	FilesTotal           uint64
+	FilesNew             uint64
+	SnapshotID           string
+	RepoSizeObserved     uint64     // authoritative from `restic stats`
+	RepoSizeEstimated    uint64     // running: observed + sum of bytes_new since
+	RepoSizeObservedAt   *time.Time // when we last got an authoritative reading
+	ErrorCategory        string     // server-classified (network/auth/disk_full/...)
+	RepoStatsIntervalSec uint32     // 0 = inherit global, non-zero = per-job override
 }
 
 type NodeReport struct {
@@ -266,13 +278,84 @@ type JobStatus struct {
 	Name                   string          `json:"name"`
 	Program                string          `json:"program"`
 	Enabled                bool            `json:"enabled"`
-	LastStatus             string          `json:"last_status"`
+	LastStatus             string          `json:"last_status"` // success|warning|failure|skipped|cancelled|paused|""
 	LastRunAt              *time.Time      `json:"last_run_at,omitempty"`
 	LastRunDurationSeconds int             `json:"last_run_duration_seconds"`
 	LastError              string          `json:"last_error"`
 	NextRunAt              *time.Time      `json:"next_run_at,omitempty"`
 	ScheduleDescription    string          `json:"schedule_description"`
 	Config                 json.RawMessage `json:"config,omitempty"` // heartbeat-only; opaque passthrough
+
+	// Extended fields (v2.2.0+ CLI). All optional; server tolerates missing.
+	Result         *JobResult `json:"result,omitempty"`
+	RepoSizeBytes  *uint64    `json:"repo_size_bytes,omitempty"` // sent only when server asks via reconcile_repo_stats
+}
+
+// JobResult is the per-run summary reported after a backup completes.
+type JobResult struct {
+	BytesTotal uint64 `json:"bytes_total,omitempty"`
+	BytesNew   uint64 `json:"bytes_new,omitempty"`
+	FilesTotal uint64 `json:"files_total,omitempty"`
+	FilesNew   uint64 `json:"files_new,omitempty"`
+	SnapshotID string `json:"snapshot_id,omitempty"`
+}
+
+// JobDailyStats is an aggregate row for one (node, job, day).
+type JobDailyStats struct {
+	NodeID         uint64
+	JobID          string
+	Day            time.Time
+	Runs           int
+	Successes      int
+	Warnings       int
+	Failures       int
+	Skipped        int
+	TotalDurationS int64
+	BytesNewSum    int64
+	WorstErrorCat  string
+}
+
+// JobSilence represents an active mute on a (node, job).
+// SilencedUntil == nil means "forever until explicitly cleared".
+type JobSilence struct {
+	NodeID        uint64
+	JobID         string
+	SilencedUntil *time.Time
+	Reason        string
+	CreatedBy     *uint64
+	CreatedAt     time.Time
+}
+
+// IsActive returns true if the silence is still in effect.
+func (s *JobSilence) IsActive() bool {
+	if s == nil {
+		return false
+	}
+	if s.SilencedUntil == nil {
+		return true
+	}
+	return s.SilencedUntil.After(time.Now())
+}
+
+// JobTag is a label applied to jobs. Priority (0–3) influences alert weighting.
+type JobTag struct {
+	ID        uint64
+	Name      string
+	Color     string
+	TextColor string
+	Priority  uint8 // 0=low, 1=normal, 2=high, 3=critical
+	CreatedAt time.Time
+}
+
+// ServerTuning holds global tunable settings (single-row table).
+type ServerTuning struct {
+	RepoStatsIntervalSeconds     uint32
+	RepoStatsTimeoutSeconds      uint32
+	RetentionRawDays             uint32
+	RetentionPostRunDays         uint32
+	OfflineThresholdMinutes      uint32
+	OfflineCheckIntervalMinutes  uint32
+	DefaultSilenceSeconds        uint32
 }
 
 // SMTPConfig holds email server configuration.

@@ -201,45 +201,87 @@
     <table class="table table-vcenter">
       <thead>
         <tr>
-          <th>Job ID</th>
           <th>Name</th>
-          <th>Program</th>
-          <th>Enabled</th>
           <th>Status</th>
           <th>Last Run</th>
-          <th>Duration</th>
+          <th>Dur.</th>
           <th>Next Run</th>
           <th>Schedule</th>
+          <th>Result</th>
+          <th>Repo Size</th>
+          <th>Tags</th>
           <th class="w-1"></th>
         </tr>
       </thead>
       <tbody>
+        {{$silences := .Silences}}
+        {{$jobTagsByID := .JobTagsByID}}
+        {{$canManage := eq (printf "%s" .NodeAccess) "manage"}}
+        {{$csrf := .CSRFToken}}
+        {{$nodeID := .Node.ID}}
         {{range .Jobs}}
-        <tr>
-          <td><code>{{.JobID}}</code></td>
-          <td>{{.JobName}}</td>
-          <td>{{.Program}}</td>
-          <td>{{if .Enabled}}yes{{else}}no{{end}}</td>
+        {{$silence := index $silences .JobID}}
+        <tr class="{{if $silence}}text-muted{{end}}">
           <td>
-            {{if eq .LastStatus "failure"}}
-            <span class="badge text-bg-danger">Failure</span>
-            {{else if eq .LastStatus "warning"}}
-            <span class="badge text-bg-warning">Warning</span>
-            {{else if eq .LastStatus "success"}}
-            <span class="badge text-bg-success">Success</span>
-            {{else}}
-            <span class="badge text-bg-secondary">Never run</span>
+            <div><strong>{{.JobName}}</strong> {{if not .Enabled}}<span class="badge text-bg-light ms-1">disabled</span>{{end}}{{if $silence}} <span class="badge text-bg-secondary ms-1" title="Muted until {{if $silence.SilencedUntil}}{{$silence.SilencedUntil.Format "2006-01-02 15:04"}}{{else}}forever{{end}}"><i class="ti ti-bell-off"></i> muted</span>{{end}}</div>
+            <div class="text-muted small"><code>{{.JobID}}</code> · {{.Program}}</div>
+          </td>
+          <td>
+            {{if eq .LastStatus "failure"}}<span class="badge text-bg-danger">Failure</span>
+            {{else if eq .LastStatus "warning"}}<span class="badge text-bg-warning">Warning</span>
+            {{else if eq .LastStatus "success"}}<span class="badge text-bg-success">Success</span>
+            {{else if eq .LastStatus "skipped"}}<span class="badge text-bg-info">Skipped</span>
+            {{else if eq .LastStatus "cancelled"}}<span class="badge text-bg-secondary">Cancelled</span>
+            {{else if eq .LastStatus "paused"}}<span class="badge text-bg-secondary">Paused</span>
+            {{else}}<span class="badge text-bg-secondary">Never run</span>
+            {{end}}
+            {{if .ErrorCategory}}<div class="small text-muted mt-1">{{.ErrorCategory}}</div>{{end}}
+          </td>
+          <td class="small">{{if .LastRunAt}}{{.LastRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+          <td class="small">{{formatDuration .LastRunDurationSeconds}}</td>
+          <td class="small">{{if .NextRunAt}}{{.NextRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+          <td class="small">{{.ScheduleDescription}}</td>
+          <td class="small">
+            {{if gt .BytesNew 0}}
+              <div>+{{bytesFmt (int64 .BytesNew)}} new</div>
+            {{end}}
+            {{if gt .FilesNew 0}}
+              <div>{{.FilesNew}} files</div>
+            {{end}}
+            {{if .SnapshotID}}
+              <div class="text-muted"><code>{{.SnapshotID}}</code></div>
+            {{end}}
+            {{if and (eq .BytesNew 0) (eq .FilesNew 0) (not .SnapshotID)}}—{{end}}
+          </td>
+          <td class="small">
+            {{if gt .RepoSizeEstimated 0}}
+              <div>{{bytesFmt (int64 .RepoSizeEstimated)}}</div>
+              {{if .RepoSizeObservedAt}}
+                <div class="text-muted" style="font-size: 0.7rem;">verified {{.RepoSizeObservedAt.Format "2006-01-02"}}</div>
+              {{else}}
+                <div class="text-muted" style="font-size: 0.7rem;">estimate only</div>
+              {{end}}
+            {{else}}—{{end}}
+          </td>
+          <td>
+            {{range (index $jobTagsByID .JobID)}}
+              <span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.7rem;">{{.Name}}</span>
             {{end}}
           </td>
-          <td>{{if .LastRunAt}}{{.LastRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
-          <td>{{.LastRunDurationSeconds}}s</td>
-          <td>{{if .NextRunAt}}{{.NextRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
-          <td>{{.ScheduleDescription}}</td>
-          <td>
+          <td class="text-nowrap">
+            {{if $canManage}}
+              {{if $silence}}
+                <form action="/nodes/{{$nodeID}}/jobs/{{.JobID}}/silence" method="POST" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{$csrf}}">
+                  <input type="hidden" name="action" value="unmute">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary" title="Unmute"><i class="ti ti-bell"></i></button>
+                </form>
+              {{else}}
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openMute('{{.JobID}}', '{{.JobName}}')" title="Mute alerts"><i class="ti ti-bell-off"></i></button>
+              {{end}}
+            {{end}}
             {{if .ConfigJSON}}
-            <button type="button" class="btn btn-sm" onclick="toggleJobConfig('{{.JobID}}')">View Configuration</button>
-            {{else}}
-            <span class="text-muted small">no config yet</span>
+              <button type="button" class="btn btn-sm" onclick="toggleJobConfig('{{.JobID}}')">Config</button>
             {{end}}
           </td>
         </tr>
@@ -259,7 +301,53 @@
   </div>
 </div>
 
+<!-- Mute modal -->
+<div class="modal modal-blur fade" id="mute-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Mute alerts for <span id="mute-job-name">—</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="mute-form" method="POST">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="action" value="mute">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Duration</label>
+            <select name="duration_seconds" class="form-select">
+              <option value="900">15 minutes</option>
+              <option value="3600" selected>1 hour</option>
+              <option value="14400">4 hours</option>
+              <option value="86400">1 day</option>
+              <option value="604800">7 days</option>
+              <option value="0">Forever (until unmuted)</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Reason (optional)</label>
+            <input type="text" name="reason" class="form-control" placeholder="e.g. known issue, maintenance window">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Mute</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
+var __nodeID = {{.Node.ID}};
+function openMute(jobID, jobName) {
+  var f = document.getElementById('mute-form');
+  f.action = '/nodes/' + __nodeID + '/jobs/' + encodeURIComponent(jobID) + '/silence';
+  document.getElementById('mute-job-name').textContent = jobName;
+  var el = document.getElementById('mute-modal');
+  if (window.bootstrap && window.bootstrap.Modal) new window.bootstrap.Modal(el).show();
+  else { el.classList.add('show'); el.style.display = 'block'; }
+}
 function toggleJobConfig(jobID) {
   const row = document.getElementById('job-config-' + jobID);
   if (!row) return;

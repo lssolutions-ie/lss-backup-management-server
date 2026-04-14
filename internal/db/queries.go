@@ -988,7 +988,10 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 	rows, err := d.db.Query(`
 		SELECT id, node_id, job_id, job_name, program, enabled,
 		       last_status, last_run_at, last_run_duration_seconds,
-		       last_error, next_run_at, schedule_description, config_json, updated_at
+		       last_error, next_run_at, schedule_description, config_json, updated_at,
+		       bytes_total, bytes_new, files_total, files_new, snapshot_id,
+		       repo_size_observed, repo_size_estimated, repo_size_observed_at,
+		       error_category, repo_stats_interval_seconds
 		FROM job_snapshots WHERE node_id = ? ORDER BY job_id`, nodeID)
 	if err != nil {
 		return nil, err
@@ -1002,6 +1005,9 @@ func (d *DB) ListJobSnapshots(nodeID uint64) ([]models.JobSnapshot, error) {
 			&j.ID, &j.NodeID, &j.JobID, &j.JobName, &j.Program, &j.Enabled,
 			&j.LastStatus, &j.LastRunAt, &j.LastRunDurationSeconds,
 			&j.LastError, &j.NextRunAt, &j.ScheduleDescription, &config, &j.UpdatedAt,
+			&j.BytesTotal, &j.BytesNew, &j.FilesTotal, &j.FilesNew, &j.SnapshotID,
+			&j.RepoSizeObserved, &j.RepoSizeEstimated, &j.RepoSizeObservedAt,
+			&j.ErrorCategory, &j.RepoStatsIntervalSec,
 		); err != nil {
 			return nil, err
 		}
@@ -1038,6 +1044,12 @@ func (d *DB) DeleteStaleJobSnapshots(nodeID uint64, currentJobIDs []string) (int
 }
 
 func (d *DB) UpsertJobSnapshot(nodeID uint64, job models.JobStatus) error {
+	return d.UpsertJobSnapshotWithCategory(nodeID, job, "")
+}
+
+// UpsertJobSnapshotWithCategory lets the caller pass a pre-classified error_category.
+// Pass "" and the existing category is preserved (or the caller can classify and pass the result).
+func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, errorCategory string) error {
 	// job.Config is populated only on heartbeat reports. On post_run reports
 	// it's nil/empty — pass NULL so ON DUPLICATE KEY UPDATE's COALESCE
 	// preserves whatever config the last heartbeat stored.
@@ -1046,12 +1058,37 @@ func (d *DB) UpsertJobSnapshot(nodeID uint64, job models.JobStatus) error {
 		configArg = string(job.Config)
 	}
 
+	// Pull result fields (optional).
+	var bytesTotal, bytesNew, filesTotal, filesNew uint64
+	var snapshotID string
+	if job.Result != nil {
+		bytesTotal = job.Result.BytesTotal
+		bytesNew = job.Result.BytesNew
+		filesTotal = job.Result.FilesTotal
+		filesNew = job.Result.FilesNew
+		snapshotID = job.Result.SnapshotID
+	}
+
+	// If the CLI sent an authoritative repo size, mark it observed NOW and reset the estimate to match.
+	// Otherwise: add bytes_new to the running estimate (handled in UPDATE clause).
+	var repoSizeObservedArg, repoSizeObservedAtArg interface{}
+	if job.RepoSizeBytes != nil {
+		repoSizeObservedArg = *job.RepoSizeBytes
+		repoSizeObservedAtArg = time.Now().UTC()
+	}
+
 	_, err := d.db.Exec(`
 		INSERT INTO job_snapshots
 		  (node_id, job_id, job_name, program, enabled, last_status,
 		   last_run_at, last_run_duration_seconds, last_error, next_run_at,
-		   schedule_description, config_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   schedule_description, config_json,
+		   bytes_total, bytes_new, files_total, files_new, snapshot_id,
+		   repo_size_observed, repo_size_estimated, repo_size_observed_at,
+		   error_category)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		        ?, ?, ?, ?, ?,
+		        COALESCE(?, 0), COALESCE(?, 0), ?,
+		        ?)
 		ON DUPLICATE KEY UPDATE
 		  job_name                  = VALUES(job_name),
 		  program                   = VALUES(program),
@@ -1063,10 +1100,24 @@ func (d *DB) UpsertJobSnapshot(nodeID uint64, job models.JobStatus) error {
 		  next_run_at               = VALUES(next_run_at),
 		  schedule_description      = VALUES(schedule_description),
 		  config_json               = COALESCE(VALUES(config_json), config_json),
+		  bytes_total               = IF(VALUES(bytes_total) > 0, VALUES(bytes_total), bytes_total),
+		  bytes_new                 = IF(VALUES(bytes_new)   > 0, VALUES(bytes_new),   bytes_new),
+		  files_total               = IF(VALUES(files_total) > 0, VALUES(files_total), files_total),
+		  files_new                 = IF(VALUES(files_new)   > 0, VALUES(files_new),   files_new),
+		  snapshot_id               = IF(VALUES(snapshot_id) <> '', VALUES(snapshot_id), snapshot_id),
+		  repo_size_observed        = IF(? IS NOT NULL, VALUES(repo_size_observed), repo_size_observed),
+		  repo_size_observed_at     = IF(? IS NOT NULL, VALUES(repo_size_observed_at), repo_size_observed_at),
+		  repo_size_estimated       = IF(? IS NOT NULL, VALUES(repo_size_observed), repo_size_estimated + VALUES(bytes_new)),
+		  error_category            = VALUES(error_category),
 		  updated_at                = CURRENT_TIMESTAMP`,
 		nodeID, job.ID, job.Name, job.Program, job.Enabled, job.LastStatus,
 		job.LastRunAt, job.LastRunDurationSeconds, job.LastError, job.NextRunAt,
 		job.ScheduleDescription, configArg,
+		bytesTotal, bytesNew, filesTotal, filesNew, snapshotID,
+		repoSizeObservedArg, repoSizeObservedArg, repoSizeObservedAtArg,
+		errorCategory,
+		// args for the three IF(? IS NOT NULL, ...) checks in ON DUPLICATE KEY UPDATE:
+		repoSizeObservedArg, repoSizeObservedAtArg, repoSizeObservedArg,
 	)
 	return err
 }
@@ -1309,6 +1360,301 @@ func reportStats(payloadJSON string) (int, string) {
 		}
 	}
 	return len(payload.Jobs), worst
+}
+
+// ─── Silences (per-job alert mute) ───────────────────────────────────────────
+
+func (d *DB) GetJobSilence(nodeID uint64, jobID string) (*models.JobSilence, error) {
+	s := &models.JobSilence{}
+	var until sql.NullTime
+	var createdBy sql.NullInt64
+	err := d.db.QueryRow(`
+		SELECT node_id, job_id, silenced_until, reason, created_by, created_at
+		FROM job_silences WHERE node_id = ? AND job_id = ?`, nodeID, jobID).
+		Scan(&s.NodeID, &s.JobID, &until, &s.Reason, &createdBy, &s.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if until.Valid {
+		s.SilencedUntil = &until.Time
+	}
+	if createdBy.Valid {
+		v := uint64(createdBy.Int64)
+		s.CreatedBy = &v
+	}
+	return s, nil
+}
+
+// SetJobSilence creates/updates a silence. Pass nil for silencedUntil to mean "forever".
+func (d *DB) SetJobSilence(nodeID uint64, jobID string, silencedUntil *time.Time, reason string, createdBy uint64) error {
+	_, err := d.db.Exec(`
+		INSERT INTO job_silences (node_id, job_id, silenced_until, reason, created_by)
+		VALUES (?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+		  silenced_until = VALUES(silenced_until),
+		  reason         = VALUES(reason),
+		  created_by     = VALUES(created_by),
+		  created_at     = CURRENT_TIMESTAMP`,
+		nodeID, jobID, silencedUntil, reason, createdBy)
+	return err
+}
+
+func (d *DB) DeleteJobSilence(nodeID uint64, jobID string) error {
+	_, err := d.db.Exec("DELETE FROM job_silences WHERE node_id = ? AND job_id = ?", nodeID, jobID)
+	return err
+}
+
+// GetAllActiveSilences returns a map keyed by "nodeID|jobID" of currently-active silences.
+// Expired silences are filtered out.
+func (d *DB) GetAllActiveSilences() (map[string]*models.JobSilence, error) {
+	rows, err := d.db.Query(`
+		SELECT node_id, job_id, silenced_until, reason, created_by, created_at
+		FROM job_silences
+		WHERE silenced_until IS NULL OR silenced_until > NOW()`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]*models.JobSilence)
+	for rows.Next() {
+		s := &models.JobSilence{}
+		var until sql.NullTime
+		var createdBy sql.NullInt64
+		if err := rows.Scan(&s.NodeID, &s.JobID, &until, &s.Reason, &createdBy, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		if until.Valid {
+			s.SilencedUntil = &until.Time
+		}
+		if createdBy.Valid {
+			v := uint64(createdBy.Int64)
+			s.CreatedBy = &v
+		}
+		out[fmt.Sprintf("%d|%s", s.NodeID, s.JobID)] = s
+	}
+	return out, rows.Err()
+}
+
+// ─── Job tags ────────────────────────────────────────────────────────────────
+
+func (d *DB) ListJobTags() ([]*models.JobTag, error) {
+	rows, err := d.db.Query("SELECT id, name, color, text_color, priority, created_at FROM job_tag_catalog ORDER BY priority DESC, name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.JobTag
+	for rows.Next() {
+		t := &models.JobTag{}
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor, &t.Priority, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) CreateJobTag(name, color, textColor string, priority uint8) (uint64, error) {
+	if color == "" {
+		color = "#206bc4"
+	}
+	if textColor == "" {
+		textColor = "#f0f0f0"
+	}
+	res, err := d.db.Exec("INSERT INTO job_tag_catalog (name, color, text_color, priority) VALUES (?, ?, ?, ?)", name, color, textColor, priority)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	return uint64(id), err
+}
+
+func (d *DB) UpdateJobTag(id uint64, name, color, textColor string, priority uint8) error {
+	_, err := d.db.Exec("UPDATE job_tag_catalog SET name = ?, color = ?, text_color = ?, priority = ? WHERE id = ?", name, color, textColor, priority, id)
+	return err
+}
+
+func (d *DB) DeleteJobTag(id uint64) error {
+	_, err := d.db.Exec("DELETE FROM job_tag_catalog WHERE id = ?", id)
+	return err
+}
+
+// GetJobTags returns tags for a specific (node, job).
+func (d *DB) GetJobTags(nodeID uint64, jobID string) ([]models.JobTag, error) {
+	rows, err := d.db.Query(`
+		SELECT c.id, c.name, c.color, c.text_color, c.priority, c.created_at
+		FROM job_tag_catalog c
+		JOIN job_tag_links l ON l.job_tag_id = c.id
+		WHERE l.node_id = ? AND l.job_id = ?
+		ORDER BY c.priority DESC, c.name`, nodeID, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.JobTag
+	for rows.Next() {
+		t := models.JobTag{}
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor, &t.Priority, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) SetJobTags(nodeID uint64, jobID string, tagIDs []uint64) error {
+	if _, err := d.db.Exec("DELETE FROM job_tag_links WHERE node_id = ? AND job_id = ?", nodeID, jobID); err != nil {
+		return err
+	}
+	for _, tid := range tagIDs {
+		if _, err := d.db.Exec("INSERT INTO job_tag_links (node_id, job_id, job_tag_id) VALUES (?, ?, ?)", nodeID, jobID, tid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ─── Retention / aggregation worker helpers ──────────────────────────────────
+
+// AggregateDailyStats rolls up node_reports beyond `cutoffDays` into job_daily_stats.
+// Returns rows aggregated.
+func (d *DB) AggregateDailyStats(cutoffDays uint32) (int64, error) {
+	// Aggregate post_run reports older than cutoffDays into job_daily_stats.
+	// Reports are JSON, so we rely on job_snapshots having historical last_run per day?
+	// Simpler: aggregate from job_snapshots current state per day based on last_run_at.
+	// This is a rough aggregation — it records at least one "run per day per job".
+	res, err := d.db.Exec(`
+		INSERT INTO job_daily_stats (node_id, job_id, day, runs, successes, warnings, failures, skipped, total_duration_s, bytes_new_sum, worst_error_cat)
+		SELECT node_id, job_id, DATE(last_run_at),
+		       1,
+		       IF(last_status='success',1,0),
+		       IF(last_status='warning',1,0),
+		       IF(last_status='failure',1,0),
+		       IF(last_status='skipped',1,0),
+		       last_run_duration_seconds,
+		       bytes_new,
+		       error_category
+		FROM job_snapshots
+		WHERE last_run_at IS NOT NULL
+		  AND last_run_at < DATE_SUB(NOW(), INTERVAL ? DAY)
+		ON DUPLICATE KEY UPDATE
+		  runs             = runs + 1,
+		  successes        = successes + VALUES(successes),
+		  warnings         = warnings + VALUES(warnings),
+		  failures         = failures + VALUES(failures),
+		  skipped          = skipped + VALUES(skipped),
+		  total_duration_s = total_duration_s + VALUES(total_duration_s),
+		  bytes_new_sum    = bytes_new_sum + VALUES(bytes_new_sum),
+		  worst_error_cat  = IF(VALUES(worst_error_cat) <> '', VALUES(worst_error_cat), worst_error_cat)`,
+		cutoffDays)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// PruneHeartbeatReports deletes heartbeat-type reports older than cutoffDays.
+func (d *DB) PruneHeartbeatReports(cutoffDays uint32) (int64, error) {
+	res, err := d.db.Exec(`
+		DELETE FROM node_reports
+		WHERE report_type = 'heartbeat'
+		  AND reported_at < DATE_SUB(NOW(), INTERVAL ? DAY)`, cutoffDays)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// PruneAllReports deletes any node_reports older than cutoffDays.
+func (d *DB) PruneAllReports(cutoffDays uint32) (int64, error) {
+	res, err := d.db.Exec(`
+		DELETE FROM node_reports
+		WHERE reported_at < DATE_SUB(NOW(), INTERVAL ? DAY)`, cutoffDays)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// ─── Server tuning ───────────────────────────────────────────────────────────
+
+func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
+	t := &models.ServerTuning{}
+	err := d.db.QueryRow(`
+		SELECT repo_stats_interval_seconds, repo_stats_timeout_seconds,
+		       retention_raw_days, retention_post_run_days,
+		       offline_threshold_minutes, offline_check_interval_minutes,
+		       default_silence_seconds
+		FROM server_tuning WHERE id = 1`).
+		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
+			&t.RetentionRawDays, &t.RetentionPostRunDays,
+			&t.OfflineThresholdMinutes, &t.OfflineCheckIntervalMinutes,
+			&t.DefaultSilenceSeconds)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Shouldn't happen (seeded by migration) but fall back to defaults.
+		return &models.ServerTuning{
+			RepoStatsIntervalSeconds:    86400,
+			RepoStatsTimeoutSeconds:     300,
+			RetentionRawDays:            7,
+			RetentionPostRunDays:        30,
+			OfflineThresholdMinutes:     10,
+			OfflineCheckIntervalMinutes: 5,
+			DefaultSilenceSeconds:       3600,
+		}, nil
+	}
+	return t, err
+}
+
+func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
+	_, err := d.db.Exec(`
+		UPDATE server_tuning SET
+		  repo_stats_interval_seconds    = ?,
+		  repo_stats_timeout_seconds     = ?,
+		  retention_raw_days             = ?,
+		  retention_post_run_days        = ?,
+		  offline_threshold_minutes      = ?,
+		  offline_check_interval_minutes = ?,
+		  default_silence_seconds        = ?
+		WHERE id = 1`,
+		t.RepoStatsIntervalSeconds, t.RepoStatsTimeoutSeconds,
+		t.RetentionRawDays, t.RetentionPostRunDays,
+		t.OfflineThresholdMinutes, t.OfflineCheckIntervalMinutes,
+		t.DefaultSilenceSeconds)
+	return err
+}
+
+// JobsNeedingRepoStats returns the job_ids for a node where repo stats are stale
+// per the global default interval (with per-job override respected if non-zero).
+// A job needs stats if: repo_size_observed_at IS NULL  OR  age > effective interval.
+func (d *DB) JobsNeedingRepoStats(nodeID uint64, globalIntervalSec uint32) ([]string, error) {
+	// Effective interval = per-job override if set, else global.
+	rows, err := d.db.Query(`
+		SELECT job_id
+		FROM job_snapshots
+		WHERE node_id = ?
+		  AND enabled = 1
+		  AND program = 'restic'
+		  AND (
+		    repo_size_observed_at IS NULL
+		    OR TIMESTAMPDIFF(SECOND, repo_size_observed_at, NOW()) >
+		       IF(repo_stats_interval_seconds > 0, repo_stats_interval_seconds, ?)
+		  )`, nodeID, globalIntervalSec)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // ─── Permissions (unified rule engine) ───────────────────────────────────────

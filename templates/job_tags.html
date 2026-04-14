@@ -1,0 +1,102 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <h2 class="page-title">Job Tags</h2>
+  <div class="text-muted">Priority labels for backup jobs. Higher priority influences alert weighting.</div>
+</div>
+
+<div class="row">
+  <div class="col-md-9">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">All Job Tags</h3></div>
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Preview</th>
+              <th>Priority</th>
+              <th class="w-1"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {{$csrf := .CSRFToken}}
+            {{range .JobTags}}
+            <tr>
+              <td>{{.Name}}</td>
+              <td><span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span></td>
+              <td>
+                {{if eq .Priority 3}}<span class="badge text-bg-danger">Critical</span>
+                {{else if eq .Priority 2}}<span class="badge text-bg-warning">High</span>
+                {{else if eq .Priority 1}}<span class="badge text-bg-secondary">Normal</span>
+                {{else}}<span class="badge text-bg-light">Low</span>{{end}}
+              </td>
+              <td>
+                <div class="btn-list flex-nowrap">
+                  <a href="/job-tags/{{.ID}}/edit" class="btn btn-sm">Edit</a>
+                  <form action="/job-tags/{{.ID}}/delete" method="POST" onsubmit="return confirm('Delete this job tag?');">
+                    <input type="hidden" name="csrf_token" value="{{$csrf}}">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {{else}}
+            <tr><td colspan="4" class="text-center text-muted">No job tags yet.</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Create Job Tag</h3></div>
+      <div class="card-body">
+        <form action="/job-tags/new" method="POST">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text" name="name" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Priority</label>
+            <select name="priority" class="form-select">
+              <option value="0">Low</option>
+              <option value="1" selected>Normal</option>
+              <option value="2">High</option>
+              <option value="3">Critical</option>
+            </select>
+          </div>
+          <div class="row mb-3">
+            <div class="col-6">
+              <label class="form-label">Background</label>
+              <input type="color" name="color" id="new-jt-bg" class="form-control form-control-color w-100" value="#206bc4">
+              <input type="text" id="new-jt-bg-hex" class="form-control form-control-sm mt-1" value="#206bc4" maxlength="7">
+            </div>
+            <div class="col-6">
+              <label class="form-label">Text</label>
+              <input type="color" name="text_color" id="new-jt-text" class="form-control form-control-color w-100" value="#f0f0f0">
+              <input type="text" id="new-jt-text-hex" class="form-control form-control-sm mt-1" value="#f0f0f0" maxlength="7">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Create Job Tag</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function sync(pid, hid){
+    var p=document.getElementById(pid), h=document.getElementById(hid);
+    if(!p||!h) return;
+    p.addEventListener('input', function(){ h.value=p.value; });
+    h.addEventListener('input', function(){ if(/^#[0-9a-fA-F]{6}$/.test(h.value)) p.value=h.value; });
+  }
+  sync('new-jt-bg','new-jt-bg-hex');
+  sync('new-jt-text','new-jt-text-hex');
+})();
+</script>
+{{end}}

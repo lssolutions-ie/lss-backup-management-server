@@ -60,9 +60,11 @@ func main() {
 
 	notifier := notify.NoOpNotifier{}
 
-	// Start background worker
+	// Start background workers
 	offlineChecker := worker.NewOfflineChecker(database, notifier)
 	offlineChecker.Start()
+	retentionWorker := worker.NewRetentionWorker(database)
+	retentionWorker.Start()
 
 	web.ServerVersion = Version
 
@@ -135,6 +137,11 @@ func main() {
 	mux.HandleFunc("/user-tags/check-usage", webServer.RequireSuperAdmin(webServer.HandleUserTagCheckUsage))
 	mux.HandleFunc("/user-tags/", webServer.RequireSuperAdmin(userTagRouter(webServer)))
 
+	// Job Tags (priority labels — superadmin only)
+	mux.HandleFunc("/job-tags", webServer.RequireSuperAdmin(webServer.HandleJobTags))
+	mux.HandleFunc("/job-tags/new", webServer.RequireSuperAdmin(webServer.HandleJobTagCreate))
+	mux.HandleFunc("/job-tags/", webServer.RequireSuperAdmin(jobTagRouter(webServer)))
+
 	// Terminal WebSocket (separate from /nodes/ tree because it uses a different path style)
 	mux.HandleFunc("/ws/terminal", webServer.RequireAuth(webServer.HandleTerminalWS))
 
@@ -164,6 +171,7 @@ func main() {
 
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
+	mux.HandleFunc("/settings/tuning", webServer.RequireSuperAdmin(webServer.HandleServerTuning))
 
 	// Wrap mux with security headers.
 	handler := securityHeaders(mux)
@@ -231,6 +239,11 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodeDetail(w, r)
 			return
 		}
+		// Per-job silence: /nodes/{id}/jobs/{jobID}/silence
+		if strings.HasPrefix(parts[1], "jobs/") && strings.HasSuffix(parts[1], "/silence") {
+			s.HandleJobSilence(w, r)
+			return
+		}
 		switch parts[1] {
 		case "edit":
 			s.HandleNodeEdit(w, r)
@@ -281,6 +294,25 @@ func permissionRuleRouter(s *web.Server) http.HandlerFunc {
 			s.HandlePermissionRuleToggle(w, r)
 		case "delete":
 			s.HandlePermissionRuleDelete(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func jobTagRouter(s *web.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/job-tags/")
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[1] {
+		case "edit":
+			s.HandleJobTagEdit(w, r)
+		case "delete":
+			s.HandleJobTagDelete(w, r)
 		default:
 			http.NotFound(w, r)
 		}

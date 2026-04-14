@@ -125,6 +125,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 			}
 			return fmt.Sprintf("%dm %ds", secs/60, secs%60)
 		},
+		"int64": func(v uint64) int64 { return int64(v) },
 		"bytesFmt": func(b int64) string {
 			const (
 				gb = 1024 * 1024 * 1024

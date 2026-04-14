@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/classify"
 	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
@@ -73,7 +74,9 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest)
 		return
 	}
-	if status.PayloadVersion != "1" {
+	// Accept v1 (original) and v2 (v2.2.0+ CLIs with JobResult). Unknown versions rejected.
+	if status.PayloadVersion != "1" && status.PayloadVersion != "2" {
+		log.Printf("api: unknown payload_version %q from node=%d", status.PayloadVersion, node.ID)
 		apiError(w, http.StatusBadRequest)
 		return
 	}
@@ -110,7 +113,8 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// 5. Upsert job snapshots and remove stale jobs no longer reported by the node.
 	reportedJobIDs := make([]string, 0, len(status.Jobs))
 	for _, job := range status.Jobs {
-		if err := h.DB.UpsertJobSnapshot(node.ID, job); err != nil {
+		cat := classify.Classify(job.LastError)
+		if err := h.DB.UpsertJobSnapshotWithCategory(node.ID, job, cat); err != nil {
 			log.Printf("api: upsert job %s node=%d: %v", job.ID, node.ID, err)
 		}
 		reportedJobIDs = append(reportedJobIDs, job.ID)
@@ -181,6 +185,16 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// client knows it's safe to start the SSH tunnel without an auth race.
 	if status.Tunnel != nil && status.Tunnel.PublicKey != "" {
 		resp["tunnel_key_registered"] = true
+	}
+
+	// On heartbeats: tell the CLI which jobs need fresh `restic stats` this cycle.
+	// Global interval comes from server_tuning, with per-job override respected.
+	if reportType == "heartbeat" {
+		if tuning, err := h.DB.GetServerTuning(); err == nil && tuning.RepoStatsIntervalSeconds > 0 {
+			if ids, err := h.DB.JobsNeedingRepoStats(node.ID, tuning.RepoStatsIntervalSeconds); err == nil && len(ids) > 0 {
+				resp["reconcile_repo_stats"] = ids
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

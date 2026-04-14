@@ -1800,10 +1800,106 @@ func (d *DB) AcknowledgeAnomaly(id uint64, userID uint64) error {
 	return err
 }
 
+func (d *DB) UnacknowledgeAnomaly(id uint64) error {
+	_, err := d.db.Exec("UPDATE job_anomalies SET acknowledged = 0, acknowledged_by = NULL, acknowledged_at = NULL WHERE id = ?", id)
+	return err
+}
+
 func (d *DB) CountUnackedAnomalies() (int, error) {
 	var n int
 	err := d.db.QueryRow("SELECT COUNT(*) FROM job_anomalies WHERE acknowledged = 0").Scan(&n)
 	return n, err
+}
+
+// CountUnackedAnomaliesByJob returns the count of unacknowledged anomalies grouped by job_id for a node.
+func (d *DB) CountUnackedAnomaliesByJob(nodeID uint64) (map[string]int, error) {
+	rows, err := d.db.Query(`
+		SELECT job_id, COUNT(*) FROM job_anomalies
+		WHERE node_id = ? AND acknowledged = 0
+		GROUP BY job_id`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var jid string
+		var n int
+		if err := rows.Scan(&jid, &n); err != nil {
+			return nil, err
+		}
+		out[jid] = n
+	}
+	return out, rows.Err()
+}
+
+// EnrichedAnomaly is an anomaly with display labels for the node and client.
+type EnrichedAnomaly struct {
+	*models.JobAnomaly
+	NodeName       string
+	NodeUID        string
+	ClientID       uint64
+	ClientName     string
+	JobName        string
+	JobProgram     string
+}
+
+// ListEnrichedAnomalies joins anomalies with node + client info for the global Security page.
+// filter: "" or "all" → all, "ack" → only acknowledged, "unack" → only unacknowledged.
+func (d *DB) ListEnrichedAnomalies(filter string, limit int) ([]*EnrichedAnomaly, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	where := ""
+	switch filter {
+	case "ack":
+		where = "WHERE a.acknowledged = 1"
+	case "unack":
+		where = "WHERE a.acknowledged = 0"
+	}
+	rows, err := d.db.Query(`
+		SELECT a.id, a.node_id, a.job_id, a.detected_at, a.anomaly_type, a.prev_value, a.curr_value,
+		       a.delta_value, a.delta_pct, a.snapshot_id, a.acknowledged, a.acknowledged_by, a.acknowledged_at,
+		       n.name, n.uid, n.client_group_id, COALESCE(c.name, ''),
+		       COALESCE(j.job_name, ''), COALESCE(j.program, '')
+		FROM job_anomalies a
+		JOIN nodes n             ON n.id = a.node_id
+		LEFT JOIN client_groups c ON c.id = n.client_group_id
+		LEFT JOIN job_snapshots j ON j.node_id = a.node_id AND j.job_id = a.job_id
+		`+where+`
+		ORDER BY a.detected_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*EnrichedAnomaly
+	for rows.Next() {
+		ea := &EnrichedAnomaly{JobAnomaly: &models.JobAnomaly{}}
+		var atype string
+		var ackedBy sql.NullInt64
+		var ackedAt sql.NullTime
+		var acked int
+		if err := rows.Scan(&ea.JobAnomaly.ID, &ea.JobAnomaly.NodeID, &ea.JobAnomaly.JobID, &ea.JobAnomaly.DetectedAt,
+			&atype, &ea.JobAnomaly.PrevValue, &ea.JobAnomaly.CurrValue,
+			&ea.JobAnomaly.DeltaValue, &ea.JobAnomaly.DeltaPct, &ea.JobAnomaly.SnapshotID,
+			&acked, &ackedBy, &ackedAt,
+			&ea.NodeName, &ea.NodeUID, &ea.ClientID, &ea.ClientName,
+			&ea.JobName, &ea.JobProgram); err != nil {
+			return nil, err
+		}
+		ea.JobAnomaly.AnomalyType = models.AnomalyType(atype)
+		ea.JobAnomaly.Acknowledged = acked != 0
+		if ackedBy.Valid {
+			v := uint64(ackedBy.Int64)
+			ea.JobAnomaly.AcknowledgedBy = &v
+		}
+		if ackedAt.Valid {
+			t := ackedAt.Time
+			ea.JobAnomaly.AcknowledgedAt = &t
+		}
+		out = append(out, ea)
+	}
+	return out, rows.Err()
 }
 
 // JobsNeedingRepoStats returns the job_ids for a node where repo stats are stale

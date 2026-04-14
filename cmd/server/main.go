@@ -159,7 +159,8 @@ func main() {
 	mux.HandleFunc("/users/new", webServer.RequireManagerOrAbove(webServer.HandleUserNew))
 	mux.HandleFunc("/users/", webServer.RequireManagerOrAbove(userRouter(webServer)))
 
-	// Anomaly ack
+	// Anomalies global page + per-row ack
+	mux.HandleFunc("/anomalies", webServer.RequireAuth(webServer.HandleAnomalies))
 	mux.HandleFunc("/anomalies/", webServer.RequireAuth(webServer.HandleAnomalyAck))
 
 	// Permissions (manager+ can edit unlocked rules; superadmin can lock)

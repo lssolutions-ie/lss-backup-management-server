@@ -51,6 +51,11 @@
               <input type="hidden" name="csrf_token" value="{{$csrf}}">
               <button type="submit" class="btn btn-sm btn-success">Acknowledge</button>
             </form>
+            {{else}}
+            <form action="/anomalies/{{.ID}}/unack" method="POST" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <button type="submit" class="btn btn-sm btn-outline-warning">Unacknowledge</button>
+            </form>
             {{end}}
           </td>
         </tr>

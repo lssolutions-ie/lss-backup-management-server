@@ -1,0 +1,261 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title"><i class="ti ti-shield-x me-1"></i> Security — Anomalies</h2>
+      <div class="text-muted">Possible attacks against your backups: source-side wipes, repo-side tampering, mass deletions.</div>
+    </div>
+    <div class="col-auto">
+      <div class="btn-group" role="group">
+        <a href="/anomalies?filter=all" class="btn {{if eq .Filter "all"}}btn-primary{{else}}btn-outline-secondary{{end}}">Show All</a>
+        <a href="/anomalies?filter=ack" class="btn {{if eq .Filter "ack"}}btn-primary{{else}}btn-outline-secondary{{end}}">Acknowledged</a>
+        <a href="/anomalies?filter=unack" class="btn {{if eq .Filter "unack"}}btn-primary{{else}}btn-outline-secondary{{end}}">Unacknowledged</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+    <input type="text" id="anom-search" class="form-control form-control-sm" placeholder="Search across all columns…" style="width: 280px;">
+    <span class="ms-auto text-muted small"><span id="anom-visible-count">0</span> of <span id="anom-total-count">0</span> rows</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-vcenter" id="anom-table">
+      <thead>
+        <tr>
+          <th class="anom-sort" data-key="detected_ts" style="cursor:pointer;user-select:none;">Detected <span class="anom-arrow"></span></th>
+          <th class="anom-sort" data-key="client_name" style="cursor:pointer;user-select:none;">Client <span class="anom-arrow"></span></th>
+          <th class="anom-sort" data-key="node_name" style="cursor:pointer;user-select:none;">Node <span class="anom-arrow"></span></th>
+          <th class="anom-sort" data-key="job_label" style="cursor:pointer;user-select:none;">Job <span class="anom-arrow"></span></th>
+          <th class="anom-sort" data-key="anomaly_type" style="cursor:pointer;user-select:none;">What happened <span class="anom-arrow"></span></th>
+          <th class="anom-sort" data-key="delta" style="cursor:pointer;user-select:none;">Change <span class="anom-arrow"></span></th>
+          <th class="anom-sort" data-key="acknowledged" style="cursor:pointer;user-select:none;">Status <span class="anom-arrow"></span></th>
+          <th class="w-1"></th>
+        </tr>
+        <tr>
+          <th><input type="text" class="form-control form-control-sm anom-fcol" data-key="detected" placeholder="filter…"></th>
+          <th>
+            <select class="form-select form-select-sm anom-fcol" data-key="client_name">
+              <option value="">All</option>
+              {{range $name := uniqueClients .Anomalies}}<option value="{{$name}}">{{$name}}</option>{{end}}
+            </select>
+          </th>
+          <th>
+            <select class="form-select form-select-sm anom-fcol" data-key="node_name">
+              <option value="">All</option>
+              {{range $name := uniqueNodes .Anomalies}}<option value="{{$name}}">{{$name}}</option>{{end}}
+            </select>
+          </th>
+          <th><input type="text" class="form-control form-control-sm anom-fcol" data-key="job_label" placeholder="filter…"></th>
+          <th>
+            <select class="form-select form-select-sm anom-fcol" data-key="anomaly_type">
+              <option value="">All</option>
+              <option value="snapshot_drop">Snapshots deleted</option>
+              <option value="files_drop">Files removed</option>
+              <option value="bytes_drop">Data shrunk</option>
+            </select>
+          </th>
+          <th></th>
+          <th>
+            <select class="form-select form-select-sm anom-fcol" data-key="acknowledged">
+              <option value="">All</option>
+              <option value="0">Unreviewed</option>
+              <option value="1">Acknowledged</option>
+            </select>
+          </th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="anom-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script id="anom-data" type="application/json">
+[
+{{range $i, $a := .Anomalies}}{{if $i}},{{end}}{
+  "id": {{$a.ID}},
+  "detected_ts": {{$a.DetectedAt.Unix}},
+  "detected_str": "{{$a.DetectedAt.Format "02-01-2006 15:04:05"}}",
+  "node_id": {{$a.NodeID}},
+  "node_name": "{{$a.NodeName}}",
+  "node_uid": "{{$a.NodeUID}}",
+  "client_id": {{$a.ClientID}},
+  "client_name": "{{$a.ClientName}}",
+  "job_id": "{{$a.JobID}}",
+  "job_name": "{{$a.JobName}}",
+  "job_program": "{{$a.JobProgram}}",
+  "job_label": "{{if $a.JobName}}{{$a.JobName}}{{else}}{{$a.JobID}}{{end}}",
+  "anomaly_type": "{{$a.AnomalyType}}",
+  "prev_value": {{$a.PrevValue}},
+  "curr_value": {{$a.CurrValue}},
+  "delta": {{$a.DeltaValue}},
+  "delta_pct": {{printf "%.2f" $a.DeltaPct}},
+  "acknowledged": {{if $a.Acknowledged}}1{{else}}0{{end}}
+}{{end}}
+]
+</script>
+
+<script>
+(function(){
+  var rows = JSON.parse(document.getElementById('anom-data').textContent);
+  var tbody = document.getElementById('anom-tbody');
+  var search = document.getElementById('anom-search');
+  var visEl = document.getElementById('anom-visible-count');
+  var totEl = document.getElementById('anom-total-count');
+  var csrf = '{{.CSRFToken}}';
+  totEl.textContent = rows.length;
+
+  var sortKey = 'detected_ts';
+  var sortDir = 'desc';
+  var filters = {};
+  var globalQ = '';
+
+  function fmtBytes(b) {
+    var sign = b < 0 ? '-' : ''; var abs = Math.abs(b);
+    if (abs >= 1073741824) return sign + (abs/1073741824).toFixed(1) + ' GB';
+    if (abs >= 1048576) return sign + (abs/1048576).toFixed(1) + ' MB';
+    if (abs >= 1024) return sign + (abs/1024).toFixed(0) + ' KB';
+    return sign + abs + ' B';
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; });
+  }
+
+  function whatHappened(t) {
+    if (t === 'snapshot_drop') return '<span class="badge text-bg-danger text-nowrap"><i class="ti ti-database-off"></i> Snapshots deleted</span>';
+    if (t === 'files_drop') return '<span class="badge text-bg-warning text-nowrap"><i class="ti ti-file-x"></i> Files removed</span>';
+    if (t === 'bytes_drop') return '<span class="badge text-bg-warning text-nowrap"><i class="ti ti-database-minus"></i> Data shrunk</span>';
+    return escapeHtml(t);
+  }
+  function changeCell(r) {
+    if (r.anomaly_type === 'bytes_drop') {
+      return fmtBytes(r.prev_value) + ' → ' + fmtBytes(r.curr_value) +
+        '<div class="text-danger fw-bold">' + fmtBytes(r.delta) + ' (' + r.delta_pct + '%)</div>';
+    }
+    var unit = r.anomaly_type === 'snapshot_drop' ? ' snapshots' : r.anomaly_type === 'files_drop' ? ' files' : '';
+    return r.prev_value + ' → ' + r.curr_value + unit +
+      '<div class="text-danger fw-bold">' + r.delta + ' (' + r.delta_pct + '%)</div>';
+  }
+  function statusCell(r) {
+    return r.acknowledged
+      ? '<span class="badge text-bg-secondary">Ack\'d</span>'
+      : '<span class="badge text-bg-danger">Unreviewed</span>';
+  }
+  function actionCell(r) {
+    var url = '/anomalies/' + r.id + (r.acknowledged ? '/unack' : '/ack');
+    var label = r.acknowledged ? 'Unacknowledge' : 'Acknowledge';
+    var cls = r.acknowledged ? 'btn-outline-warning' : 'btn-success';
+    return '<form action="' + url + '" method="POST" class="d-inline">' +
+      '<input type="hidden" name="csrf_token" value="' + csrf + '">' +
+      '<button type="submit" class="btn btn-sm ' + cls + '">' + label + '</button></form>';
+  }
+
+  function arrow(k) {
+    if (sortKey === k) return ' <span style="color:#206bc4;font-weight:bold;">' + (sortDir === 'asc' ? '▲' : '▼') + '</span>';
+    return ' <span style="color:#cbd5e1;font-size:0.7em;">⇅</span>';
+  }
+  function updateArrows() {
+    document.querySelectorAll('.anom-sort').forEach(function(th){
+      var k = th.getAttribute('data-key');
+      var sp = th.querySelector('.anom-arrow');
+      sp.outerHTML = '<span class="anom-arrow">' + arrow(k) + '</span>';
+    });
+  }
+
+  function rowMatchesFilters(r) {
+    for (var k in filters) {
+      var v = filters[k];
+      if (!v) continue;
+      var rv = r[k];
+      if (k === 'detected') {
+        if (String(r.detected_str || '').toLowerCase().indexOf(v.toLowerCase()) === -1) return false;
+      } else if (k === 'job_label') {
+        if (String(rv || '').toLowerCase().indexOf(v.toLowerCase()) === -1) return false;
+      } else if (k === 'acknowledged') {
+        if (String(rv) !== v) return false;
+      } else {
+        if (String(rv) !== v) return false;
+      }
+    }
+    if (globalQ) {
+      var q = globalQ.toLowerCase();
+      var typeLabel = r.anomaly_type === 'snapshot_drop' ? 'snapshots deleted'
+        : r.anomaly_type === 'files_drop' ? 'files removed'
+        : r.anomaly_type === 'bytes_drop' ? 'data shrunk bytes' : r.anomaly_type;
+      var statusLabel = r.acknowledged ? 'acknowledged ackd' : 'unreviewed';
+      var hay = [
+        r.detected_str, r.client_name, r.node_name, r.node_uid,
+        r.job_id, r.job_name, r.job_label, r.job_program,
+        r.anomaly_type, typeLabel, statusLabel,
+        r.prev_value, r.curr_value, r.delta, r.delta_pct
+      ].join(' ').toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  }
+
+  function render() {
+    var sorted = rows.slice().sort(function(a, b){
+      var av = a[sortKey], bv = b[sortKey];
+      var an = (typeof av === 'number'); var bn = (typeof bv === 'number');
+      if (an && bn) return sortDir === 'asc' ? av - bv : bv - av;
+      av = String(av || ''); bv = String(bv || '');
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    var visible = sorted.filter(rowMatchesFilters);
+    visEl.textContent = visible.length;
+
+    if (visible.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No matching anomalies.</td></tr>';
+      return;
+    }
+    var html = '';
+    visible.forEach(function(r){
+      var cls = r.acknowledged ? 'text-muted' : 'table-danger';
+      html += '<tr class="' + cls + '">' +
+        '<td class="text-nowrap small"><div>' + r.detected_str.split(' ')[0] + '</div><div class="text-muted">' + r.detected_str.split(' ')[1] + '</div></td>' +
+        '<td>' + (r.client_id ? '<a href="/groups/' + r.client_id + '/edit">' + escapeHtml(r.client_name) + '</a>' : '<span class="text-muted">—</span>') + '</td>' +
+        '<td><a href="/nodes/' + r.node_id + '" class="fw-bold">' + escapeHtml(r.node_name) + '</a><div class="text-muted small">UID: <code>' + escapeHtml(r.node_uid) + '</code></div></td>' +
+        '<td><a href="/nodes/' + r.node_id + '#job-' + encodeURIComponent(r.job_id) + '">' + escapeHtml(r.job_label) + '</a>' +
+          (r.job_program ? '<div class="text-muted small">' + escapeHtml(r.job_program) + '</div>' : '') + '</td>' +
+        '<td>' + whatHappened(r.anomaly_type) + '</td>' +
+        '<td class="text-nowrap small">' + changeCell(r) + '</td>' +
+        '<td>' + statusCell(r) + '</td>' +
+        '<td>' + actionCell(r) + '</td>' +
+      '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  // Wire sort headers
+  document.querySelectorAll('.anom-sort').forEach(function(th){
+    th.addEventListener('click', function(){
+      var k = th.getAttribute('data-key');
+      if (sortKey === k) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { sortKey = k; sortDir = (k === 'detected_ts') ? 'desc' : 'asc'; }
+      updateArrows();
+      render();
+    });
+  });
+  // Wire per-column filters
+  document.querySelectorAll('.anom-fcol').forEach(function(el){
+    el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', function(){
+      filters[el.getAttribute('data-key')] = el.value;
+      render();
+    });
+  });
+  // Global search
+  search.addEventListener('input', function(){
+    globalQ = search.value;
+    render();
+  });
+
+  updateArrows();
+  render();
+})();
+</script>
+{{end}}

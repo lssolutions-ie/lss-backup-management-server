@@ -119,11 +119,11 @@
         <h3 class="card-title">Node info</h3>
         <dl class="row">
           <dt class="col-4">Created</dt>
-          <dd class="col-8">{{.Node.CreatedAt.Format "2006-01-02 15:04:05"}}</dd>
+          <dd class="col-8">{{.Node.CreatedAt.Format "02-01-2006 15:04:05"}}</dd>
           <dt class="col-4">First seen</dt>
-          <dd class="col-8">{{if .Node.FirstSeenAt}}{{.Node.FirstSeenAt.Format "2006-01-02 15:04:05"}}{{else}}never{{end}}</dd>
+          <dd class="col-8">{{if .Node.FirstSeenAt}}{{.Node.FirstSeenAt.Format "02-01-2006 15:04:05"}}{{else}}never{{end}}</dd>
           <dt class="col-4">Last seen</dt>
-          <dd class="col-8">{{if .Node.LastSeenAt}}{{.Node.LastSeenAt.Format "2006-01-02 15:04:05"}}{{else}}never{{end}}</dd>
+          <dd class="col-8">{{if .Node.LastSeenAt}}{{.Node.LastSeenAt.Format "02-01-2006 15:04:05"}}{{else}}never{{end}}</dd>
           <dt class="col-4">Status</dt>
           <dd class="col-8">
             {{if .Node.IsOnline}}
@@ -217,6 +217,7 @@
       <tbody>
         {{$silences := .Silences}}
         {{$jobTagsByID := .JobTagsByID}}
+        {{$anomalyCounts := .AnomalyCounts}}
         {{$canManage := eq (printf "%s" .NodeAccess) "manage"}}
         {{$csrf := .CSRFToken}}
         {{$nodeID := .Node.ID}}
@@ -224,8 +225,21 @@
         {{$silence := index $silences .JobID}}
         <tr class="{{if $silence}}text-muted{{end}}">
           <td>
-            <div><strong>{{.JobName}}</strong> {{if not .Enabled}}<span class="badge text-bg-light ms-1">disabled</span>{{end}}{{if $silence}} <span class="badge text-bg-secondary ms-1" title="Muted until {{if $silence.SilencedUntil}}{{$silence.SilencedUntil.Format "2006-01-02 15:04"}}{{else}}forever{{end}}"><i class="ti ti-bell-off"></i> muted</span>{{end}}</div>
-            <div class="text-muted small"><code>{{.JobID}}</code> · {{.Program}}</div>
+            {{$anom := index $anomalyCounts .JobID}}
+            <div class="d-flex align-items-center gap-2">
+              {{if $anom}}
+                <a href="/anomalies?node={{$nodeID}}" class="text-danger text-decoration-none" title="{{$anom}} unacknowledged anomalies" style="font-size: 1.4rem; line-height: 1;"><i class="ti ti-shield-x"></i></a>
+              {{else}}
+                <span class="text-success" title="No anomalies" style="font-size: 1.4rem; line-height: 1;"><i class="ti ti-shield-check"></i></span>
+              {{end}}
+              <div>
+                <div><strong>{{.JobName}}</strong>
+                  {{if not .Enabled}}<span class="badge text-bg-light ms-1">disabled</span>{{end}}
+                  {{if $silence}} <span class="badge text-bg-secondary ms-1" title="Muted until {{if $silence.SilencedUntil}}{{$silence.SilencedUntil.Format "02-01-2006 15:04"}}{{else}}forever{{end}}"><i class="ti ti-bell-off"></i> muted</span>{{end}}
+                </div>
+                <div class="text-muted small"><code>{{.JobID}}</code> · {{.Program}}</div>
+              </div>
+            </div>
           </td>
           <td>
             {{if eq .LastStatus "failure"}}<span class="badge text-bg-danger">Failure</span>
@@ -238,13 +252,13 @@
             {{end}}
             {{if .ErrorCategory}}<div class="small text-muted mt-1">{{.ErrorCategory}}</div>{{end}}
           </td>
-          <td class="small">{{if .LastRunAt}}{{.LastRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+          <td class="small">{{if .LastRunAt}}{{.LastRunAt.Format "02-01-2006 15:04"}}{{else}}—{{end}}</td>
           <td class="small">{{formatDuration .LastRunDurationSeconds}}</td>
-          <td class="small">{{if .NextRunAt}}{{.NextRunAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+          <td class="small">{{if .NextRunAt}}{{.NextRunAt.Format "02-01-2006 15:04"}}{{else}}—{{end}}</td>
           <td class="small">{{.ScheduleDescription}}</td>
           <td class="small">
             {{if gt .BytesNew 0}}
-              <div>+{{bytesFmt (int64 .BytesNew)}} new</div>
+              <div>+{{bytesFmt (int64 .BytesNew)}}</div>
             {{end}}
             {{if gt .FilesNew 0}}
               <div>{{.FilesNew}} files</div>
@@ -258,7 +272,7 @@
             {{if gt .RepoSizeEstimated 0}}
               <div>{{bytesFmt (int64 .RepoSizeEstimated)}}</div>
               {{if .RepoSizeObservedAt}}
-                <div class="text-muted" style="font-size: 0.7rem;">verified {{.RepoSizeObservedAt.Format "2006-01-02"}}</div>
+                <div class="text-muted" style="font-size: 0.7rem;">verified {{.RepoSizeObservedAt.Format "02-01-2006"}}</div>
               {{else}}
                 <div class="text-muted" style="font-size: 0.7rem;">estimate only</div>
               {{end}}
@@ -303,6 +317,7 @@
                 <select class="form-select form-select-sm jh-status" style="width: 140px;">
                   <option value="">All</option>
                   <option value="success">Success</option>
+                  <option value="suspicious">Suspicious</option>
                   <option value="warning">Warning</option>
                   <option value="failure">Failure</option>
                   <option value="skipped">Skipped</option>
@@ -398,11 +413,7 @@ function toggleJobHistory(jobID) {
   const opening = row.style.display === 'none';
   row.style.display = opening ? 'table-row' : 'none';
   if (opening) {
-    // Auto-load on first open if results haven't been fetched yet.
-    const results = row.querySelector('.jh-results');
-    if (results && results.dataset.loaded !== '1') {
-      loadJobHistory(row, jobID);
-    }
+    loadJobHistory(row, jobID);
   }
 }
 
@@ -459,16 +470,20 @@ function renderJobHistory(row) {
   var program = (row.getAttribute('data-program') || '').toLowerCase();
   var showSnapshot = program !== 'rsync';
 
-  function arrow(k){ return key === k ? (dir === 'asc' ? ' ▲' : ' ▼') : ''; }
+  function arrow(k){
+    if (key === k) return ' <span style="color:#206bc4;font-weight:bold;">' + (dir === 'asc' ? '▲' : '▼') + '</span>';
+    return ' <span style="color:#cbd5e1;font-size:0.7em;">⇅</span>';
+  }
   var head = '<tr>' +
-    '<th class="jh-sort" data-key="reported_at" style="cursor:pointer">Reported' + arrow('reported_at') + '</th>' +
-    '<th class="jh-sort" data-key="last_run_at" style="cursor:pointer">Last Run' + arrow('last_run_at') + '</th>' +
-    '<th class="jh-sort" data-key="last_status" style="cursor:pointer">Status' + arrow('last_status') + '</th>' +
-    '<th class="jh-sort" data-key="last_run_duration_seconds" style="cursor:pointer">Dur.' + arrow('last_run_duration_seconds') + '</th>' +
-    '<th class="jh-sort" data-key="bytes_new" style="cursor:pointer">Bytes New' + arrow('bytes_new') + '</th>' +
-    '<th class="jh-sort" data-key="files_new" style="cursor:pointer">Files' + arrow('files_new') + '</th>';
+    '<th class="jh-sort" data-key="reported_at" style="cursor:pointer;user-select:none;">Reported' + arrow('reported_at') + '</th>' +
+    '<th class="jh-sort" data-key="last_run_at" style="cursor:pointer;user-select:none;">Last Run' + arrow('last_run_at') + '</th>' +
+    '<th class="jh-sort" data-key="last_status" style="cursor:pointer;user-select:none;">Status' + arrow('last_status') + '</th>' +
+    '<th class="jh-sort" data-key="last_run_duration_seconds" style="cursor:pointer;user-select:none;">Dur.' + arrow('last_run_duration_seconds') + '</th>' +
+    '<th class="jh-sort" data-key="bytes_new" style="cursor:pointer;user-select:none;">Bytes Delta' + arrow('bytes_new') + '</th>' +
+    '<th class="jh-sort" data-key="files_new" style="cursor:pointer;user-select:none;">Files' + arrow('files_new') + '</th>';
   if (showSnapshot) head += '<th>Snapshot</th>';
-  head += '<th class="jh-sort" data-key="last_error" style="cursor:pointer">Error' + arrow('last_error') + '</th></tr>';
+  head += '<th>Anomaly</th>';
+  head += '<th class="jh-sort" data-key="last_error" style="cursor:pointer;user-select:none;">Error' + arrow('last_error') + '</th></tr>';
 
   var html = '<table class="table table-sm table-vcenter mb-0" style="font-size: 0.85rem;"><thead>' + head + '</thead><tbody>';
   sorted.forEach(function(e){
@@ -478,14 +493,31 @@ function renderJobHistory(row) {
     else if (e.last_status === 'failure') statusBadge = '<span class="badge text-bg-danger">Failure</span>';
     else if (e.last_status === 'skipped') statusBadge = '<span class="badge text-bg-info">Skipped</span>';
     else if (e.last_status === 'cancelled') statusBadge = '<span class="badge text-bg-secondary">Cancelled</span>';
+    // If anomalies fired, override Success → Suspicious so the row reads honestly.
+    if (e.anomalies && e.anomalies.length > 0 && e.last_status === 'success') {
+      statusBadge = '<span class="badge text-bg-danger" title="Backup succeeded but anomalies were detected">Suspicious</span>';
+    }
     html += '<tr>' +
       '<td>' + escapeHtml(e.reported_at || '') + '</td>' +
       '<td>' + escapeHtml(e.last_run_at || '—') + '</td>' +
       '<td>' + statusBadge + '</td>' +
       '<td>' + (e.last_run_duration_seconds || 0) + 's</td>' +
-      '<td>' + (e.bytes_new ? formatBytes(e.bytes_new) : '—') + '</td>' +
-      '<td>' + (e.files_new || '—') + '</td>';
-    if (showSnapshot) html += '<td>' + (e.snapshot_id ? '<code>' + escapeHtml(e.snapshot_id) + '</code>' : '—') + '</td>';
+      '<td>' + (
+        e.bytes_new ? '<span class="text-success" title="bytes added"><i class="ti ti-arrow-up"></i></span> ' + formatBytes(e.bytes_new) :
+        e.bytes_lost ? '<span class="text-danger" title="bytes removed"><i class="ti ti-arrow-down"></i></span> <span class="text-danger">' + formatBytes(e.bytes_lost) + '</span>' :
+        '—'
+      ) + '</td>' +
+      '<td>' + (
+        e.files_new ? '<span class="text-success" title="files added"><i class="ti ti-arrow-up"></i></span> ' + e.files_new :
+        e.files_lost ? '<span class="text-danger" title="files removed"><i class="ti ti-arrow-down"></i></span> <span class="text-danger">' + e.files_lost + '</span>' :
+        '—'
+      ) + '</td>';
+    if (showSnapshot) {
+      var hasSnapDrop = (e.anomalies || []).indexOf('snapshot_drop') !== -1;
+      html += '<td>' + (e.snapshot_id
+        ? '<code class="' + (hasSnapDrop ? 'text-danger fw-bold' : '') + '" title="' + (hasSnapDrop ? 'Repo lost snapshots in this run' : '') + '">' + escapeHtml(e.snapshot_id) + '</code>'
+        : '—') + '</td>';
+    }
     var errCell = '';
     if (e.error_category) {
       errCell += '<span class="badge text-bg-secondary me-1" style="font-size: 0.65rem;">' + escapeHtml(e.error_category) + '</span>';
@@ -494,6 +526,14 @@ function renderJobHistory(row) {
       errCell += '<span class="text-danger" style="display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;" title="' + escapeHtml(e.last_error) + '">' + escapeHtml(e.last_error) + '</span>';
     }
     if (!errCell) errCell = '—';
+    var anomCell = '—';
+    if (e.anomalies && e.anomalies.length > 0) {
+      anomCell = e.anomalies.map(function(a){
+        var label = a === 'snapshot_drop' ? 'Snapshots' : a === 'files_drop' ? 'Files' : a === 'bytes_drop' ? 'Bytes' : a;
+        return '<span class="badge text-bg-danger me-1" title="' + escapeHtml(a) + '"><i class="ti ti-shield-x"></i> ' + label + '</span>';
+      }).join('');
+    }
+    html += '<td>' + anomCell + '</td>';
     html += '<td>' + errCell + '</td>';
     html += '</tr>';
   });
@@ -658,7 +698,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <tbody>
         {{range .Reports}}
         <tr>
-          <td>{{.ReportedAt.Format "2006-01-02 15:04:05"}}</td>
+          <td>{{.ReportedAt.Format "02-01-2006 15:04:05"}}</td>
           <td>
             {{if eq .ReportType "heartbeat"}}
             <span class="badge text-bg-info">Heartbeat</span>

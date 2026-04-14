@@ -12,21 +12,23 @@ import (
 )
 
 type jobHistoryEntry struct {
-	ReportedAt             string `json:"reported_at"`
-	LastStatus             string `json:"last_status"`
-	LastRunAt              string `json:"last_run_at,omitempty"`
-	LastRunDurationSeconds int    `json:"last_run_duration_seconds"`
-	LastError              string `json:"last_error,omitempty"`
-	ErrorCategory          string `json:"error_category,omitempty"`
-	BytesNew               uint64 `json:"bytes_new,omitempty"`
-	FilesNew               uint64 `json:"files_new,omitempty"`
-	SnapshotID             string `json:"snapshot_id,omitempty"`
+	ReportedAt             string   `json:"reported_at"`
+	LastStatus             string   `json:"last_status"`
+	LastRunAt              string   `json:"last_run_at,omitempty"`
+	LastRunDurationSeconds int      `json:"last_run_duration_seconds"`
+	LastError              string   `json:"last_error,omitempty"`
+	ErrorCategory          string   `json:"error_category,omitempty"`
+	BytesNew               uint64   `json:"bytes_new,omitempty"`
+	FilesNew               uint64   `json:"files_new,omitempty"`
+	BytesLost              uint64   `json:"bytes_lost,omitempty"` // populated when this run triggered a bytes_drop anomaly
+	FilesLost              uint64   `json:"files_lost,omitempty"` // populated when this run triggered a files_drop anomaly
+	SnapshotID             string   `json:"snapshot_id,omitempty"`
+	Anomalies              []string `json:"anomalies,omitempty"` // anomaly types that fired for this run
 }
 
 // HandleJobHistory returns the last N post-run states for a specific job.
-// GET /nodes/{id}/jobs/{jobID}/history?status=&from=&to=&q=&limit=10
+// GET /nodes/{id}/jobs/{jobID}/history?status=&from=&to=&limit=10
 func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
-	// Path: /nodes/{nodeID}/jobs/{jobID}/history
 	rest := strings.TrimPrefix(r.URL.Path, "/nodes/")
 	parts := strings.Split(rest, "/")
 	if len(parts) < 4 || parts[1] != "jobs" || parts[3] != "history" {
@@ -45,17 +47,14 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	status := q.Get("status") // optional filter
-	from := q.Get("from")     // YYYY-MM-DD
-	to := q.Get("to")         // YYYY-MM-DD
-	search := strings.ToLower(q.Get("q"))
+	status := q.Get("status")
+	from := q.Get("from")
+	to := q.Get("to")
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	if limit <= 0 || limit > 100 {
 		limit = 10
 	}
 
-	// Pull a generous pool: every post_run carries all jobs, so the same run
-	// shows up in many reports. Dedup + filter happens post-parse.
 	poolSize := limit * 50
 	if poolSize < 200 {
 		poolSize = 200
@@ -71,9 +70,16 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reports contain every job on every post_run cycle, so the same job run
-	// appears in many reports with identical last_run_at. Deduplicate by
-	// last_run_at so we show one row per actual run.
+	// Build a map of snapshot_id → anomaly objects so we can mark each row + show deltas.
+	anomalies, _ := s.DB.ListJobAnomalies(nodeID, jobID, false, 500)
+	anomaliesBySnap := make(map[string][]*models.JobAnomaly)
+	for _, a := range anomalies {
+		if a.SnapshotID == "" {
+			continue
+		}
+		anomaliesBySnap[a.SnapshotID] = append(anomaliesBySnap[a.SnapshotID], a)
+	}
+
 	seenRuns := make(map[string]bool)
 	out := make([]jobHistoryEntry, 0, limit)
 	for _, rep := range reports {
@@ -85,7 +91,6 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 			if j.ID != jobID {
 				continue
 			}
-			// Skip never-run jobs and dup runs.
 			if j.LastRunAt == nil {
 				break
 			}
@@ -93,20 +98,28 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 			if seenRuns[key] {
 				break
 			}
-			if status != "" && j.LastStatus != status {
-				break
-			}
-			if search != "" {
-				hay := strings.ToLower(j.LastError + " " + j.Name)
-				if !strings.Contains(hay, search) {
+			// Status filter — "suspicious" is a virtual status (real status=success but anomalies fired).
+			if status != "" {
+				if status == "suspicious" {
+					if j.LastStatus != "success" {
+						break
+					}
+					sid := ""
+					if j.Result != nil {
+						sid = j.Result.SnapshotID
+					}
+					if _, hasAnom := anomaliesBySnap[sid]; !hasAnom {
+						break
+					}
+				} else if j.LastStatus != status {
 					break
 				}
 			}
 			seenRuns[key] = true
 			entry := jobHistoryEntry{
-				ReportedAt:             rep.ReportedAt.UTC().Format("2006-01-02 15:04:05"),
+				ReportedAt:             rep.ReportedAt.Format("02-01-2006 15:04:05"),
 				LastStatus:             j.LastStatus,
-				LastRunAt:              j.LastRunAt.UTC().Format("2006-01-02 15:04:05"),
+				LastRunAt:              j.LastRunAt.Format("02-01-2006 15:04:05"),
 				LastRunDurationSeconds: j.LastRunDurationSeconds,
 				LastError:              j.LastError,
 			}
@@ -114,6 +127,21 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 				entry.BytesNew = j.Result.BytesNew
 				entry.FilesNew = j.Result.FilesNew
 				entry.SnapshotID = j.Result.SnapshotID
+				if anoms, ok := anomaliesBySnap[j.Result.SnapshotID]; ok {
+					for _, a := range anoms {
+						entry.Anomalies = append(entry.Anomalies, string(a.AnomalyType))
+						switch a.AnomalyType {
+						case models.AnomalyBytesDrop:
+							if a.DeltaValue < 0 {
+								entry.BytesLost = uint64(-a.DeltaValue)
+							}
+						case models.AnomalyFilesDrop:
+							if a.DeltaValue < 0 {
+								entry.FilesLost = uint64(-a.DeltaValue)
+							}
+						}
+					}
+				}
 			}
 			out = append(out, entry)
 			break
@@ -123,6 +151,7 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	log.Printf("job history: node=%d job=%s returned %d entries (status=%q from=%q to=%q limit=%d)", nodeID, jobID, len(out), status, from, to, limit)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"entries": out})
 }

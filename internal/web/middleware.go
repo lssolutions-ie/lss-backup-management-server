@@ -16,6 +16,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -130,15 +131,48 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 			const (
 				gb = 1024 * 1024 * 1024
 				mb = 1024 * 1024
+				kb = 1024
 			)
-			switch {
-			case b >= gb:
-				return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
-			case b >= mb:
-				return fmt.Sprintf("%.0f MB", float64(b)/float64(mb))
-			default:
-				return fmt.Sprintf("%d B", b)
+			sign := ""
+			abs := b
+			if b < 0 {
+				sign = "-"
+				abs = -b
 			}
+			switch {
+			case abs >= gb:
+				return fmt.Sprintf("%s%.1f GB", sign, float64(abs)/float64(gb))
+			case abs >= mb:
+				return fmt.Sprintf("%s%.1f MB", sign, float64(abs)/float64(mb))
+			case abs >= kb:
+				return fmt.Sprintf("%s%.0f KB", sign, float64(abs)/float64(kb))
+			default:
+				return fmt.Sprintf("%s%d B", sign, abs)
+			}
+		},
+		"uniqueClients": func(list []*db.EnrichedAnomaly) []string {
+			seen := map[string]bool{}
+			var out []string
+			for _, a := range list {
+				if a.ClientName != "" && !seen[a.ClientName] {
+					seen[a.ClientName] = true
+					out = append(out, a.ClientName)
+				}
+			}
+			sort.Strings(out)
+			return out
+		},
+		"uniqueNodes": func(list []*db.EnrichedAnomaly) []string {
+			seen := map[string]bool{}
+			var out []string
+			for _, a := range list {
+				if a.NodeName != "" && !seen[a.NodeName] {
+					seen[a.NodeName] = true
+					out = append(out, a.NodeName)
+				}
+			}
+			sort.Strings(out)
+			return out
 		},
 		"prettyJSON": func(s string) string {
 			if s == "" {

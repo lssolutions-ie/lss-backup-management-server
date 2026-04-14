@@ -11,7 +11,7 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.10.2
+**Version:** v1.10.10
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -507,4 +507,48 @@ Without these, HAProxy kills idle WebSocket connections after its default timeou
 
 ---
 
-_Last updated: 2026-04-14 (v1.10.2)_
+## Global Anomalies Page (v1.10.3 – v1.10.10)
+
+`/anomalies` aggregates every anomaly across every node into one forensic table.
+
+- Top nav link with shield-x icon; dashboard has a clickable "Anomalies" stat card (red when > 0).
+- **Filter button group** (top-right): Show All / Acknowledged / Unacknowledged — backed by `?filter=all|ack|unack` (was a boolean `?unacked=1` pre-v1.10.3).
+- **Sortable columns** (Detected / Client / Node / Job / What happened / Change / Status) — click header to toggle asc/desc; blue ▲/▼ on active column, faded ⇅ on inactive.
+- **Per-column filter row** under the header — free-text for Detected/Job, dropdowns for Client, Node, What happened, Status (populated by Go template helpers `uniqueClients` / `uniqueNodes` in `middleware.go`).
+- **Global search box** — matches across all visible data + human labels (e.g. "snapshots deleted", "acknowledged", numeric values, node UID). Registered in the haystack list in `anomalies_global.html`.
+- All data is embedded in a `<script id="anom-data" type="application/json">` block; tbody is rendered client-side so sort/filter/search stay snappy without server round-trips.
+- Columns:
+  - **Detected** — date on line 1, time on line 2.
+  - **Client** — link to `/groups/{id}/edit`.
+  - **Node** — link to `/nodes/{id}`; shows `UID: lss-xxx` in muted below.
+  - **Job** — link to `/nodes/{id}#job-<jobID>` using job name when available, else job ID; program below in muted.
+  - **What happened** — colored badge (Snapshots deleted / Files removed / Data shrunk).
+  - **Change** — `prev → curr` with unit (snapshots / files / bytes) and red delta+pct below.
+  - **Status** — `Ack'd` (grey) or `Unreviewed` (red).
+  - **Action** — Acknowledge (green) or Unacknowledge (outline-warning) POST form.
+
+Server-side wiring:
+- `db.ListEnrichedAnomalies(filter, limit)` joins `job_anomalies` with nodes + clients + `job_snapshots.job_name/job_program` for display labels.
+- `HandleAnomalies` (web/anomalies.go) uses `filter` string instead of bool.
+- `HandleAnomalyAck` handles both `/anomalies/{id}/ack` and `/anomalies/{id}/unack`.
+
+### Anomaly dedup
+`db.InsertJobAnomaly` skips inserting when an unacknowledged row with the same `(node_id, job_id, anomaly_type)` was inserted in the last 24 hours. Stops spam when the CLI re-reports post-wipe state via heartbeats.
+
+### UPSERT "overwrite real zeros" fix (v1.10.2)
+`UpsertJobSnapshotWithCategory` used to preserve old `bytes_total` / `files_total` / `snapshot_count` when CLI sent 0 (via `IF(VALUES > 0, VALUES, prev)`). That masked legitimate wipes — prev never advanced, and every re-report re-fired the same anomaly. Now: always overwrite. Pair it with the 24h dedup above.
+
+---
+
+## Roadmap
+
+Live list: `ROADMAP.md` at repo root. Top of backlog:
+
+1. **SMTP notifier wiring** (critical) — anomalies sit silently today.
+2. **"What was deleted" forensics** (high) — run `restic diff prev curr` over the repo-viewer tunnel, lazy-load deleted-file list in an expander on each anomaly row. Biggest client-satisfaction win. Discussed 2026-04-14.
+3. **Snapshot ID set tracking** (high) — count-only comparisons miss `restic forget` of one snapshot within retention; also feeds item 2 for snapshot-drop events.
+4. Anomalies UI workflow: mute-future-fires on ack, bulk acknowledge, resolution note field, auto-archive acked rows older than N days.
+
+---
+
+_Last updated: 2026-04-14 (v1.10.10)_

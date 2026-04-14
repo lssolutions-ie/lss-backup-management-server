@@ -17,10 +17,11 @@ type nodeDetailPageData struct {
 	Jobs         []models.JobSnapshot
 	Reports      []*models.NodeReport
 	AllTags      []*models.Tag
-	NodeAccess   models.AccessLevel
-	Silences     map[string]*models.JobSilence // keyed by jobID
-	JobTagsByID  map[string][]models.JobTag    // keyed by jobID
-	AllJobTags   []*models.JobTag
+	NodeAccess     models.AccessLevel
+	Silences       map[string]*models.JobSilence // keyed by jobID
+	JobTagsByID    map[string][]models.JobTag    // keyed by jobID
+	AllJobTags     []*models.JobTag
+	AnomalyCounts  map[string]int                // unack'd anomaly count keyed by jobID
 	Total        int
 	Page         int
 	Pages        int
@@ -127,6 +128,7 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	allJobTags, _ := s.DB.ListJobTags()
+	anomalyCounts, _ := s.DB.CountUnackedAnomaliesByJob(node.ID)
 
 	s.render(w, r, http.StatusOK, "node_detail.html", nodeDetailPageData{
 		PageData:     s.newPageData(r),
@@ -134,10 +136,11 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		Jobs:         jobs,
 		Reports:      reports,
 		AllTags:      allTags,
-		NodeAccess:   access,
-		Silences:     silenceMap,
-		JobTagsByID:  jobTagMap,
-		AllJobTags:   allJobTags,
+		NodeAccess:    access,
+		Silences:      silenceMap,
+		JobTagsByID:   jobTagMap,
+		AllJobTags:    allJobTags,
+		AnomalyCounts: anomalyCounts,
 		Total:        total,
 		Page:         page,
 		Pages:        pages,

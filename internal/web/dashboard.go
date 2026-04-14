@@ -9,10 +9,11 @@ import (
 
 type dashboardPageData struct {
 	PageData
-	Stats   *models.DashboardStats
-	Groups  []*models.GroupWithStats
-	Nodes   []*models.NodeWithStatus
-	AllTags []*models.Tag
+	Stats          *models.DashboardStats
+	Groups         []*models.GroupWithStats
+	Nodes          []*models.NodeWithStatus
+	AllTags        []*models.Tag
+	AnomalyCount   int
 }
 
 func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -80,12 +81,14 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 		n.Tags = allNodeTags[n.ID]
 	}
 	allTags, _ := s.DB.ListTags()
+	anomalyCount, _ := s.DB.CountUnackedAnomalies()
 
 	s.render(w, r, http.StatusOK, "dashboard.html", dashboardPageData{
-		PageData: pd,
-		Stats:    stats,
-		Groups:   groups,
-		Nodes:    nodes,
-		AllTags:  allTags,
+		PageData:     pd,
+		Stats:        stats,
+		Groups:       groups,
+		Nodes:        nodes,
+		AllTags:      allTags,
+		AnomalyCount: anomalyCount,
 	})
 }

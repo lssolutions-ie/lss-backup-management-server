@@ -11,7 +11,7 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.0.1
+**Version:** v1.7.0
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -43,7 +43,7 @@ terminal access to nodes through reverse SSH tunnels over WebSocket.
 │   │   ├── terminal.go             Dashboard terminal (WebSocket → SSH proxy)
 │   │   └── ssh_tunnel.go           Node reverse tunnel endpoint (WebSocket → sshd)
 │   └── worker/worker.go            Background offline-node checker
-├── migrations/                     SQL migration files (001-006)
+├── migrations/                     SQL migration files (001-018)
 ├── templates/                      Go HTML templates (Tabler UI)
 ├── static/                         CSS/JS assets
 └── install/install.sh              Server installer (systemd, nginx, MySQL, sshd config)
@@ -177,7 +177,7 @@ All log lines use the `lss-mgmt:` prefix. Key log points:
 
 ## Database
 
-MySQL with 6 migrations:
+MySQL with 18 migrations:
 
 | Migration | Purpose |
 |-----------|---------|
@@ -187,16 +187,100 @@ MySQL with 6 migrations:
 | 004 | User-group access control |
 | 005 | Node reports: report_type column |
 | 006 | Nodes: tunnel_port, tunnel_connected, tunnel_public_key columns |
+| 007 | Node hardware info columns (OS, arch, CPUs, RAM, storage, IPs) |
+| 008 | SSH host keys table (TOFU) |
+| 009 | User TOTP 2FA columns |
+| 010 | User force_setup flag |
+| 011 | Session idle tracking (last_active_at) |
+| 012 | User email column |
+| 013 | SMTP config table |
+| 014 | Tags table + node_tags junction |
+| 015 | User-tag permissions table (user_tags) |
+| 016 | Tag text_color column |
+| 017 | Roles renamed: user→manager, viewer→user; added manager, guest |
+| 018 | client_groups.rank ENUM (bronze, silver, gold, diamond) |
 
 ---
 
 ## RBAC
 
-| Role | Dashboard | Nodes | Terminal | Groups/Users |
-|------|-----------|-------|----------|-------------|
-| superadmin | Full | Full | Yes | Full |
-| admin | Scoped to groups | Edit | Yes | No |
-| viewer | Scoped to groups | Read-only | No | No |
+| Feature | superadmin | manager | user | guest |
+|---------|-----------|---------|------|-------|
+| Dashboard | All nodes | All nodes | Scoped to groups | Scoped to groups |
+| Register/Edit/Delete Node | Yes | Yes | No | No |
+| Regenerate PSK | Yes | Yes | No | No |
+| Terminal (SSH) | Yes | Yes | No | No |
+| Browse Repos & Download | Yes | Yes | Yes | No |
+| Manage Users | Yes | Yes | No | No |
+| Manage Client Groups | Yes | Yes | No | No |
+| Manage Tags | Yes | Yes | No | No |
+| SMTP/Server Settings | Yes | No | No | No |
+| View Jobs & Check-ins | Yes | Yes | Yes | Yes |
+
+---
+
+## Client Ranks (v1.7.0)
+
+Each client (previously "client group") has a rank: **bronze | silver | gold | diamond**.
+Visible and editable by superadmin only. Shown as a colored badge on:
+- Dashboard client cards (top-right of card title)
+- Clients list page
+- Client create/edit form (dropdown)
+
+Colors are hardcoded in `ClientGroup.RankColor()`: bronze #cd7f32, silver #c0c0c0, gold #ffd700, diamond #b9f2ff.
+
+---
+
+## User Tags (v1.7.0)
+
+Users can be tagged using the same `tags` table as nodes (reuses `user_tags` junction table
+from migration 015). Superadmin only — set on user create/edit form, visible as badges on
+the Users list.
+
+Semantics: identity/affiliation ("David is from CUS"), not access control.
+
+Queries: `GetUserTags`, `SetUserTags`, `GetAllUserTags` in `internal/db/queries.go`.
+
+---
+
+## Dashboard Features (v1.7.0)
+
+### Stats cards (5 across top)
+- Total nodes
+- Online (last 10 min)
+- With failures
+- With warnings (new: counts nodes with at least one 'warning' job status)
+- Never seen
+
+### Client cards (3 per row)
+Each card shows:
+- Client name (2em) + rank badge (superadmin only)
+- `X nodes · X jobs`
+- `X success · X warn · X failed · X pending` (color-coded)
+- SVG donut chart of success rate (only shown when TotalJobs > 0)
+- Click card to filter nodes table by client
+
+### Nodes table filters
+Dropdown filters with removable badge labels: **Tag, Status, Online, Client**. All filters
+stack (AND logic). Combine with free-text search.
+
+### Job status values
+- `success` — last run completed OK
+- `warning` — completed with warnings (partial/recoverable issues)
+- `failure` — last run failed
+- `` (empty) — never run
+
+Worst-status roll-up priority: failure > warning > success > never_run > empty.
+
+---
+
+## Color Picker UX (v1.7.0)
+
+Every color picker in the app has a paired hex text input below/beside it, synced both ways:
+- Pick a color → hex updates
+- Type a valid `#RRGGBB` → picker updates
+
+Applied on: tag edit, tags list (create), node detail modal, node new form.
 
 ---
 
@@ -209,7 +293,7 @@ MySQL with 6 migrations:
 go build ./cmd/server
 
 # Production (with version)
-GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.0.1" -o lss-management-server ./cmd/server
+GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.7.0" -o lss-management-server ./cmd/server
 ```
 
 Version is set via `-ldflags "-X main.Version=vX.Y.Z"` — defaults to `"dev"` if not set.
@@ -282,4 +366,4 @@ Without these, HAProxy kills idle WebSocket connections after its default timeou
 
 ---
 
-_Last updated: 2026-04-12 (v1.6.0)_
+_Last updated: 2026-04-14 (v1.7.0)_

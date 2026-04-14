@@ -13,7 +13,8 @@
         <tr>
           <th>Username</th>
           <th>Role</th>
-          <th>Assigned groups</th>
+          <th>Client</th>
+          {{if .User.IsSuperAdmin}}<th>Tags</th>{{end}}
           <th>Created</th>
           <th class="w-1"></th>
         </tr>
@@ -21,25 +22,30 @@
       <tbody>
         {{$csrf := .CSRFToken}}
         {{$groupsByUser := .GroupsByUser}}
+        {{$tagsByUser := .TagsByUser}}
+        {{$isSuperAdmin := .User.IsSuperAdmin}}
         {{range .Users}}
         <tr>
           <td>{{.Username}}</td>
           <td>
             {{if .IsSuperAdmin}}
-            <span class="badge text-bg-primary">superadmin</span>
-            {{else if .IsViewer}}
-            <span class="badge text-bg-warning">viewer</span>
-            {{else}}
-            <span class="badge text-bg-secondary">user (read/write)</span>
+            <span class="btn btn-sm btn-primary pe-none">superadmin</span>
+            {{else if .IsManager}}
+            <span class="btn btn-sm btn-info pe-none">manager</span>
+            {{else if .IsUser}}
+            <span class="btn btn-sm btn-secondary pe-none">user</span>
+            {{else if .IsGuest}}
+            <span class="btn btn-sm btn-warning pe-none">guest</span>
             {{end}}
           </td>
           <td>
-            {{if .IsSuperAdmin}}
+            {{if or .IsSuperAdmin .IsManager}}
             <span class="text-muted">all</span>
             {{else}}
-              {{range index $groupsByUser .ID}}<span class="badge text-bg-secondary me-1">{{.Name}}</span>{{else}}<span class="text-muted">none</span>{{end}}
+              {{range index $groupsByUser .ID}}<span class="btn btn-sm btn-secondary pe-none me-1">{{.Name}}{{if $isSuperAdmin}} <span style="background-color: {{.RankColor}}; color: #333; border-radius: 3px; padding: 0 4px; font-size: 0.65rem; margin-left: 2px;">{{.RankLabel}}</span>{{end}}</span>{{else}}<span class="text-muted">none</span>{{end}}
             {{end}}
           </td>
+          {{if $isSuperAdmin}}<td>{{range index $tagsByUser .ID}}<span class="btn btn-sm pe-none me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; border-color: {{.Color}};">{{.Name}}</span>{{else}}<span class="text-muted">—</span>{{end}}</td>{{end}}
           <td>{{.CreatedAt.Format "2006-01-02"}}</td>
           <td>
             <div class="btn-list flex-nowrap">

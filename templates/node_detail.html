@@ -14,13 +14,13 @@
     <div class="col">
       <h2 class="page-title">{{.Node.Name}}</h2>
       <div class="text-muted">
-        Node ID <code>{{.Node.UID}}</code> · Group <strong>{{.Node.ClientGroup}}</strong>
+        Node ID <code>{{.Node.UID}}</code> · Client <strong>{{.Node.ClientGroup}}</strong>
       </div>
     </div>
     {{if .User.CanWrite}}
     <div class="col-auto">
       <div class="btn-list flex-nowrap">
-        <a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>
+        {{if .User.CanTerminal}}<a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>{{end}}
         <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
         <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -62,10 +62,10 @@
           {{if .AllTags}}
           <div class="mb-3">
             {{$nodeTags := .Node.Tags}}
-            {{range .AllTags}}
+            {{range $tag := .AllTags}}
             <label class="form-check">
-              <input class="form-check-input" type="checkbox" name="tag_ids" value="{{.ID}}"
-                {{range $nodeTags}}{{if eq .ID $.ID}}checked{{end}}{{end}}>
+              <input class="form-check-input" type="checkbox" name="tag_ids" value="{{$tag.ID}}"
+                {{range $nodeTags}}{{if eq .ID $tag.ID}}checked{{end}}{{end}}>
               <span class="form-check-label">
                 <span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span>
               </span>
@@ -83,13 +83,15 @@
       </form>
       <div class="modal-body border-top">
         <div class="small text-muted mb-2">Create a new tag</div>
-        <form action="/tags/new" method="POST" class="d-flex gap-2 align-items-center">
+        <form action="/tags/new" method="POST" class="d-flex gap-2 align-items-center flex-wrap">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <input type="text" name="name" class="form-control form-control-sm" placeholder="Tag name" required>
+          <input type="text" name="name" class="form-control form-control-sm" placeholder="Tag name" required style="width: 120px;">
           <span class="text-muted small">bg</span>
-          <input type="color" name="color" class="form-control form-control-sm form-control-color" value="#206bc4" style="width: 40px; padding: 2px;">
+          <input type="color" name="color" id="modal-color-bg" class="form-control form-control-sm form-control-color" value="#206bc4" style="width: 40px; padding: 2px;">
+          <input type="text" id="modal-color-bg-hex" class="form-control form-control-sm" value="#206bc4" maxlength="7" style="width: 80px;">
           <span class="text-muted small">text</span>
-          <input type="color" name="text_color" class="form-control form-control-sm form-control-color" value="#ffffff" style="width: 40px; padding: 2px;">
+          <input type="color" name="text_color" id="modal-color-text" class="form-control form-control-sm form-control-color" value="#ffffff" style="width: 40px; padding: 2px;">
+          <input type="text" id="modal-color-text-hex" class="form-control form-control-sm" value="#ffffff" maxlength="7" style="width: 80px;">
           <button type="submit" class="btn btn-sm btn-primary text-nowrap">Add</button>
         </form>
       </div>
@@ -166,7 +168,7 @@
 <div class="card mb-3">
   <div class="card-header">
     <h3 class="card-title"><i class="ti ti-database me-1"></i> Repositories</h3>
-    {{if .User.CanWrite}}
+    {{if .User.CanBrowseRepo}}
     <div class="card-actions">
       <a href="/nodes/{{.Node.ID}}/repo" class="btn btn-primary btn-sm">
         <i class="ti ti-folder-open me-1"></i>Browse Repositories
@@ -210,6 +212,8 @@
           <td>
             {{if eq .LastStatus "failure"}}
             <span class="badge text-bg-danger">Failure</span>
+            {{else if eq .LastStatus "warning"}}
+            <span class="badge text-bg-warning">Warning</span>
             {{else if eq .LastStatus "success"}}
             <span class="badge text-bg-success">Success</span>
             {{else}}
@@ -250,6 +254,20 @@ function toggleJobConfig(jobID) {
   if (!row) return;
   row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
 }
+(function(){
+  function syncColorPair(pickerId, hexId) {
+    var picker = document.getElementById(pickerId);
+    var hex = document.getElementById(hexId);
+    if (!picker || !hex) return;
+    picker.addEventListener('input', function(){ hex.value = picker.value; });
+    hex.addEventListener('input', function(){
+      var v = hex.value;
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) picker.value = v;
+    });
+  }
+  syncColorPair('modal-color-bg', 'modal-color-bg-hex');
+  syncColorPair('modal-color-text', 'modal-color-text-hex');
+})();
 </script>
 
 <div class="card">
@@ -325,6 +343,8 @@ function toggleJobConfig(jobID) {
           <td>
             {{if eq .WorstStatus "failure"}}
             <span class="badge text-bg-danger">Failure</span>
+            {{else if eq .WorstStatus "warning"}}
+            <span class="badge text-bg-warning">Warning</span>
             {{else if eq .WorstStatus "success"}}
             <span class="badge text-bg-success">Success</span>
             {{else if eq .WorstStatus "never_run"}}

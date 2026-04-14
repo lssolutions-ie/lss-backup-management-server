@@ -1,8 +1,8 @@
 {{define "content"}}
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
-    <div class="col"><h2 class="page-title">Client Groups</h2></div>
-    <div class="col-auto"><a href="/groups/new" class="btn btn-primary">New Group</a></div>
+    <div class="col"><h2 class="page-title">Clients</h2></div>
+    <div class="col-auto"><a href="/groups/new" class="btn btn-primary">New Client</a></div>
   </div>
 </div>
 
@@ -12,6 +12,7 @@
       <thead>
         <tr>
           <th>Name</th>
+          {{if $.User.IsSuperAdmin}}<th>Rank</th>{{end}}
           <th>Nodes</th>
           <th>Created</th>
           <th class="w-1"></th>
@@ -21,6 +22,7 @@
         {{range .Groups}}
         <tr>
           <td>{{.Name}}</td>
+          {{if $.User.IsSuperAdmin}}<td><span class="badge" style="background-color: {{.RankColor}}; color: #333;">{{.RankLabel}}</span></td>{{end}}
           <td>{{.NodeCount}}</td>
           <td>{{.CreatedAt.Format "2006-01-02"}}</td>
           <td>

@@ -46,14 +46,16 @@
       <div class="mb-3">
         <label class="form-label">Role</label>
         <select name="role" class="form-select" id="role-select">
-          <option value="user"       {{if and .TargetUser (eq .TargetUser.Role "user")}}selected{{end}}>User (read/write)</option>
-          <option value="viewer"     {{if and .TargetUser .TargetUser.IsViewer}}selected{{end}}>Viewer (read-only)</option>
-          <option value="superadmin" {{if and .TargetUser .TargetUser.IsSuperAdmin}}selected{{end}}>Superadmin</option>
+          <option value="manager"    {{if and .TargetUser .TargetUser.IsManager}}selected{{end}}>Manager (full access)</option>
+          <option value="user"       {{if and .TargetUser .TargetUser.IsUser}}selected{{end}}>User (view &amp; browse)</option>
+          <option value="guest"      {{if and .TargetUser .TargetUser.IsGuest}}selected{{end}}>Guest (view only)</option>
+          {{if .User.IsSuperAdmin}}<option value="superadmin" {{if and .TargetUser .TargetUser.IsSuperAdmin}}selected{{end}}>Superadmin</option>{{end}}
         </select>
       </div>
 
-      <div class="mb-3" id="group-select-wrap">
-        <label class="form-label">Assigned client groups</label>
+      {{if .User.IsSuperAdmin}}
+      <div class="mb-3">
+        <label class="form-label">Client</label>
         <div>
           {{$assigned := .Assigned}}
           {{range .Groups}}
@@ -63,11 +65,28 @@
             <span class="form-check-label">{{.Name}}</span>
           </label>
           {{else}}
-          <span class="text-muted">No groups exist yet.</span>
+          <span class="text-muted">No clients exist yet.</span>
           {{end}}
         </div>
-        <small class="form-hint">Applies to user (read/write) and viewer (read-only) roles.</small>
+        <small class="form-hint">Which client this user belongs to.</small>
       </div>
+
+      <div class="mb-3">
+        <label class="form-label">Tags</label>
+        <div>
+          {{$userTagIDs := .UserTagIDs}}
+          {{range .AllTags}}
+          <label class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" name="tag_ids" value="{{.ID}}"
+                   {{if index $userTagIDs .ID}}checked{{end}}>
+            <span class="form-check-label"><span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span></span>
+          </label>
+          {{else}}
+          <span class="text-muted">No tags exist yet.</span>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
 
       <div class="form-footer">
         <button type="submit" class="btn btn-primary">Save</button>
@@ -77,12 +96,4 @@
   </div>
 </div>
 
-<script>
-(function() {
-  const sel  = document.getElementById('role-select');
-  const wrap = document.getElementById('group-select-wrap');
-  function toggle() { wrap.style.display = sel.value === 'superadmin' ? 'none' : ''; }
-  if (sel && wrap) { sel.addEventListener('change', toggle); toggle(); }
-})();
-</script>
 {{end}}

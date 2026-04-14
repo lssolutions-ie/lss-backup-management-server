@@ -51,7 +51,7 @@ type repoFileEntry struct {
 
 // HandleRepoPage renders the repository viewer page.
 func (s *Server) HandleRepoPage(w http.ResponseWriter, r *http.Request) {
-	if !s.EnforceWrite(w, r) {
+	if !s.EnforceBrowseRepo(w, r) {
 		return
 	}
 	node, ok := s.nodeFromPath(w, r, "/nodes/")

@@ -287,6 +287,29 @@ func (s *Server) RequireSuperAdmin(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+// RequireManagerOrAbove wraps RequireAuth and checks for superadmin or manager role.
+func (s *Server) RequireManagerOrAbove(next http.HandlerFunc) http.HandlerFunc {
+	return s.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+		user := r.Context().Value(ctxUser).(*models.User)
+		if !user.CanManageUsers() {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	})
+}
+
+// EnforceBrowseRepo returns true if the current user can browse repos/snapshots.
+// Returns false and writes 403 for guests.
+func (s *Server) EnforceBrowseRepo(w http.ResponseWriter, r *http.Request) bool {
+	user, _ := r.Context().Value(ctxUser).(*models.User)
+	if user == nil || !user.CanBrowseRepo() {
+		http.Error(w, "Forbidden — insufficient permissions", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 // validateCSRF returns true if the CSRF token in the form matches the expected value.
 func (s *Server) validateCSRF(r *http.Request) bool {
 	tok, _ := r.Context().Value(ctxSession).(string)

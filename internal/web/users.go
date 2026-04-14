@@ -14,14 +14,17 @@ type usersPageData struct {
 	PageData
 	Users       []*models.User
 	GroupsByUser map[uint64][]*models.ClientGroup
+	TagsByUser  map[uint64][]models.Tag
 }
 
 type userFormPageData struct {
 	PageData
-	TargetUser *models.User
-	Groups     []*models.ClientGroup
-	Assigned   map[uint64]bool
-	Error      string
+	TargetUser  *models.User
+	Groups      []*models.ClientGroup
+	Assigned    map[uint64]bool
+	AllTags     []*models.Tag
+	UserTagIDs  map[uint64]bool
+	Error       string
 }
 
 func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +48,7 @@ func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
 
 	groupsByUser := make(map[uint64][]*models.ClientGroup, len(users))
 	for _, u := range users {
-		if u.IsSuperAdmin() {
+		if u.IsSuperAdmin() || u.IsManager() {
 			continue
 		}
 		ids, err := s.DB.GetUserClientGroupIDs(u.ID)
@@ -60,10 +63,13 @@ func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	tagsByUser, _ := s.DB.GetAllUserTags()
+
 	s.render(w, r, http.StatusOK, "users.html", usersPageData{
 		PageData:     s.newPageData(r),
 		Users:        users,
 		GroupsByUser: groupsByUser,
+		TagsByUser:  tagsByUser,
 	})
 }
 
@@ -75,11 +81,15 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allTags, _ := s.DB.ListTags()
+
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "user_form.html", userFormPageData{
-			PageData: s.newPageData(r),
-			Groups:   groups,
-			Assigned: map[uint64]bool{},
+			PageData:   s.newPageData(r),
+			Groups:     groups,
+			Assigned:   map[uint64]bool{},
+			AllTags:    allTags,
+			UserTagIDs: map[uint64]bool{},
 		})
 		return
 	}
@@ -92,7 +102,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.FormValue("username"))
 	email := strings.TrimSpace(r.FormValue("email"))
 	role := r.FormValue("role")
-	if role != "superadmin" && role != "user" && role != "viewer" {
+	if role != "superadmin" && role != "manager" && role != "user" && role != "guest" {
 		role = "user"
 	}
 
@@ -126,10 +136,18 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if role != "superadmin" {
+	if role == "user" || role == "guest" {
 		groupIDs := parseGroupIDs(r)
 		if err := s.DB.SetUserClientGroupAccess(userID, groupIDs); err != nil {
 			log.Printf("user new: set access: %v", err)
+		}
+	}
+
+	// Save user tags.
+	tagIDs := parseTagIDs(r)
+	if len(tagIDs) > 0 {
+		if err := s.DB.SetUserTags(userID, tagIDs); err != nil {
+			log.Printf("user new: set tags: %v", err)
 		}
 	}
 
@@ -161,12 +179,21 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 		assigned[id] = true
 	}
 
+	allTags, _ := s.DB.ListTags()
+	userTags, _ := s.DB.GetUserTags(target.ID)
+	userTagIDs := make(map[uint64]bool, len(userTags))
+	for _, t := range userTags {
+		userTagIDs[t.ID] = true
+	}
+
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "user_form.html", userFormPageData{
 			PageData:   s.newPageData(r),
 			TargetUser: target,
 			Groups:     groups,
 			Assigned:   assigned,
+			AllTags:    allTags,
+			UserTagIDs: userTagIDs,
 		})
 		return
 	}
@@ -179,7 +206,7 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	password := r.FormValue("password")
 	role := r.FormValue("role")
-	if role != "superadmin" && role != "user" && role != "viewer" {
+	if role != "superadmin" && role != "manager" && role != "user" && role != "guest" {
 		role = "user"
 	}
 
@@ -216,13 +243,19 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groupIDs := parseGroupIDs(r)
-	if role != "superadmin" {
+	if role == "user" || role == "guest" {
 		if err := s.DB.SetUserClientGroupAccess(target.ID, groupIDs); err != nil {
 			log.Printf("user edit: set access: %v", err)
 		}
 	} else {
-		// superadmin: clear explicit access (they see everything)
+		// superadmin/manager: clear explicit access (they see everything)
 		_ = s.DB.SetUserClientGroupAccess(target.ID, nil)
+	}
+
+	// Save user tags.
+	tagIDs := parseTagIDs(r)
+	if err := s.DB.SetUserTags(target.ID, tagIDs); err != nil {
+		log.Printf("user edit: set tags: %v", err)
 	}
 
 	setFlash(w, "User updated.")
@@ -289,6 +322,21 @@ func parseGroupIDs(r *http.Request) []uint64 {
 		return nil
 	}
 	values := r.Form["client_group_ids"]
+	ids := make([]uint64, 0, len(values))
+	for _, v := range values {
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func parseTagIDs(r *http.Request) []uint64 {
+	if err := r.ParseForm(); err != nil {
+		return nil
+	}
+	values := r.Form["tag_ids"]
 	ids := make([]uint64, 0, len(values))
 	for _, v := range values {
 		id, err := strconv.ParseUint(v, 10, 64)

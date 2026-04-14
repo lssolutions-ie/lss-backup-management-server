@@ -11,7 +11,7 @@
 </div>
 
 <div class="row row-deck row-cards mb-3">
-  <div class="col-sm-6 col-lg-3">
+  <div class="col-sm-6 col-lg">
     <div class="card card-sm">
       <div class="card-body">
         <div class="subheader">Total nodes</div>
@@ -19,7 +19,7 @@
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-lg-3">
+  <div class="col-sm-6 col-lg">
     <div class="card card-sm">
       <div class="card-body">
         <div class="subheader">Online (last 10 min)</div>
@@ -27,7 +27,7 @@
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-lg-3">
+  <div class="col-sm-6 col-lg">
     <div class="card card-sm">
       <div class="card-body">
         <div class="subheader">With failures</div>
@@ -35,7 +35,15 @@
       </div>
     </div>
   </div>
-  <div class="col-sm-6 col-lg-3">
+  <div class="col-sm-6 col-lg">
+    <div class="card card-sm">
+      <div class="card-body">
+        <div class="subheader">With warnings</div>
+        <div class="h1 mb-0 text-warning">{{.Stats.WarningNodes}}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg">
     <div class="card card-sm">
       <div class="card-body">
         <div class="subheader">Never seen</div>
@@ -48,20 +56,36 @@
 {{if .Groups}}
 <div class="row row-deck row-cards mb-3">
   {{range .Groups}}
-  <div class="col-sm-6 col-lg-3">
+  <div class="col-sm-6 col-lg-4">
     <div class="card group-card" data-group="{{.Name}}" style="cursor: pointer; transition: box-shadow 0.15s;" onclick="filterByGroup('{{.Name}}', this)">
       <div class="card-body">
-        <h3 class="card-title">{{.Name}}</h3>
-        <div class="text-muted">{{.NodeCount}} nodes</div>
-        <div class="mt-2">
-          {{if eq .WorstStatus "failure"}}
-          <span class="badge text-bg-danger">Failing</span>
-          {{else if eq .WorstStatus "success"}}
-          <span class="badge text-bg-success">Healthy</span>
-          {{else if eq .WorstStatus "never_run"}}
-          <span class="badge text-bg-secondary">Never run</span>
-          {{else}}
-          <span class="badge text-bg-secondary">No data</span>
+        <div class="d-flex align-items-center">
+          <div class="flex-grow-1">
+            <h3 class="card-title mt-0 mb-1 d-flex align-items-center"><span style="font-size: 2em;">{{.Name}}</span> {{if $.User.IsSuperAdmin}}<span class="badge ms-2" style="background-color: {{.RankColor}}; color: #333; font-size: 0.7rem;">{{.RankLabel}}</span>{{end}}</h3>
+            <div class="text-muted mb-1 mt-3">{{.NodeCount}} nodes · {{.TotalJobs}} jobs</div>
+            <div style="font-size: 0.8rem;">
+              {{if gt .TotalJobs 0}}
+              <span class="text-success">{{.SuccessJobs}} success</span> · <span class="text-warning">{{.WarningJobs}} warn</span> · <span class="text-danger">{{.FailureJobs}} failed</span> · <span class="text-muted">{{.NeverRunJobs}} pending</span>
+              {{else}}
+              <span class="text-muted">No jobs</span>
+              {{end}}
+            </div>
+          </div>
+          {{if gt .TotalJobs 0}}
+          <div class="ms-3 text-center">
+            <div class="text-muted" style="font-size: 0.65rem; margin-bottom: 6px;">Success Rate</div>
+            <div style="position: relative; width: 60px; height: 60px; margin: 0 auto;">
+            <svg viewBox="0 0 36 36" width="60" height="60">
+              <circle cx="18" cy="18" r="14" fill="none" stroke="#e9ecef" stroke-width="4"/>
+              {{if gt .SuccessJobs 0}}
+              <circle cx="18" cy="18" r="14" fill="none" stroke="#2fb344" stroke-width="4"
+                stroke-dasharray="{{.SuccessRate}} 100" stroke-dashoffset="25"
+                stroke-linecap="round" transform="rotate(-90 18 18)"/>
+              {{end}}
+            </svg>
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7rem; font-weight: 700;">{{.SuccessRate}}%</div>
+          </div>
+          </div>
           {{end}}
         </div>
       </div>
@@ -83,18 +107,58 @@
         <span id="tag-filter-name"></span>
         <a href="javascript:void(0)" onclick="clearTagFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
       </span>
+      <span id="status-filter-label" class="ms-2 badge text-bg-secondary" style="display: none;">
+        <span id="status-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearStatusFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
+      <span id="online-filter-label" class="ms-2 badge text-bg-secondary" style="display: none;">
+        <span id="online-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearOnlineFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
     </h3>
-    <div class="card-actions d-flex gap-2 align-items-center">
+    <div class="card-actions d-flex gap-2 align-items-center flex-wrap">
       {{if .AllTags}}
       <div class="dropdown">
         <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-          <i class="ti ti-tag"></i> Filter by tag
+          <i class="ti ti-tag"></i> Tag
         </button>
         <div class="dropdown-menu">
           {{range .AllTags}}
           <a class="dropdown-item" href="javascript:void(0)" onclick="filterByTag('{{.Name}}', '{{.Color}}')">
             <span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}};">&nbsp;</span> {{.Name}}
           </a>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-activity"></i> Status
+        </button>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('success')"><span class="badge text-bg-success me-1">&nbsp;</span> Success</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('warning')"><span class="badge text-bg-warning me-1">&nbsp;</span> Warning</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('failure')"><span class="badge text-bg-danger me-1">&nbsp;</span> Failure</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('never_run')"><span class="badge text-bg-secondary me-1">&nbsp;</span> Never run</a>
+        </div>
+      </div>
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-wifi"></i> Online
+        </button>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByOnline('online')"><span class="status status-green me-1"><span class="status-dot"></span></span> Online</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByOnline('offline')"><span class="status status-red me-1"><span class="status-dot"></span></span> Offline</a>
+        </div>
+      </div>
+      {{if .Groups}}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-building"></i> Client
+        </button>
+        <div class="dropdown-menu">
+          {{range .Groups}}
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByGroup('{{.Name}}', null)">{{.Name}}</a>
           {{end}}
         </div>
       </div>
@@ -107,7 +171,7 @@
       <thead>
         <tr>
           <th>Node Name</th>
-          <th>Client Group</th>
+          <th>Client</th>
           <th>Tags</th>
           <th>Last Seen</th>
           <th>Jobs</th>
@@ -117,7 +181,7 @@
       </thead>
       <tbody>
         {{range .Nodes}}
-        <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'" data-tags="{{range .Tags}}{{.Name}},{{end}}">
+        <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'" data-tags="{{range .Tags}}{{.Name}},{{end}}" data-status="{{.WorstStatus}}" data-online="{{if .IsOnline}}online{{else}}offline{{end}}">
           <td>{{.Name}}</td>
           <td>{{.ClientGroup}}</td>
           <td onclick="event.stopPropagation()">{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
@@ -126,6 +190,8 @@
           <td>
             {{if eq .WorstStatus "failure"}}
             <span class="badge text-bg-danger">Failure</span>
+            {{else if eq .WorstStatus "warning"}}
+            <span class="badge text-bg-warning">Warning</span>
             {{else if eq .WorstStatus "success"}}
             <span class="badge text-bg-success">Success</span>
             {{else if eq .WorstStatus "never_run"}}
@@ -159,21 +225,18 @@
 
   window._activeGroup = '';
   window._activeTag = '';
+  window._activeStatus = '';
+  window._activeOnline = '';
 
   window.filterByTag = function(tag, color) {
-    if (window._activeTag === tag) {
-      clearTagFilter();
-      return;
-    }
+    if (window._activeTag === tag) { clearTagFilter(); return; }
     window._activeTag = tag;
     var label = document.getElementById('tag-filter-label');
-    var nameEl = document.getElementById('tag-filter-name');
-    nameEl.textContent = tag;
+    document.getElementById('tag-filter-name').textContent = tag;
     label.style.display = '';
     label.style.backgroundColor = color;
     applyFilters();
   };
-
   window.clearTagFilter = function() {
     window._activeTag = '';
     document.getElementById('tag-filter-label').style.display = 'none';
@@ -181,28 +244,52 @@
   };
 
   window.filterByGroup = function(group, card) {
-    // Toggle: click same card again to clear.
-    if (window._activeGroup === group) {
-      clearGroupFilter();
-      return;
-    }
+    if (window._activeGroup === group) { clearGroupFilter(); return; }
     window._activeGroup = group;
-    document.querySelectorAll('.group-card').forEach(function(c) {
-      c.style.boxShadow = '';
-      c.style.outline = '';
-    });
-    card.style.boxShadow = '0 0 0 3px rgba(32, 107, 196, 0.5)';
+    document.querySelectorAll('.group-card').forEach(function(c) { c.style.boxShadow = ''; });
+    if (card) card.style.boxShadow = '0 0 0 3px rgba(32, 107, 196, 0.5)';
     document.getElementById('group-filter-label').style.display = '';
     document.getElementById('group-filter-name').textContent = group;
     applyFilters();
   };
-
   window.clearGroupFilter = function() {
     window._activeGroup = '';
-    document.querySelectorAll('.group-card').forEach(function(c) {
-      c.style.boxShadow = '';
-    });
+    document.querySelectorAll('.group-card').forEach(function(c) { c.style.boxShadow = ''; });
     document.getElementById('group-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  window.filterByStatus = function(status) {
+    if (window._activeStatus === status) { clearStatusFilter(); return; }
+    window._activeStatus = status;
+    var label = document.getElementById('status-filter-label');
+    var names = {failure:'Failure', warning:'Warning', success:'Success', never_run:'Never run'};
+    var colors = {failure:'#d63939', warning:'#f76707', success:'#2fb344', never_run:'#667382'};
+    var name = names[status] || status;
+    var color = colors[status] || '#667382';
+    document.getElementById('status-filter-name').textContent = name;
+    label.style.display = '';
+    label.style.backgroundColor = color;
+    applyFilters();
+  };
+  window.clearStatusFilter = function() {
+    window._activeStatus = '';
+    document.getElementById('status-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  window.filterByOnline = function(val) {
+    if (window._activeOnline === val) { clearOnlineFilter(); return; }
+    window._activeOnline = val;
+    var label = document.getElementById('online-filter-label');
+    document.getElementById('online-filter-name').textContent = val === 'online' ? 'Online' : 'Offline';
+    label.style.display = '';
+    label.style.backgroundColor = val === 'online' ? '#2fb344' : '#d63939';
+    applyFilters();
+  };
+  window.clearOnlineFilter = function() {
+    window._activeOnline = '';
+    document.getElementById('online-filter-label').style.display = 'none';
     applyFilters();
   };
 
@@ -210,16 +297,22 @@
     const q = (input.value || '').toLowerCase();
     const group = window._activeGroup;
     const tag = window._activeTag;
+    const status = window._activeStatus;
+    const online = window._activeOnline;
     rows.forEach(function(row) {
       const cells = row.querySelectorAll('td');
       if (cells.length < 2) { row.style.display = ''; return; }
       const text = row.textContent.toLowerCase();
       const rowGroup = cells[1].textContent.trim();
       const rowTags = (row.getAttribute('data-tags') || '');
+      const rowStatus = (row.getAttribute('data-status') || '');
+      const rowOnline = (row.getAttribute('data-online') || '');
       const matchSearch = !q || text.indexOf(q) !== -1;
       const matchGroup = !group || rowGroup === group;
       const matchTag = !tag || rowTags.indexOf(tag + ',') !== -1;
-      row.style.display = (matchSearch && matchGroup && matchTag) ? '' : 'none';
+      const matchStatus = !status || rowStatus === status;
+      const matchOnline = !online || rowOnline === online;
+      row.style.display = (matchSearch && matchGroup && matchTag && matchStatus && matchOnline) ? '' : 'none';
     });
   }
 })();

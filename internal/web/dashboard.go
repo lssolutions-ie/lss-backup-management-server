@@ -25,7 +25,7 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	pd := s.newPageData(r)
 
 	var groupIDs []uint64
-	if !user.IsSuperAdmin() {
+	if user.IsGroupScoped() {
 		ids, err := s.DB.GetUserClientGroupIDs(user.ID)
 		if err != nil {
 			log.Printf("dashboard: get group ids: %v", err)

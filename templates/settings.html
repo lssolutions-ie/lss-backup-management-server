@@ -4,57 +4,63 @@
 {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
-{{if .User.IsSuperAdmin}}
-<div class="card mb-3">
-  <div class="card-header"><h3 class="card-title">Email Server (SMTP)</h3></div>
-  <div class="card-body">
-    <p class="text-muted">Configure the SMTP server used for sending alert emails and notifications.</p>
-    <a href="/settings/smtp" class="btn btn-primary">Configure Email Server</a>
-  </div>
-</div>
-{{end}}
-
-<div class="card mb-3">
-  <div class="card-header"><h3 class="card-title">Two-Factor Authentication</h3></div>
-  <div class="card-body">
-    {{if .User.TOTPEnabled}}
-    <p><span class="status status-green"><span class="status-dot"></span> 2FA is enabled</span></p>
-    <form action="/settings/2fa/disable" method="POST">
-      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-      <button type="submit" class="btn btn-warning" onclick="return confirm('Are you sure you want to disable two-factor authentication?')">Disable 2FA</button>
-    </form>
-    {{else}}
-    <p><span class="status status-secondary"><span class="status-dot"></span> 2FA is not enabled</span></p>
-    <a href="/settings/2fa/setup" class="btn btn-primary">Enable 2FA</a>
+<div class="row row-cards" style="align-items:stretch">
+  <div class="col-lg-6 d-flex flex-column">
+    {{if .User.IsSuperAdmin}}
+    <div class="card mb-3">
+      <div class="card-header"><h3 class="card-title">Email Server (SMTP)</h3></div>
+      <div class="card-body">
+        <p class="text-muted">Configure the SMTP server used for sending alert emails and notifications.</p>
+        <a href="/settings/smtp" class="btn btn-primary w-100"><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-mail-cog" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 19h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v5" /><path d="M3 7l9 6l9 -6" /><path d="M19.001 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M19.001 15.5v1.5" /><path d="M19.001 21v1.5" /><path d="M22.032 17.25l-1.299 .75" /><path d="M17.27 20l-1.3 .75" /><path d="M22.032 20.75l-1.299 -.75" /><path d="M17.27 18l-1.3 -.75" /></svg> Configure Email Server</a>
+      </div>
+    </div>
     {{end}}
+
+    <div class="card flex-grow-1">
+      <div class="card-header"><h3 class="card-title">Two-Factor Authentication</h3></div>
+      <div class="card-body d-flex flex-column">
+        {{if .User.TOTPEnabled}}
+        <p><span class="status status-green"><span class="status-dot"></span> 2FA is enabled</span></p>
+        <form action="/settings/2fa/disable" method="POST" class="mt-auto">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-warning w-100" onclick="return confirm('Are you sure you want to disable two-factor authentication?')"><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-shield-off" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17.67 17.667a12 12 0 0 1 -5.67 3.333a12 12 0 0 1 -8.5 -15a12 12 0 0 1 2.5 -1.5" /><path d="M9.872 5.882a11.99 11.99 0 0 1 2.128 -.882a12 12 0 0 1 8.5 15a12 12 0 0 1 -1.083 .57" /><path d="M3 3l18 18" /></svg> Disable 2FA</button>
+        </form>
+        {{else}}
+        <p><span class="status status-secondary"><span class="status-dot"></span> 2FA is not enabled</span></p>
+        <a href="/settings/2fa/setup" class="btn btn-primary w-100 mt-auto"><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-shield-lock" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /><path d="M10 10a2 2 0 1 1 4 0a2 2 0 0 1 -4 0" /><path d="M12 12v2.5" /></svg> Enable 2FA</a>
+        {{end}}
+      </div>
+    </div>
   </div>
-</div>
 
-<div class="card">
-  <div class="card-header"><h3 class="card-title">Change your password</h3></div>
-  <div class="card-body">
-    <form action="/settings" method="POST" autocomplete="off">
-      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <div class="col-lg-6 d-flex">
+    <div class="card w-100">
+      <div class="card-header"><h3 class="card-title">Change your password</h3></div>
+      <div class="card-body">
+        <form action="/settings" method="POST" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-      <div class="mb-3">
-        <label class="form-label">Current password</label>
-        <input type="password" name="current_password" class="form-control" required>
+          <div class="mb-3">
+            <label class="form-label">Current password</label>
+            <input type="password" name="current_password" class="form-control" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">New password</label>
+            <input type="password" name="new_password" class="form-control" required minlength="8">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Confirm new password</label>
+            <input type="password" name="confirm_password" class="form-control" required minlength="8">
+          </div>
+
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary w-100"><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-key" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M16.555 3.843l3.602 3.602a2.877 2.877 0 0 1 0 4.069l-2.643 2.643a2.877 2.877 0 0 1 -4.069 0l-3.602 -3.602a2.877 2.877 0 0 1 0 -4.069l2.643 -2.643a2.877 2.877 0 0 1 4.069 0z" /><path d="M14.5 7.5l4 4" /><path d="M9.42 12.6l-1.92 1.92a2.877 2.877 0 0 0 -.708 1.186l-1.382 4.552a1.073 1.073 0 0 0 1.318 1.318l4.552 -1.382a2.877 2.877 0 0 0 1.186 -.708l1.944 -1.944" /></svg> Update password</button>
+          </div>
+        </form>
       </div>
-
-      <div class="mb-3">
-        <label class="form-label">New password</label>
-        <input type="password" name="new_password" class="form-control" required minlength="8">
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Confirm new password</label>
-        <input type="password" name="confirm_password" class="form-control" required minlength="8">
-      </div>
-
-      <div class="form-footer">
-        <button type="submit" class="btn btn-primary">Update password</button>
-      </div>
-    </form>
+    </div>
   </div>
 </div>
 {{end}}

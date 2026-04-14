@@ -14,9 +14,10 @@ type User struct {
 	TOTPSecret   string
 	TOTPEnabled  bool
 	ForceSetup   bool   // true = must change password and enable 2FA before using dashboard
-	Role         string // "superadmin" | "user"
+	Role         string // "superadmin" | "manager" | "user" | "guest"
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	Tags         []Tag  // populated separately
 }
 
 // EmailStr returns the email or empty string if nil.
@@ -31,21 +32,80 @@ func (u *User) IsSuperAdmin() bool {
 	return u.Role == "superadmin"
 }
 
-func (u *User) IsViewer() bool {
-	return u.Role == "viewer"
+func (u *User) IsManager() bool {
+	return u.Role == "manager"
 }
 
-// CanWrite returns true for superadmin and regular user roles.
-// Viewers have read-only access to their assigned client groups.
+func (u *User) IsUser() bool {
+	return u.Role == "user"
+}
+
+func (u *User) IsGuest() bool {
+	return u.Role == "guest"
+}
+
+// CanWrite returns true for superadmin and manager roles.
+// These roles can register/edit/delete nodes, manage tags, etc.
 func (u *User) CanWrite() bool {
-	return u.Role == "superadmin" || u.Role == "user"
+	return u.Role == "superadmin" || u.Role == "manager"
+}
+
+// CanManageUsers returns true for roles that can create/edit/delete users and groups.
+func (u *User) CanManageUsers() bool {
+	return u.Role == "superadmin" || u.Role == "manager"
+}
+
+// CanTerminal returns true for roles that can open SSH terminal sessions.
+func (u *User) CanTerminal() bool {
+	return u.Role == "superadmin" || u.Role == "manager"
+}
+
+// CanBrowseRepo returns true for roles that can browse snapshots and download files.
+// Guests can only view jobs, not snapshot contents.
+func (u *User) CanBrowseRepo() bool {
+	return u.Role != "guest"
+}
+
+// IsGroupScoped returns true if this user's dashboard is scoped to assigned groups.
+// Superadmins and managers see all nodes.
+func (u *User) IsGroupScoped() bool {
+	return u.Role == "user" || u.Role == "guest"
 }
 
 type ClientGroup struct {
 	ID        uint64
 	Name      string
+	Rank      string // "bronze" | "silver" | "gold" | "diamond"
 	CreatedAt time.Time
 	NodeCount int // populated by JOIN query
+}
+
+// RankLabel returns a display-friendly label for the rank.
+func (g *ClientGroup) RankLabel() string {
+	switch g.Rank {
+	case "diamond":
+		return "Diamond"
+	case "gold":
+		return "Gold"
+	case "silver":
+		return "Silver"
+	default:
+		return "Bronze"
+	}
+}
+
+// RankColor returns a badge color class for the rank.
+func (g *ClientGroup) RankColor() string {
+	switch g.Rank {
+	case "diamond":
+		return "#b9f2ff"
+	case "gold":
+		return "#ffd700"
+	case "silver":
+		return "#c0c0c0"
+	default:
+		return "#cd7f32"
+	}
 }
 
 type Node struct {
@@ -248,9 +308,10 @@ type ReportFilter struct {
 
 // DashboardStats holds summary counters for the dashboard header cards
 type DashboardStats struct {
-	TotalNodes    int
-	OnlineNodes   int
-	FailingNodes  int
+	TotalNodes     int
+	OnlineNodes    int
+	FailingNodes   int
+	WarningNodes   int
 	NeverSeenNodes int
 }
 
@@ -264,7 +325,25 @@ type NodeWithStatus struct {
 // GroupWithStats is a ClientGroup enriched with worst status for the dashboard cards
 type GroupWithStats struct {
 	ClientGroup
-	WorstStatus string
+	WorstStatus    string
+	SuccessJobs    int
+	FailureJobs    int
+	WarningJobs    int
+	NeverRunJobs   int
+}
+
+// TotalJobs returns the sum of all job categories.
+func (g *GroupWithStats) TotalJobs() int {
+	return g.SuccessJobs + g.FailureJobs + g.WarningJobs + g.NeverRunJobs
+}
+
+// SuccessRate returns the success percentage (0-100). Returns 0 if no jobs.
+func (g *GroupWithStats) SuccessRate() int {
+	total := g.TotalJobs()
+	if total == 0 {
+		return 0
+	}
+	return g.SuccessJobs * 100 / total
 }
 
 // WorstStatus computes the worst job status across a slice of snapshots
@@ -274,12 +353,16 @@ func WorstStatus(jobs []JobSnapshot) string {
 		switch j.LastStatus {
 		case "failure":
 			return "failure"
+		case "warning":
+			if worst != "failure" {
+				worst = "warning"
+			}
 		case "success":
 			if worst == "" {
 				worst = "success"
 			}
 		default:
-			if worst != "success" {
+			if worst != "success" && worst != "warning" {
 				worst = "never_run"
 			}
 		}

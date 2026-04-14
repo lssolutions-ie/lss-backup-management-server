@@ -232,7 +232,7 @@ func (d *DB) DeleteExpiredSessions() error {
 
 func (d *DB) ListClientGroups() ([]*models.ClientGroup, error) {
 	rows, err := d.db.Query(`
-		SELECT cg.id, cg.name, cg.created_at, COUNT(n.id) AS node_count
+		SELECT cg.id, cg.name, cg.rank, cg.created_at, COUNT(n.id) AS node_count
 		FROM client_groups cg
 		LEFT JOIN nodes n ON n.client_group_id = cg.id
 		GROUP BY cg.id
@@ -244,7 +244,7 @@ func (d *DB) ListClientGroups() ([]*models.ClientGroup, error) {
 	var groups []*models.ClientGroup
 	for rows.Next() {
 		g := &models.ClientGroup{}
-		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.NodeCount); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Rank, &g.CreatedAt, &g.NodeCount); err != nil {
 			return nil, err
 		}
 		groups = append(groups, g)
@@ -254,7 +254,7 @@ func (d *DB) ListClientGroups() ([]*models.ClientGroup, error) {
 
 func (d *DB) ListClientGroupsForUser(userID uint64) ([]*models.ClientGroup, error) {
 	rows, err := d.db.Query(`
-		SELECT cg.id, cg.name, cg.created_at, COUNT(n.id) AS node_count
+		SELECT cg.id, cg.name, cg.rank, cg.created_at, COUNT(n.id) AS node_count
 		FROM client_groups cg
 		INNER JOIN user_client_group_access uga ON uga.client_group_id = cg.id AND uga.user_id = ?
 		LEFT JOIN nodes n ON n.client_group_id = cg.id
@@ -267,7 +267,7 @@ func (d *DB) ListClientGroupsForUser(userID uint64) ([]*models.ClientGroup, erro
 	var groups []*models.ClientGroup
 	for rows.Next() {
 		g := &models.ClientGroup{}
-		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.NodeCount); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Rank, &g.CreatedAt, &g.NodeCount); err != nil {
 			return nil, err
 		}
 		groups = append(groups, g)
@@ -278,16 +278,19 @@ func (d *DB) ListClientGroupsForUser(userID uint64) ([]*models.ClientGroup, erro
 func (d *DB) GetClientGroupByID(id uint64) (*models.ClientGroup, error) {
 	g := &models.ClientGroup{}
 	err := d.db.QueryRow(
-		"SELECT id, name, created_at FROM client_groups WHERE id = ?", id,
-	).Scan(&g.ID, &g.Name, &g.CreatedAt)
+		"SELECT id, name, `rank`, created_at FROM client_groups WHERE id = ?", id,
+	).Scan(&g.ID, &g.Name, &g.Rank, &g.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return g, err
 }
 
-func (d *DB) CreateClientGroup(name string) (uint64, error) {
-	res, err := d.db.Exec("INSERT INTO client_groups (name) VALUES (?)", name)
+func (d *DB) CreateClientGroup(name, rank string) (uint64, error) {
+	if rank == "" {
+		rank = "bronze"
+	}
+	res, err := d.db.Exec("INSERT INTO client_groups (name, `rank`) VALUES (?, ?)", name, rank)
 	if err != nil {
 		return 0, err
 	}
@@ -295,8 +298,11 @@ func (d *DB) CreateClientGroup(name string) (uint64, error) {
 	return uint64(id), err
 }
 
-func (d *DB) UpdateClientGroup(id uint64, name string) error {
-	_, err := d.db.Exec("UPDATE client_groups SET name = ? WHERE id = ?", name, id)
+func (d *DB) UpdateClientGroup(id uint64, name, rank string) error {
+	if rank == "" {
+		rank = "bronze"
+	}
+	_, err := d.db.Exec("UPDATE client_groups SET name = ?, `rank` = ? WHERE id = ?", name, rank, id)
 	return err
 }
 
@@ -737,6 +743,48 @@ func (d *DB) GetTagByID(id uint64) (*models.Tag, error) {
 	return t, err
 }
 
+// GetUserTags returns full tag objects for a user.
+func (d *DB) GetUserTags(userID uint64) ([]models.Tag, error) {
+	rows, err := d.db.Query(
+		"SELECT t.id, t.name, t.color, t.text_color FROM tags t JOIN user_tags ut ON ut.tag_id = t.id WHERE ut.user_id = ? ORDER BY t.name",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []models.Tag
+	for rows.Next() {
+		var t models.Tag
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, rows.Err()
+}
+
+// GetAllUserTags returns tags for all users in a single query, keyed by user ID.
+func (d *DB) GetAllUserTags() (map[uint64][]models.Tag, error) {
+	rows, err := d.db.Query(
+		"SELECT ut.user_id, t.id, t.name, t.color, t.text_color FROM user_tags ut JOIN tags t ON t.id = ut.tag_id ORDER BY t.name",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := make(map[uint64][]models.Tag)
+	for rows.Next() {
+		var userID uint64
+		var t models.Tag
+		if err := rows.Scan(&userID, &t.ID, &t.Name, &t.Color, &t.TextColor); err != nil {
+			return nil, err
+		}
+		m[userID] = append(m[userID], t)
+	}
+	return m, rows.Err()
+}
+
 // GetUserTagIDs returns the tag IDs a user has access to.
 func (d *DB) GetUserTagIDs(userID uint64) ([]uint64, error) {
 	rows, err := d.db.Query("SELECT tag_id FROM user_tags WHERE user_id = ?", userID)
@@ -1058,11 +1106,23 @@ func (d *DB) GetDashboardStats(groupIDs []uint64) (*models.DashboardStats, error
 		JOIN nodes n ON n.id = js.node_id
 		WHERE js.last_status = 'failure'`
 	if where != "" {
-		// where already starts with " WHERE ..." — convert to extra AND.
 		q2 += " AND " + where[len(" WHERE "):]
 	}
 	if err := d.db.QueryRow(q2, args...).Scan(&stats.FailingNodes); err != nil {
 		return nil, fmt.Errorf("dashboard failing counter: %w", err)
+	}
+
+	// Warning nodes: distinct nodes with at least one warning job snapshot (but not counted as failing).
+	q3 := `
+		SELECT COUNT(DISTINCT js.node_id)
+		FROM job_snapshots js
+		JOIN nodes n ON n.id = js.node_id
+		WHERE js.last_status = 'warning'`
+	if where != "" {
+		q3 += " AND " + where[len(" WHERE "):]
+	}
+	if err := d.db.QueryRow(q3, args...).Scan(&stats.WarningNodes); err != nil {
+		return nil, fmt.Errorf("dashboard warning counter: %w", err)
 	}
 
 	return stats, nil
@@ -1073,14 +1133,19 @@ func (d *DB) GetDashboardStats(groupIDs []uint64) (*models.DashboardStats, error
 // per-group subqueries.
 func (d *DB) ListGroupsWithStats(groupIDs []uint64) ([]*models.GroupWithStats, error) {
 	query := `
-		SELECT cg.id, cg.name, cg.created_at,
+		SELECT cg.id, cg.name, cg.rank, cg.created_at,
 		       COUNT(DISTINCT n.id) AS node_count,
 		       CASE
 		         WHEN SUM(js.last_status = 'failure') > 0 THEN 'failure'
+		         WHEN SUM(js.last_status = 'warning') > 0 THEN 'warning'
 		         WHEN SUM(js.last_status = '')        > 0 THEN 'never_run'
 		         WHEN SUM(js.last_status = 'success') > 0 THEN 'success'
 		         ELSE ''
-		       END AS worst_status
+		       END AS worst_status,
+		       COALESCE(SUM(js.last_status = 'success'), 0) AS success_jobs,
+		       COALESCE(SUM(js.last_status = 'failure'), 0) AS failure_jobs,
+		       COALESCE(SUM(js.last_status = 'warning'), 0) AS warning_jobs,
+		       COALESCE(SUM(js.last_status = '' OR js.last_status IS NULL), 0) AS never_run_jobs
 		FROM client_groups cg
 		LEFT JOIN nodes n          ON n.client_group_id = cg.id
 		LEFT JOIN job_snapshots js ON js.node_id = n.id`
@@ -1091,7 +1156,7 @@ func (d *DB) ListGroupsWithStats(groupIDs []uint64) ([]*models.GroupWithStats, e
 			args = append(args, id)
 		}
 	}
-	query += " GROUP BY cg.id, cg.name, cg.created_at ORDER BY cg.name"
+	query += " GROUP BY cg.id, cg.name, cg.rank, cg.created_at ORDER BY cg.name"
 
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
@@ -1103,7 +1168,8 @@ func (d *DB) ListGroupsWithStats(groupIDs []uint64) ([]*models.GroupWithStats, e
 	for rows.Next() {
 		gws := &models.GroupWithStats{}
 		if err := rows.Scan(
-			&gws.ID, &gws.Name, &gws.CreatedAt, &gws.NodeCount, &gws.WorstStatus,
+			&gws.ID, &gws.Name, &gws.Rank, &gws.CreatedAt, &gws.NodeCount, &gws.WorstStatus,
+			&gws.SuccessJobs, &gws.FailureJobs, &gws.WarningJobs, &gws.NeverRunJobs,
 		); err != nil {
 			return nil, err
 		}

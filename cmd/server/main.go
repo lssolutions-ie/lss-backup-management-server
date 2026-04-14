@@ -123,8 +123,8 @@ func main() {
 
 	// Tags
 	mux.HandleFunc("/tags", webServer.RequireAuth(webServer.HandleTags))
-	mux.HandleFunc("/tags/new", webServer.RequireSuperAdmin(webServer.HandleTagCreate))
-	mux.HandleFunc("/tags/", webServer.RequireSuperAdmin(tagRouter(webServer)))
+	mux.HandleFunc("/tags/new", webServer.RequireManagerOrAbove(webServer.HandleTagCreate))
+	mux.HandleFunc("/tags/", webServer.RequireManagerOrAbove(tagRouter(webServer)))
 
 	// Terminal WebSocket (separate from /nodes/ tree because it uses a different path style)
 	mux.HandleFunc("/ws/terminal", webServer.RequireAuth(webServer.HandleTerminalWS))
@@ -133,15 +133,15 @@ func main() {
 	// NOT session-gated — nodes authenticate via HMAC-PSK in HTTP headers.
 	mux.HandleFunc("/ws/ssh-tunnel", webServer.HandleSSHTunnelWS)
 
-	// Groups (superadmin only)
-	mux.HandleFunc("/groups", webServer.RequireSuperAdmin(webServer.HandleGroups))
-	mux.HandleFunc("/groups/new", webServer.RequireSuperAdmin(webServer.HandleGroupNew))
-	mux.HandleFunc("/groups/", webServer.RequireSuperAdmin(groupRouter(webServer)))
+	// Groups (manager+)
+	mux.HandleFunc("/groups", webServer.RequireManagerOrAbove(webServer.HandleGroups))
+	mux.HandleFunc("/groups/new", webServer.RequireManagerOrAbove(webServer.HandleGroupNew))
+	mux.HandleFunc("/groups/", webServer.RequireManagerOrAbove(groupRouter(webServer)))
 
-	// Users (superadmin only)
-	mux.HandleFunc("/users", webServer.RequireSuperAdmin(webServer.HandleUsers))
-	mux.HandleFunc("/users/new", webServer.RequireSuperAdmin(webServer.HandleUserNew))
-	mux.HandleFunc("/users/", webServer.RequireSuperAdmin(userRouter(webServer)))
+	// Users (manager+)
+	mux.HandleFunc("/users", webServer.RequireManagerOrAbove(webServer.HandleUsers))
+	mux.HandleFunc("/users/new", webServer.RequireManagerOrAbove(webServer.HandleUserNew))
+	mux.HandleFunc("/users/", webServer.RequireManagerOrAbove(userRouter(webServer)))
 
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))

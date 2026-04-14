@@ -52,13 +52,17 @@
             <label class="form-label">Name</label>
             <input type="text" name="name" class="form-control" required>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Background</label>
-            <input type="color" name="color" class="form-control form-control-color" value="#206bc4">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Text</label>
-            <input type="color" name="text_color" class="form-control form-control-color" value="#ffffff">
+          <div class="row mb-3">
+            <div class="col-6">
+              <label class="form-label">Background</label>
+              <input type="color" name="color" id="new-color-bg" class="form-control form-control-color w-100" value="#206bc4">
+              <input type="text" id="new-color-bg-hex" class="form-control form-control-sm mt-1" value="#206bc4" maxlength="7" placeholder="#000000">
+            </div>
+            <div class="col-6">
+              <label class="form-label">Text</label>
+              <input type="color" name="text_color" id="new-color-text" class="form-control form-control-color w-100" value="#f0f0f0">
+              <input type="text" id="new-color-text-hex" class="form-control form-control-sm mt-1" value="#f0f0f0" maxlength="7" placeholder="#ffffff">
+            </div>
           </div>
           <button type="submit" class="btn btn-primary w-100">Create Tag</button>
         </form>
@@ -66,4 +70,20 @@
     </div>
   </div>
 </div>
+<script>
+(function(){
+  function syncColorPair(pickerId, hexId) {
+    var picker = document.getElementById(pickerId);
+    var hex = document.getElementById(hexId);
+    if (!picker || !hex) return;
+    picker.addEventListener('input', function(){ hex.value = picker.value; });
+    hex.addEventListener('input', function(){
+      var v = hex.value;
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) picker.value = v;
+    });
+  }
+  syncColorPair('new-color-bg', 'new-color-bg-hex');
+  syncColorPair('new-color-text', 'new-color-text-hex');
+})();
+</script>
 {{end}}

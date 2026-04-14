@@ -42,11 +42,11 @@
               <span class="nav-link-title">Tags</span>
             </a>
           </li>
-          {{if .User.IsSuperAdmin}}
+          {{if .User.CanManageUsers}}
           <li class="nav-item">
             <a class="nav-link" href="/groups">
               <span class="nav-link-icon"><i class="ti ti-folders"></i></span>
-              <span class="nav-link-title">Client Groups</span>
+              <span class="nav-link-title">Clients</span>
             </a>
           </li>
           <li class="nav-item">

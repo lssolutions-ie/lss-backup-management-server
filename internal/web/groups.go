@@ -55,7 +55,8 @@ func (s *Server) HandleGroupNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.DB.CreateClientGroup(name); err != nil {
+	rank := r.FormValue("rank")
+	if _, err := s.DB.CreateClientGroup(name, rank); err != nil {
 		log.Printf("group new: %v", err)
 		s.render(w, r, http.StatusUnprocessableEntity, "group_form.html", groupFormPageData{
 			PageData: s.newPageData(r),
@@ -97,7 +98,8 @@ func (s *Server) HandleGroupEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.DB.UpdateClientGroup(group.ID, name); err != nil {
+	rank := r.FormValue("rank")
+	if err := s.DB.UpdateClientGroup(group.ID, name, rank); err != nil {
 		log.Printf("group edit: %v", err)
 		s.render(w, r, http.StatusInternalServerError, "group_form.html", groupFormPageData{
 			PageData: s.newPageData(r),

@@ -25,22 +25,26 @@
             <input type="text" name="name" class="form-control" value="{{.Tag.Name}}" required>
           </div>
 
-          <div class="mb-3">
-            <label class="form-label">Background</label>
-            <input type="color" name="color" class="form-control form-control-color" value="{{.Tag.Color}}">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Text</label>
-            <input type="color" name="text_color" class="form-control form-control-color" value="{{.Tag.TextColor}}">
+          <div class="row mb-3">
+            <div class="col-6">
+              <label class="form-label">Background</label>
+              <input type="color" name="color" id="color-bg" class="form-control form-control-color w-100" value="{{.Tag.Color}}">
+              <input type="text" id="color-bg-hex" class="form-control form-control-sm mt-1" value="{{.Tag.Color}}" maxlength="7" placeholder="#000000">
+            </div>
+            <div class="col-6">
+              <label class="form-label">Text</label>
+              <input type="color" name="text_color" id="color-text" class="form-control form-control-color w-100" value="{{.Tag.TextColor}}">
+              <input type="text" id="color-text-hex" class="form-control form-control-sm mt-1" value="{{.Tag.TextColor}}" maxlength="7" placeholder="#ffffff">
+            </div>
           </div>
 
           <h3 class="card-title mt-4">User Permissions</h3>
-          <p class="text-muted">Select which users can see nodes with this tag. Superadmins always see everything.</p>
+          <p class="text-muted">Select which users can see nodes with this tag. Superadmins and managers always see everything.</p>
 
           <div class="mb-3">
             {{$assigned := .Assigned}}
             {{range .Users}}
-            {{if not .IsSuperAdmin}}
+            {{if and (not .IsSuperAdmin) (not .IsManager)}}
             <label class="form-check">
               <input class="form-check-input" type="checkbox" name="user_ids" value="{{.ID}}"
                 {{if index $assigned .ID}}checked{{end}}>
@@ -62,4 +66,20 @@
     </div>
   </div>
 </div>
+<script>
+(function(){
+  function syncColorPair(pickerId, hexId) {
+    var picker = document.getElementById(pickerId);
+    var hex = document.getElementById(hexId);
+    if (!picker || !hex) return;
+    picker.addEventListener('input', function(){ hex.value = picker.value; });
+    hex.addEventListener('input', function(){
+      var v = hex.value;
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) picker.value = v;
+    });
+  }
+  syncColorPair('color-bg', 'color-bg-hex');
+  syncColorPair('color-text', 'color-text-hex');
+})();
+</script>
 {{end}}

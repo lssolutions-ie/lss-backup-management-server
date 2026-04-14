@@ -11,7 +11,7 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.7.0
+**Version:** v1.8.0
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -43,7 +43,7 @@ terminal access to nodes through reverse SSH tunnels over WebSocket.
 │   │   ├── terminal.go             Dashboard terminal (WebSocket → SSH proxy)
 │   │   └── ssh_tunnel.go           Node reverse tunnel endpoint (WebSocket → sshd)
 │   └── worker/worker.go            Background offline-node checker
-├── migrations/                     SQL migration files (001-018)
+├── migrations/                     SQL migration files (001-023)
 ├── templates/                      Go HTML templates (Tabler UI)
 ├── static/                         CSS/JS assets
 └── install/install.sh              Server installer (systemd, nginx, MySQL, sshd config)
@@ -199,6 +199,11 @@ MySQL with 18 migrations:
 | 016 | Tag text_color column |
 | 017 | Roles renamed: user→manager, viewer→user; added manager, guest |
 | 018 | client_groups.rank ENUM (bronze, silver, gold, diamond) |
+| 019 | User tags split: user_tag_catalog + user_tag_links (dropped old user_tags) |
+| 020 | Permission scaffolding: tag_permissions, user_groups, user_group_members, user_group_tags, user_node_overrides |
+| 021 | Unified permission_rules (priority, effect, access, polymorphic subject+target); migrates + drops tag_permissions/user_node_overrides |
+| 022 | node_tag allowed as subject type (later removed from UI; enum kept) |
+| 023 | permission_rules.enabled flag |
 
 ---
 
@@ -216,6 +221,63 @@ MySQL with 18 migrations:
 | Manage Tags | Yes | Yes | No | No |
 | SMTP/Server Settings | Yes | No | No | No |
 | View Jobs & Check-ins | Yes | Yes | Yes | Yes |
+
+---
+
+## Permissions System (v1.8.0)
+
+Firewall-style **rule engine** that determines what each non-superadmin user can see/do on each node.
+
+### Tables
+
+- `permission_rules (id, priority, enabled, effect, access, subject_type, subject_id, target_type, target_id, locked_by_superadmin, created_by, created_at)`
+- `user_groups (id, name, client_group_id)` + `user_group_members (is_lead)` + `user_group_tags`
+- User tags stored separately: `user_tag_catalog` + `user_tag_links` (migration 019)
+
+### Rule shape
+
+- **Priority** (int, default 1000) — higher wins (z-index semantics)
+- **Enabled** (bool) — disabled rules skipped during evaluation
+- **Effect**: `allow` | `deny`
+- **Access**: `view` | `manage` (UI label: "Edit")
+- **Subject**: `user` | `user_group` | `user_tag` + ID
+- **Target**: `node` | `node_tag` + ID
+- **Locked by superadmin**: if true, managers cannot modify or delete
+
+### Evaluation (for user U needing access A on node N)
+
+1. Superadmin → `manage` (bypass)
+2. Client scope: if U's client ≠ N's client → `none`
+3. Collect applicable rules (subject matches U, target matches N, enabled)
+4. Walk rules in priority DESC order:
+   - `allow` with access ≥ A → granted
+   - `deny` with access ≤ A → denied
+   - else skip
+5. No decision → default deny
+6. Cap by role: user/guest max = view
+
+### Subject → User matching
+
+A rule matches a user if:
+- `subject_type=user` AND `subject_id=userID`
+- `subject_type=user_group` AND user is a member
+- `subject_type=user_tag` AND user has that tag directly OR via group inheritance
+
+### Implementation
+
+- `internal/db/queries.go`: `ListPermissionRules`, `CreatePermissionRule`, `UpdatePermissionRule`, `DeletePermissionRule`, `SetPermissionRuleEnabled`, `ListVisibleNodeIDsForUser` (eval engine)
+- `internal/web/permissions.go`: page + AJAX endpoints (`POST /permissions/rule`, `/permissions/rule/{id}/toggle`, `/permissions/rule/{id}/delete`)
+- `internal/web/user_groups.go`: `/user-groups` CRUD
+- `internal/web/user_tags.go`: `/user-tags` CRUD
+- `internal/web/middleware.go`: `EffectiveNodeAccess`, `EnforceNodeView`, `EnforceNodeManage`
+- `templates/permissions.html`: editor + firewall-table UI with multi-select target picker
+
+### Enforcement points
+
+- **Dashboard**: non-superadmin sees only nodes in `ListVisibleNodeIDsForUser`
+- **Node detail**: `EnforceNodeView` gates access; write buttons gated on `.NodeAccess == "manage"`
+- **Edit/Delete/RegenPSK/ManageTags/Terminal**: `EnforceNodeManage`
+- **Repo browse**: `EnforceBrowseRepo` (role) + `EnforceNodeView` (per-node)
 
 ---
 
@@ -293,7 +355,7 @@ Applied on: tag edit, tags list (create), node detail modal, node new form.
 go build ./cmd/server
 
 # Production (with version)
-GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.7.0" -o lss-management-server ./cmd/server
+GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.8.0" -o lss-management-server ./cmd/server
 ```
 
 Version is set via `-ldflags "-X main.Version=vX.Y.Z"` — defaults to `"dev"` if not set.
@@ -366,4 +428,4 @@ Without these, HAProxy kills idle WebSocket connections after its default timeou
 
 ---
 
-_Last updated: 2026-04-14 (v1.7.0)_
+_Last updated: 2026-04-14 (v1.8.0)_

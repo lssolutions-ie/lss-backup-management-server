@@ -11,7 +11,7 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.8.0
+**Version:** v1.10.2
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -43,7 +43,7 @@ terminal access to nodes through reverse SSH tunnels over WebSocket.
 │   │   ├── terminal.go             Dashboard terminal (WebSocket → SSH proxy)
 │   │   └── ssh_tunnel.go           Node reverse tunnel endpoint (WebSocket → sshd)
 │   └── worker/worker.go            Background offline-node checker
-├── migrations/                     SQL migration files (001-023)
+├── migrations/                     SQL migration files (001-029)
 ├── templates/                      Go HTML templates (Tabler UI)
 ├── static/                         CSS/JS assets
 └── install/install.sh              Server installer (systemd, nginx, MySQL, sshd config)
@@ -204,6 +204,12 @@ MySQL with 18 migrations:
 | 021 | Unified permission_rules (priority, effect, access, polymorphic subject+target); migrates + drops tag_permissions/user_node_overrides |
 | 022 | node_tag allowed as subject type (later removed from UI; enum kept) |
 | 023 | permission_rules.enabled flag |
+| 024 | Job status extensions: VARCHAR last_status, bytes/files/snapshot_id/repo_size + per-job override |
+| 025 | server_tuning single-row table (reconcile interval, retention, offline thresholds, etc.) |
+| 026 | job_daily_stats aggregation table (retention rollup) |
+| 027 | job_silences (timed mute per node+job) |
+| 028 | job_tag_catalog + job_tag_links (priority labels) |
+| 029 | snapshot_count column + job_anomalies audit table + anomaly threshold settings |
 
 ---
 
@@ -221,6 +227,79 @@ MySQL with 18 migrations:
 | Manage Tags | Yes | Yes | No | No |
 | SMTP/Server Settings | Yes | No | No | No |
 | View Jobs & Check-ins | Yes | Yes | Yes | Yes |
+
+---
+
+## Job Reporting Protocol (v1.9.0+, paired with CLI v2.2.x)
+
+Extended `NodeStatus.Jobs[]` schema. Fields are optional/omitempty — server tolerates any subset.
+
+### Status enum (widened)
+`success | warning | failure | "" (never run) | skipped | cancelled | paused`
+
+Stored as VARCHAR(32) on `job_snapshots.last_status` to avoid future enum migrations.
+
+### `result` object (on post_run)
+```jsonc
+"result": {
+  "bytes_total":    12345678,    // total dataset size after run
+  "bytes_new":       4567890,    // new bytes added this run
+  "files_total":       12000,
+  "files_new":           300,
+  "snapshot_id":   "a1b2c3d4",   // restic short-id (rsync omits)
+  "snapshot_count":         9    // restic-only: total snapshots in repo (post-prune)
+}
+```
+
+### `repo_size_bytes` (on heartbeat, on demand)
+- Server emits `reconcile_repo_stats: ["job-x", ...]` in heartbeat response when stats are stale
+- CLI runs `restic stats` only for listed jobs, sends `repo_size_bytes` on next outgoing report
+- Server overwrites `repo_size_observed` and resets `repo_size_estimated`
+- Between reconciles: server adds `bytes_new` to running estimate
+- UI shows "1.2 TB (verified 3 days ago)"
+
+### Server-side error classifier
+- `internal/classify` — regex rules over raw `last_error`
+- Categories: network / auth / disk_full / permission / repo_corrupt / timeout / config / cancelled / other
+- Stored on `job_snapshots.error_category`
+
+---
+
+## Anomaly Detection (v1.10.0)
+
+Three security-relevant detectors compare each post_run against the previous job_snapshots state:
+
+| Detector | Trigger | Catches |
+|----------|---------|---------|
+| `snapshot_drop` | `prev.snapshot_count − curr > threshold` | Repo tampering — `restic forget` attack |
+| `files_drop` | `prev.files_total − curr ≥ N AND ≥ pct%` | Source wipe / ransomware / mass deletion |
+| `bytes_drop` | `prev.bytes_total − curr ≥ N MB AND ≥ pct%` | Same |
+
+### Tunable thresholds (per-server, in `/settings/tuning`)
+Defaults: snapshot drop > 1, files drop ≥5% AND ≥10 files, bytes drop ≥10% AND ≥100 MB.
+
+### Audit log
+- `job_anomalies` table records each fire with prev/curr/delta/percentage + `snapshot_id` for forensics
+- 24h dedup on insert: same `(node_id, job_id, anomaly_type)` won't re-fire while an unack'd row exists
+- Visible via Security button on node detail → `/nodes/{id}/anomalies`
+- Acknowledge button captures who+when reviewed
+
+### Detection logic
+- `internal/api/status.go` calls `detectAnomalies()` after every post_run upsert
+- Reads `prev` via `db.GetJobSnapshotPrev` *before* the upsert, then compares
+- Inserts via `db.InsertJobAnomaly` (which dedupes)
+
+---
+
+## Job History (v1.10.0)
+
+- Per-job History button on node detail jobs row → inline expander
+- Reads from `node_reports.payload_json`, parses each report, extracts the matching job state
+- Deduplicated by `last_run_at` so 1 row per actual run (not per heartbeat re-report)
+- Sortable columns (Reported / Last Run / Status / Dur. / Bytes New / Files / Error)
+- Filters: Status, From, To (Flatpickr), Limit (10/25/50/100)
+- Snapshot column hidden for rsync jobs
+- Error column merges `error_category` badge + truncated `last_error` (full on hover)
 
 ---
 
@@ -355,7 +434,7 @@ Applied on: tag edit, tags list (create), node detail modal, node new form.
 go build ./cmd/server
 
 # Production (with version)
-GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.8.0" -o lss-management-server ./cmd/server
+GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.10.2" -o lss-management-server ./cmd/server
 ```
 
 Version is set via `-ldflags "-X main.Version=vX.Y.Z"` — defaults to `"dev"` if not set.
@@ -428,4 +507,4 @@ Without these, HAProxy kills idle WebSocket connections after its default timeou
 
 ---
 
-_Last updated: 2026-04-14 (v1.8.0)_
+_Last updated: 2026-04-14 (v1.10.2)_

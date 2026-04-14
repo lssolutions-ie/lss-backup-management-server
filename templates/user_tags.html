@@ -1,20 +1,15 @@
 {{define "content"}}
 <div class="page-header mb-3">
-  <div class="row g-2 align-items-center">
-    <div class="col">
-      <h2 class="page-title">Node Tags</h2>
-      <div class="text-muted">Manage tags and control which users can see nodes with each tag.</div>
-    </div>
-  </div>
+  <h2 class="page-title">User Tags</h2>
 </div>
 
 <div class="row">
   <div class="col-md-9">
-    <form action="/tags/bulk-delete" method="POST" id="bulk-delete-form">
+    <form action="/user-tags/bulk-delete" method="POST" id="bulk-delete-form">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <div class="card">
         <div class="card-header d-flex align-items-center">
-          <h3 class="card-title mb-0">All Tags</h3>
+          <h3 class="card-title mb-0">All User Tags</h3>
           <button type="submit" id="bulk-delete-btn" class="btn btn-sm btn-danger ms-auto" disabled>
             <i class="ti ti-trash"></i> Delete selected
           </button>
@@ -24,35 +19,35 @@
             <thead>
               <tr>
                 <th class="w-1"><input type="checkbox" id="select-all" class="form-check-input"></th>
-                <th>Tag</th>
+                <th>Name</th>
+                <th>Preview</th>
                 <th>Assigned To</th>
-                <th>Color</th>
-                <th class="w-1">Actions</th>
+                <th class="w-1"></th>
               </tr>
             </thead>
             <tbody>
-              {{$nodesByTag := .NodesByTag}}
-              {{range .Tags}}
+              {{$usersByTag := .UsersByTag}}
+              {{range .UserTags}}
               <tr>
                 <td><input type="checkbox" name="tag_ids" value="{{.ID}}" class="form-check-input tag-checkbox"></td>
-                <td><span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.9rem;">{{.Name}}</span></td>
+                <td>{{.Name}}</td>
+                <td><span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span></td>
                 <td>
-                  {{$nodes := index $nodesByTag .ID}}
-                  {{if $nodes}}
+                  {{$users := index $usersByTag .ID}}
+                  {{if $users}}
                     <div style="font-size: 0.7rem; line-height: 1.2; max-height: 2.6em; overflow-y: auto;">
-                      {{range $i, $n := $nodes}}{{if $i}}, {{end}}<a href="/nodes/{{$n.ID}}">{{$n.Name}}</a>{{end}}
+                      {{range $i, $u := $users}}{{if $i}}, {{end}}<a href="/users/{{$u.ID}}/edit">{{$u.Name}}</a>{{end}}
                     </div>
                   {{else}}
                     <span class="text-muted">—</span>
                   {{end}}
                 </td>
-                <td><code>{{.Color}}</code></td>
-                <td class="text-nowrap">
-                  <a href="/tags/{{.ID}}/edit" class="btn btn-sm">Edit</a>
+                <td>
+                  <a href="/user-tags/{{.ID}}/edit" class="btn btn-sm">Edit</a>
                 </td>
               </tr>
               {{else}}
-              <tr><td colspan="5" class="text-center text-muted">No tags yet.</td></tr>
+              <tr><td colspan="5" class="text-center text-muted">No user tags yet.</td></tr>
               {{end}}
             </tbody>
           </table>
@@ -63,9 +58,9 @@
 
   <div class="col-md-3">
     <div class="card">
-      <div class="card-header"><h3 class="card-title">Create Tag</h3></div>
+      <div class="card-header"><h3 class="card-title">Create User Tag</h3></div>
       <div class="card-body">
-        <form action="/tags/new" method="POST" autocomplete="off">
+        <form action="/user-tags/new" method="POST">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <div class="mb-3">
             <label class="form-label">Name</label>
@@ -74,21 +69,22 @@
           <div class="row mb-3">
             <div class="col-6">
               <label class="form-label">Background</label>
-              <input type="color" name="color" id="new-color-bg" class="form-control form-control-color w-100" value="#206bc4">
-              <input type="text" id="new-color-bg-hex" class="form-control form-control-sm mt-1" value="#206bc4" maxlength="7" placeholder="#000000">
+              <input type="color" name="color" id="new-ut-bg" class="form-control form-control-color w-100" value="#206bc4">
+              <input type="text" id="new-ut-bg-hex" class="form-control form-control-sm mt-1" value="#206bc4" maxlength="7">
             </div>
             <div class="col-6">
               <label class="form-label">Text</label>
-              <input type="color" name="text_color" id="new-color-text" class="form-control form-control-color w-100" value="#f0f0f0">
-              <input type="text" id="new-color-text-hex" class="form-control form-control-sm mt-1" value="#f0f0f0" maxlength="7" placeholder="#ffffff">
+              <input type="color" name="text_color" id="new-ut-text" class="form-control form-control-color w-100" value="#f0f0f0">
+              <input type="text" id="new-ut-text-hex" class="form-control form-control-sm mt-1" value="#f0f0f0" maxlength="7">
             </div>
           </div>
-          <button type="submit" class="btn btn-primary w-100">Create Tag</button>
+          <button type="submit" class="btn btn-primary w-100">Create User Tag</button>
         </form>
       </div>
     </div>
   </div>
 </div>
+
 <script>
 (function(){
   function syncColorPair(pickerId, hexId) {
@@ -101,8 +97,8 @@
       if (/^#[0-9a-fA-F]{6}$/.test(v)) picker.value = v;
     });
   }
-  syncColorPair('new-color-bg', 'new-color-bg-hex');
-  syncColorPair('new-color-text', 'new-color-text-hex');
+  syncColorPair('new-ut-bg', 'new-ut-bg-hex');
+  syncColorPair('new-ut-text', 'new-ut-text-hex');
 })();
 
 // Bulk delete with usage-warning modal.
@@ -114,7 +110,6 @@ document.addEventListener('DOMContentLoaded', function(){
       new window.bootstrap.Modal(el).show();
       return;
     }
-    // Manual fallback.
     el.classList.add('show');
     el.style.display = 'block';
     el.removeAttribute('aria-hidden');
@@ -122,11 +117,9 @@ document.addEventListener('DOMContentLoaded', function(){
     backdrop.className = 'modal-backdrop fade show';
     document.body.appendChild(backdrop);
     document.body.classList.add('modal-open');
-    // Wire dismiss buttons inside the modal.
     el.querySelectorAll('[data-bs-dismiss="modal"]').forEach(function(b){
       b.addEventListener('click', function(){ closeModal(id); });
     });
-    // Click-backdrop and Esc.
     backdrop.addEventListener('click', function(){ closeModal(id); });
     document.addEventListener('keydown', escHandler);
     function escHandler(ev){ if (ev.key === 'Escape') { closeModal(id); document.removeEventListener('keydown', escHandler); } }
@@ -139,7 +132,6 @@ document.addEventListener('DOMContentLoaded', function(){
     if (backdrop) { backdrop.remove(); backdrop = null; }
     document.body.classList.remove('modal-open');
   }
-  window._closeDeleteModal = function(){ closeModal('delete-confirm-modal'); };
 
   var selectAll = document.getElementById('select-all');
   var boxes = document.querySelectorAll('.tag-checkbox');
@@ -167,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function(){
     var fd = new FormData();
     fd.append('csrf_token', csrf);
     selected.forEach(function(id){ fd.append('tag_ids', id); });
-    fetch('/tags/check-usage', { method: 'POST', body: fd, credentials: 'same-origin' })
+    fetch('/user-tags/check-usage', { method: 'POST', body: fd, credentials: 'same-origin' })
       .then(function(res){ return res.json(); })
       .then(function(data){
         var a = data.assignments || [];
@@ -181,27 +173,25 @@ document.addEventListener('DOMContentLoaded', function(){
         if (a.length === 0) {
           body.innerHTML = '<p>Are you sure you want to delete the selected ' + tagWordLc + '?</p>';
         } else {
-          var uniqueNodes = {};
-          a.forEach(function(row){ uniqueNodes[row.node_name] = true; });
-          var nodeCount = Object.keys(uniqueNodes).length;
-          var nodeWord = nodeCount === 1 ? 'node' : 'nodes';
+          var uniqueUsers = {};
+          a.forEach(function(row){ uniqueUsers[row.user_name] = true; });
+          var userCount = Object.keys(uniqueUsers).length;
+          var userWord = userCount === 1 ? 'user' : 'users';
           var list = a.map(function(row){
-            return '<li><strong>' + escapeHtml(row.tag_name) + '</strong> → ' + escapeHtml(row.node_name) + '</li>';
+            return '<li><strong>' + escapeHtml(row.tag_name) + '</strong> → ' + escapeHtml(row.user_name) + '</li>';
           }).join('');
           body.innerHTML =
-            '<div class="alert alert-warning mb-3"><strong>Warning:</strong> ' + tagWord + ' ' + isAre + ' assigned to ' + nodeWord + ':</div>' +
+            '<div class="alert alert-warning mb-3"><strong>Warning:</strong> ' + tagWord + ' ' + isAre + ' assigned to ' + userWord + ':</div>' +
             '<ul>' + list + '</ul>' +
-            '<p class="mt-3">Do you want to delete the ' + tagWordLc + ' and unassign ' + pronoun + ' from the ' + nodeWord + '?</p>';
+            '<p class="mt-3">Do you want to delete the ' + tagWordLc + ' and unassign ' + pronoun + ' from the ' + userWord + '?</p>';
         }
-        document.getElementById('delete-confirm-btn').textContent = 'Delete ' + tagWord.slice(0,1).toUpperCase() + tagWord.slice(1);
+        document.getElementById('delete-confirm-btn').textContent = 'Delete ' + tagWord;
         openModal('delete-confirm-modal');
       })
       .catch(function(err){ console.error(err); alert('Failed to check tag usage.'); });
   });
 
   document.getElementById('delete-confirm-btn').addEventListener('click', function(){
-    form.removeEventListener('submit', function(){});
-    // Submit natively.
     var nativeForm = document.createElement('form');
     nativeForm.method = 'POST';
     nativeForm.action = form.action;
@@ -232,7 +222,7 @@ document.addEventListener('DOMContentLoaded', function(){
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Delete Tags</h5>
+        <h5 class="modal-title">Delete User Tags</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="delete-modal-body"></div>

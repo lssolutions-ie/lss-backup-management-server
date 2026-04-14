@@ -25,7 +25,8 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	pd := s.newPageData(r)
 
 	var groupIDs []uint64
-	if user.IsGroupScoped() {
+	var visibleNodeIDs map[uint64]models.AccessLevel
+	if !user.IsSuperAdmin() {
 		ids, err := s.DB.GetUserClientGroupIDs(user.ID)
 		if err != nil {
 			log.Printf("dashboard: get group ids: %v", err)
@@ -33,6 +34,12 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		groupIDs = ids
+		visibleNodeIDs, err = s.DB.ListVisibleNodeIDsForUser(user.ID)
+		if err != nil {
+			log.Printf("dashboard: visible nodes: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	stats, err := s.DB.GetDashboardStats(groupIDs)
@@ -54,6 +61,17 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 		log.Printf("dashboard: list nodes: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	// For non-superadmin, filter nodes to only those visible via tag-permissions.
+	if visibleNodeIDs != nil {
+		filtered := nodes[:0]
+		for _, n := range nodes {
+			if _, ok := visibleNodeIDs[n.ID]; ok {
+				filtered = append(filtered, n)
+			}
+		}
+		nodes = filtered
 	}
 
 	// Load tags for all nodes in one query.

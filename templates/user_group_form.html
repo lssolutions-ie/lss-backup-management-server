@@ -1,0 +1,99 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">{{if .Group}}Edit User Group — {{.Group.Name}}{{else}}New User Group{{end}}</h2>
+    </div>
+    <div class="col-auto"><a href="/user-groups" class="btn">Back</a></div>
+  </div>
+</div>
+
+{{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+
+<form action="{{if .Group}}/user-groups/{{.Group.ID}}/edit{{else}}/user-groups/new{{end}}" method="POST" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+  <div class="row">
+    <div class="col-md-6">
+      <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title">Group Details</h3></div>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text" name="name" class="form-control" value="{{if .Group}}{{.Group.Name}}{{end}}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Client</label>
+            <select name="client_group_id" class="form-select" required>
+              <option value="">— choose —</option>
+              {{$current := 0}}{{if .Group}}{{$current = .Group.ClientGroupID}}{{end}}
+              {{range .Clients}}
+              <option value="{{.ID}}" {{if eq .ID $current}}selected{{end}}>{{.Name}}</option>
+              {{end}}
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title">Inherited User Tags</h3></div>
+        <div class="card-body">
+          <p class="text-muted small">Every member of this group will receive these user-tags for permission purposes.</p>
+          {{$tagIDs := .TagIDs}}
+          {{range .AllUserTags}}
+          <label class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" name="tag_ids" value="{{.ID}}"
+                   {{if index $tagIDs .ID}}checked{{end}}>
+            <span class="form-check-label"><span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span></span>
+          </label>
+          {{else}}
+          <p class="text-muted mb-0">No user tags exist yet. <a href="/user-tags">Create some</a>.</p>
+          {{end}}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><h3 class="card-title">Members</h3></div>
+    <div class="card-body">
+      <p class="text-muted small">Tick <em>Member</em> to include a user. Tick <em>Lead</em> to mark them as a team lead.</p>
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th class="w-1">Member</th>
+              <th class="w-1">Lead</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{$memIDs := .MemberIDs}}
+            {{$leadIDs := .LeadIDs}}
+            {{range .AllUsers}}
+            <tr>
+              <td>{{.Username}}</td>
+              <td>
+                {{if .IsSuperAdmin}}<span class="badge text-bg-primary">superadmin</span>
+                {{else if .IsManager}}<span class="badge text-bg-info">manager</span>
+                {{else if .IsUser}}<span class="badge text-bg-secondary">user</span>
+                {{else if .IsGuest}}<span class="badge text-bg-warning">guest</span>{{end}}
+              </td>
+              <td><input class="form-check-input" type="checkbox" name="member_ids" value="{{.ID}}" {{if index $memIDs .ID}}checked{{end}}></td>
+              <td><input class="form-check-input" type="checkbox" name="lead_ids" value="{{.ID}}" {{if index $leadIDs .ID}}checked{{end}}></td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/user-groups" class="btn">Cancel</a>
+  </div>
+</form>
+{{end}}

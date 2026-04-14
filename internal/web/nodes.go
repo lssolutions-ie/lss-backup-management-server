@@ -17,6 +17,7 @@ type nodeDetailPageData struct {
 	Jobs         []models.JobSnapshot
 	Reports      []*models.NodeReport
 	AllTags      []*models.Tag
+	NodeAccess   models.AccessLevel
 	Total        int
 	Page         int
 	Pages        int
@@ -45,6 +46,9 @@ type nodePSKPageData struct {
 func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
+		return
+	}
+	if !s.EnforceNodeView(w, r, node.ID) {
 		return
 	}
 
@@ -105,12 +109,16 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		pages = 1
 	}
 
+	user := r.Context().Value(ctxUser).(*models.User)
+	access := s.EffectiveNodeAccess(user, node.ID)
+
 	s.render(w, r, http.StatusOK, "node_detail.html", nodeDetailPageData{
 		PageData:     s.newPageData(r),
 		Node:         node,
 		Jobs:         jobs,
 		Reports:      reports,
 		AllTags:      allTags,
+		NodeAccess:   access,
 		Total:        total,
 		Page:         page,
 		Pages:        pages,
@@ -242,6 +250,9 @@ func (s *Server) HandleNodePSK(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.EnforceNodeManage(w, r, node.ID) {
+		return
+	}
 
 	psk := s.getPSKFlash(w, r)
 	if psk == "" {
@@ -264,6 +275,9 @@ func (s *Server) HandleNodeEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
+		return
+	}
+	if !s.EnforceNodeManage(w, r, node.ID) {
 		return
 	}
 
@@ -338,6 +352,9 @@ func (s *Server) HandleNodeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if ok && !s.EnforceNodeManage(w, r, node.ID) {
+		return
+	}
 	if !ok {
 		return
 	}
@@ -370,6 +387,9 @@ func (s *Server) HandleNodeRegeneratePSK(w http.ResponseWriter, r *http.Request)
 
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
+		return
+	}
+	if !s.EnforceNodeManage(w, r, node.ID) {
 		return
 	}
 
@@ -414,6 +434,9 @@ func (s *Server) HandleNodeTags(w http.ResponseWriter, r *http.Request) {
 
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
+		return
+	}
+	if !s.EnforceNodeManage(w, r, node.ID) {
 		return
 	}
 

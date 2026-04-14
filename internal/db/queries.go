@@ -729,6 +729,84 @@ func (d *DB) GetAllNodeTags() (map[uint64][]models.Tag, error) {
 	return m, rows.Err()
 }
 
+// GetNodesUsingTags returns, for each given tag ID, the list of (node id, node name) using it.
+func (d *DB) GetNodesUsingTags(tagIDs []uint64) (map[uint64][]struct {
+	NodeID   uint64
+	NodeName string
+	TagName  string
+}, error) {
+	result := make(map[uint64][]struct {
+		NodeID   uint64
+		NodeName string
+		TagName  string
+	})
+	if len(tagIDs) == 0 {
+		return result, nil
+	}
+	query := "SELECT nt.tag_id, n.id, n.name, t.name FROM node_tags nt JOIN nodes n ON n.id = nt.node_id JOIN tags t ON t.id = nt.tag_id WHERE nt.tag_id IN (" + placeholders(len(tagIDs)) + ") ORDER BY n.name"
+	args := make([]interface{}, len(tagIDs))
+	for i, id := range tagIDs {
+		args[i] = id
+	}
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tagID uint64
+		var entry struct {
+			NodeID   uint64
+			NodeName string
+			TagName  string
+		}
+		if err := rows.Scan(&tagID, &entry.NodeID, &entry.NodeName, &entry.TagName); err != nil {
+			return nil, err
+		}
+		result[tagID] = append(result[tagID], entry)
+	}
+	return result, rows.Err()
+}
+
+// GetUsersUsingUserTags returns, for each given user-tag ID, the list of (user id, username) using it.
+func (d *DB) GetUsersUsingUserTags(userTagIDs []uint64) (map[uint64][]struct {
+	UserID   uint64
+	Username string
+	TagName  string
+}, error) {
+	result := make(map[uint64][]struct {
+		UserID   uint64
+		Username string
+		TagName  string
+	})
+	if len(userTagIDs) == 0 {
+		return result, nil
+	}
+	query := "SELECT utl.user_tag_id, u.id, u.username, utc.name FROM user_tag_links utl JOIN users u ON u.id = utl.user_id JOIN user_tag_catalog utc ON utc.id = utl.user_tag_id WHERE utl.user_tag_id IN (" + placeholders(len(userTagIDs)) + ") ORDER BY u.username"
+	args := make([]interface{}, len(userTagIDs))
+	for i, id := range userTagIDs {
+		args[i] = id
+	}
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tagID uint64
+		var entry struct {
+			UserID   uint64
+			Username string
+			TagName  string
+		}
+		if err := rows.Scan(&tagID, &entry.UserID, &entry.Username, &entry.TagName); err != nil {
+			return nil, err
+		}
+		result[tagID] = append(result[tagID], entry)
+	}
+	return result, rows.Err()
+}
+
 func (d *DB) UpdateTag(id uint64, name, color, textColor string) error {
 	_, err := d.db.Exec("UPDATE tags SET name = ?, color = ?, text_color = ? WHERE id = ?", name, color, textColor, id)
 	return err
@@ -743,20 +821,77 @@ func (d *DB) GetTagByID(id uint64) (*models.Tag, error) {
 	return t, err
 }
 
-// GetUserTags returns full tag objects for a user.
-func (d *DB) GetUserTags(userID uint64) ([]models.Tag, error) {
+// ─── User Tags (separate catalog from node tags) ────────────────────────────
+
+func (d *DB) ListUserTags() ([]*models.UserTag, error) {
 	rows, err := d.db.Query(
-		"SELECT t.id, t.name, t.color, t.text_color FROM tags t JOIN user_tags ut ON ut.tag_id = t.id WHERE ut.user_id = ? ORDER BY t.name",
+		"SELECT id, name, color, text_color, created_at FROM user_tag_catalog ORDER BY name",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.UserTag
+	for rows.Next() {
+		t := &models.UserTag{}
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) GetUserTagByID(id uint64) (*models.UserTag, error) {
+	t := &models.UserTag{}
+	err := d.db.QueryRow(
+		"SELECT id, name, color, text_color, created_at FROM user_tag_catalog WHERE id = ?", id,
+	).Scan(&t.ID, &t.Name, &t.Color, &t.TextColor, &t.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
+}
+
+func (d *DB) CreateUserTag(name, color, textColor string) (uint64, error) {
+	if color == "" {
+		color = "#206bc4"
+	}
+	if textColor == "" {
+		textColor = "#f0f0f0"
+	}
+	res, err := d.db.Exec("INSERT INTO user_tag_catalog (name, color, text_color) VALUES (?, ?, ?)", name, color, textColor)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	return uint64(id), err
+}
+
+func (d *DB) UpdateUserTag(id uint64, name, color, textColor string) error {
+	_, err := d.db.Exec("UPDATE user_tag_catalog SET name = ?, color = ?, text_color = ? WHERE id = ?", name, color, textColor, id)
+	return err
+}
+
+func (d *DB) DeleteUserTag(id uint64) error {
+	_, err := d.db.Exec("DELETE FROM user_tag_catalog WHERE id = ?", id)
+	return err
+}
+
+// GetUserTagsForUser returns the UserTags attached to a specific user.
+func (d *DB) GetUserTagsForUser(userID uint64) ([]models.UserTag, error) {
+	rows, err := d.db.Query(
+		"SELECT utc.id, utc.name, utc.color, utc.text_color, utc.created_at FROM user_tag_catalog utc JOIN user_tag_links utl ON utl.user_tag_id = utc.id WHERE utl.user_id = ? ORDER BY utc.name",
 		userID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var tags []models.Tag
+	var tags []models.UserTag
 	for rows.Next() {
-		var t models.Tag
-		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor); err != nil {
+		var t models.UserTag
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.TextColor, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		tags = append(tags, t)
@@ -764,20 +899,20 @@ func (d *DB) GetUserTags(userID uint64) ([]models.Tag, error) {
 	return tags, rows.Err()
 }
 
-// GetAllUserTags returns tags for all users in a single query, keyed by user ID.
-func (d *DB) GetAllUserTags() (map[uint64][]models.Tag, error) {
+// GetAllUserTagsByUser returns user tags for all users, keyed by user ID.
+func (d *DB) GetAllUserTagsByUser() (map[uint64][]models.UserTag, error) {
 	rows, err := d.db.Query(
-		"SELECT ut.user_id, t.id, t.name, t.color, t.text_color FROM user_tags ut JOIN tags t ON t.id = ut.tag_id ORDER BY t.name",
+		"SELECT utl.user_id, utc.id, utc.name, utc.color, utc.text_color, utc.created_at FROM user_tag_links utl JOIN user_tag_catalog utc ON utc.id = utl.user_tag_id ORDER BY utc.name",
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	m := make(map[uint64][]models.Tag)
+	m := make(map[uint64][]models.UserTag)
 	for rows.Next() {
 		var userID uint64
-		var t models.Tag
-		if err := rows.Scan(&userID, &t.ID, &t.Name, &t.Color, &t.TextColor); err != nil {
+		var t models.UserTag
+		if err := rows.Scan(&userID, &t.ID, &t.Name, &t.Color, &t.TextColor, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		m[userID] = append(m[userID], t)
@@ -785,64 +920,14 @@ func (d *DB) GetAllUserTags() (map[uint64][]models.Tag, error) {
 	return m, rows.Err()
 }
 
-// GetUserTagIDs returns the tag IDs a user has access to.
-func (d *DB) GetUserTagIDs(userID uint64) ([]uint64, error) {
-	rows, err := d.db.Query("SELECT tag_id FROM user_tags WHERE user_id = ?", userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []uint64
-	for rows.Next() {
-		var id uint64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
-// SetUserTags sets the tags a user has access to.
-func (d *DB) SetUserTags(userID uint64, tagIDs []uint64) error {
-	_, err := d.db.Exec("DELETE FROM user_tags WHERE user_id = ?", userID)
+// SetUserTagsForUser replaces the set of UserTags attached to a user.
+func (d *DB) SetUserTagsForUser(userID uint64, userTagIDs []uint64) error {
+	_, err := d.db.Exec("DELETE FROM user_tag_links WHERE user_id = ?", userID)
 	if err != nil {
 		return err
 	}
-	for _, tid := range tagIDs {
-		if _, err := d.db.Exec("INSERT INTO user_tags (user_id, tag_id) VALUES (?, ?)", userID, tid); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// GetTagUsers returns user IDs that have access to a tag.
-func (d *DB) GetTagUserIDs(tagID uint64) ([]uint64, error) {
-	rows, err := d.db.Query("SELECT user_id FROM user_tags WHERE tag_id = ?", tagID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []uint64
-	for rows.Next() {
-		var id uint64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
-// SetTagUsers sets which users have access to a tag.
-func (d *DB) SetTagUsers(tagID uint64, userIDs []uint64) error {
-	_, err := d.db.Exec("DELETE FROM user_tags WHERE tag_id = ?", tagID)
-	if err != nil {
-		return err
-	}
-	for _, uid := range userIDs {
-		if _, err := d.db.Exec("INSERT INTO user_tags (user_id, tag_id) VALUES (?, ?)", uid, tagID); err != nil {
+	for _, tid := range userTagIDs {
+		if _, err := d.db.Exec("INSERT INTO user_tag_links (user_id, user_tag_id) VALUES (?, ?)", userID, tid); err != nil {
 			return err
 		}
 	}
@@ -1225,3 +1310,446 @@ func reportStats(payloadJSON string) (int, string) {
 	}
 	return len(payload.Jobs), worst
 }
+
+// ─── Permissions (unified rule engine) ───────────────────────────────────────
+
+// ListPermissionRules returns all rules sorted by priority DESC.
+func (d *DB) ListPermissionRules() ([]*models.PermissionRule, error) {
+	rows, err := d.db.Query(`
+		SELECT id, priority, enabled, effect, access, subject_type, subject_id, target_type, target_id,
+		       locked_by_superadmin, created_by, created_at
+		FROM permission_rules
+		ORDER BY priority DESC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.PermissionRule
+	for rows.Next() {
+		r := &models.PermissionRule{}
+		var enabled, locked int
+		var createdBy sql.NullInt64
+		var effect, access, subjectType, targetType string
+		if err := rows.Scan(&r.ID, &r.Priority, &enabled, &effect, &access, &subjectType, &r.SubjectID,
+			&targetType, &r.TargetID, &locked, &createdBy, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		r.Enabled = enabled != 0
+		r.Effect = models.Effect(effect)
+		r.Access = models.AccessLevel(access)
+		r.SubjectType = models.SubjectType(subjectType)
+		r.TargetType = models.TargetType(targetType)
+		r.LockedBySuperadmin = locked != 0
+		if createdBy.Valid {
+			v := uint64(createdBy.Int64)
+			r.CreatedBy = &v
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// CreatePermissionRule inserts a new rule.
+func (d *DB) CreatePermissionRule(r *models.PermissionRule) (uint64, error) {
+	lockedInt := 0
+	if r.LockedBySuperadmin {
+		lockedInt = 1
+	}
+	enabledInt := 1
+	if !r.Enabled {
+		enabledInt = 0
+	}
+	var createdBy sql.NullInt64
+	if r.CreatedBy != nil {
+		createdBy = sql.NullInt64{Int64: int64(*r.CreatedBy), Valid: true}
+	}
+	res, err := d.db.Exec(`
+		INSERT INTO permission_rules (priority, enabled, effect, access, subject_type, subject_id, target_type, target_id, locked_by_superadmin, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Priority, enabledInt, string(r.Effect), string(r.Access), string(r.SubjectType), r.SubjectID,
+		string(r.TargetType), r.TargetID, lockedInt, createdBy)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	return uint64(id), err
+}
+
+// UpdatePermissionRule overwrites a rule's mutable fields.
+func (d *DB) UpdatePermissionRule(r *models.PermissionRule) error {
+	lockedInt := 0
+	if r.LockedBySuperadmin {
+		lockedInt = 1
+	}
+	enabledInt := 1
+	if !r.Enabled {
+		enabledInt = 0
+	}
+	_, err := d.db.Exec(`
+		UPDATE permission_rules
+		SET priority = ?, enabled = ?, effect = ?, access = ?, subject_type = ?, subject_id = ?,
+		    target_type = ?, target_id = ?, locked_by_superadmin = ?
+		WHERE id = ?`,
+		r.Priority, enabledInt, string(r.Effect), string(r.Access), string(r.SubjectType), r.SubjectID,
+		string(r.TargetType), r.TargetID, lockedInt, r.ID)
+	return err
+}
+
+// SetPermissionRuleEnabled toggles the enabled flag on a rule.
+func (d *DB) SetPermissionRuleEnabled(id uint64, enabled bool) error {
+	v := 0
+	if enabled {
+		v = 1
+	}
+	_, err := d.db.Exec("UPDATE permission_rules SET enabled = ? WHERE id = ?", v, id)
+	return err
+}
+
+// DeletePermissionRule removes a rule by ID.
+func (d *DB) DeletePermissionRule(id uint64) error {
+	_, err := d.db.Exec("DELETE FROM permission_rules WHERE id = ?", id)
+	return err
+}
+
+// GetEffectiveUserTagIDs returns the union of a user's own tags and tags inherited from groups.
+func (d *DB) GetEffectiveUserTagIDs(userID uint64) ([]uint64, error) {
+	rows, err := d.db.Query(`
+		SELECT DISTINCT user_tag_id FROM (
+			SELECT user_tag_id FROM user_tag_links WHERE user_id = ?
+			UNION
+			SELECT ugt.user_tag_id FROM user_group_tags ugt
+			JOIN user_group_members ugm ON ugm.user_group_id = ugt.user_group_id
+			WHERE ugm.user_id = ?
+		) AS t`, userID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ListVisibleNodeIDsForUser returns, for a user (non-superadmin), the map of visible nodes → effective access.
+// Evaluation: client scope first, then unified rule engine (priority DESC, allow/deny), capped elsewhere by role.
+func (d *DB) ListVisibleNodeIDsForUser(userID uint64) (map[uint64]models.AccessLevel, error) {
+	// Client scope: user's allowed client_group_ids.
+	clientIDs, err := d.GetUserClientGroupIDs(userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(clientIDs) == 0 {
+		return map[uint64]models.AccessLevel{}, nil
+	}
+
+	// Build subject sets: user ID, group IDs, effective tag IDs.
+	userGroupIDs, err := d.getUserGroupIDsForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	userTagIDs, err := d.GetEffectiveUserTagIDs(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// All rules, sorted priority DESC (already by query).
+	rules, err := d.ListPermissionRules()
+	if err != nil {
+		return nil, err
+	}
+
+	// Index nodes by client scope, then gather their tags.
+	nodes, err := d.listNodeIDsInClients(clientIDs)
+	if err != nil {
+		return nil, err
+	}
+	tagsByNode, err := d.getNodeTagIDsByNode(nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[uint64]models.AccessLevel, len(nodes))
+	for _, nid := range nodes {
+		result[nid] = evaluateRulesForNode(rules, userID, userGroupIDs, userTagIDs, nid, tagsByNode[nid])
+	}
+	return result, nil
+}
+
+// evaluateRulesForNode walks sorted rules (priority DESC) and returns the effective AccessLevel
+// for a single node. Default: none.
+func evaluateRulesForNode(rules []*models.PermissionRule, userID uint64, groupIDs, userTagIDs []uint64, nodeID uint64, nodeTagIDs []uint64) models.AccessLevel {
+	groupSet := uint64Set(groupIDs)
+	userTagSet := uint64Set(userTagIDs)
+	nodeTagSet := uint64Set(nodeTagIDs)
+
+	// Start at "none" and upgrade based on the highest-priority non-deny rule.
+	// Because rules are already sorted priority DESC, we walk twice: once for manage, once for view.
+	// Higher priority wins; ties broken by earlier creation (id ASC).
+	decide := func(requested models.AccessLevel) models.AccessLevel {
+		for _, r := range rules {
+			if !r.Enabled {
+				continue
+			}
+			if !ruleSubjectMatches(r, userID, groupSet, userTagSet) {
+				continue
+			}
+			if !ruleTargetMatches(r, nodeID, nodeTagSet) {
+				continue
+			}
+			switch r.Effect {
+			case models.EffectAllow:
+				// allow with access >= requested grants
+				if accessGE(r.Access, requested) {
+					return requested
+				}
+			case models.EffectDeny:
+				// deny with access <= requested denies
+				if accessLE(r.Access, requested) {
+					return models.AccessNone
+				}
+			}
+		}
+		return models.AccessNone
+	}
+
+	// Prefer manage if granted, else view.
+	if decide(models.AccessManage) == models.AccessManage {
+		return models.AccessManage
+	}
+	if decide(models.AccessView) == models.AccessView {
+		return models.AccessView
+	}
+	return models.AccessNone
+}
+
+func accessGE(a, b models.AccessLevel) bool {
+	// manage >= view >= none
+	order := map[models.AccessLevel]int{models.AccessNone: 0, models.AccessView: 1, models.AccessManage: 2}
+	return order[a] >= order[b]
+}
+func accessLE(a, b models.AccessLevel) bool {
+	order := map[models.AccessLevel]int{models.AccessNone: 0, models.AccessView: 1, models.AccessManage: 2}
+	return order[a] <= order[b]
+}
+
+func ruleSubjectMatches(r *models.PermissionRule, userID uint64, groupSet, userTagSet map[uint64]bool) bool {
+	switch r.SubjectType {
+	case models.SubjectUser:
+		return r.SubjectID == userID
+	case models.SubjectUserGroup:
+		return groupSet[r.SubjectID]
+	case models.SubjectUserTag:
+		return userTagSet[r.SubjectID]
+	}
+	return false
+}
+
+func ruleTargetMatches(r *models.PermissionRule, nodeID uint64, nodeTagSet map[uint64]bool) bool {
+	switch r.TargetType {
+	case models.TargetNode:
+		return r.TargetID == nodeID
+	case models.TargetNodeTag:
+		return nodeTagSet[r.TargetID]
+	}
+	return false
+}
+
+func uint64Set(s []uint64) map[uint64]bool {
+	m := make(map[uint64]bool, len(s))
+	for _, v := range s {
+		m[v] = true
+	}
+	return m
+}
+
+// getUserGroupIDsForUser returns the IDs of user groups the user is a member of.
+func (d *DB) getUserGroupIDsForUser(userID uint64) ([]uint64, error) {
+	rows, err := d.db.Query("SELECT user_group_id FROM user_group_members WHERE user_id = ?", userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// listNodeIDsInClients returns node IDs belonging to any of the given client groups.
+func (d *DB) listNodeIDsInClients(clientIDs []uint64) ([]uint64, error) {
+	if len(clientIDs) == 0 {
+		return nil, nil
+	}
+	q := "SELECT id FROM nodes WHERE client_group_id IN (" + placeholders(len(clientIDs)) + ")"
+	args := uint64SliceToInterfaces(clientIDs)
+	rows, err := d.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// getNodeTagIDsByNode returns tag IDs for each node id, keyed by node id.
+func (d *DB) getNodeTagIDsByNode(nodeIDs []uint64) (map[uint64][]uint64, error) {
+	result := make(map[uint64][]uint64)
+	if len(nodeIDs) == 0 {
+		return result, nil
+	}
+	q := "SELECT node_id, tag_id FROM node_tags WHERE node_id IN (" + placeholders(len(nodeIDs)) + ")"
+	args := uint64SliceToInterfaces(nodeIDs)
+	rows, err := d.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var nid, tid uint64
+		if err := rows.Scan(&nid, &tid); err != nil {
+			return nil, err
+		}
+		result[nid] = append(result[nid], tid)
+	}
+	return result, rows.Err()
+}
+
+func uint64SliceToInterfaces(s []uint64) []interface{} {
+	out := make([]interface{}, len(s))
+	for i, v := range s {
+		out[i] = v
+	}
+	return out
+}
+
+// ─── User Groups ─────────────────────────────────────────────────────────────
+
+func (d *DB) ListUserGroups() ([]*models.UserGroup, error) {
+	rows, err := d.db.Query("SELECT id, name, client_group_id, created_at FROM user_groups ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.UserGroup
+	for rows.Next() {
+		g := &models.UserGroup{}
+		if err := rows.Scan(&g.ID, &g.Name, &g.ClientGroupID, &g.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) GetUserGroupByID(id uint64) (*models.UserGroup, error) {
+	g := &models.UserGroup{}
+	err := d.db.QueryRow("SELECT id, name, client_group_id, created_at FROM user_groups WHERE id = ?", id).
+		Scan(&g.ID, &g.Name, &g.ClientGroupID, &g.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return g, err
+}
+
+func (d *DB) CreateUserGroup(name string, clientGroupID uint64) (uint64, error) {
+	res, err := d.db.Exec("INSERT INTO user_groups (name, client_group_id) VALUES (?, ?)", name, clientGroupID)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	return uint64(id), err
+}
+
+func (d *DB) UpdateUserGroup(id uint64, name string, clientGroupID uint64) error {
+	_, err := d.db.Exec("UPDATE user_groups SET name = ?, client_group_id = ? WHERE id = ?", name, clientGroupID, id)
+	return err
+}
+
+func (d *DB) DeleteUserGroup(id uint64) error {
+	_, err := d.db.Exec("DELETE FROM user_groups WHERE id = ?", id)
+	return err
+}
+
+func (d *DB) GetUserGroupMembers(groupID uint64) ([]*models.UserGroupMember, error) {
+	rows, err := d.db.Query("SELECT user_group_id, user_id, is_lead FROM user_group_members WHERE user_group_id = ?", groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*models.UserGroupMember
+	for rows.Next() {
+		m := &models.UserGroupMember{}
+		var lead int
+		if err := rows.Scan(&m.UserGroupID, &m.UserID, &lead); err != nil {
+			return nil, err
+		}
+		m.IsLead = lead != 0
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) SetUserGroupMembers(groupID uint64, members []models.UserGroupMember) error {
+	if _, err := d.db.Exec("DELETE FROM user_group_members WHERE user_group_id = ?", groupID); err != nil {
+		return err
+	}
+	for _, m := range members {
+		lead := 0
+		if m.IsLead {
+			lead = 1
+		}
+		if _, err := d.db.Exec("INSERT INTO user_group_members (user_group_id, user_id, is_lead) VALUES (?, ?, ?)",
+			groupID, m.UserID, lead); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *DB) GetUserGroupTagIDs(groupID uint64) ([]uint64, error) {
+	rows, err := d.db.Query("SELECT user_tag_id FROM user_group_tags WHERE user_group_id = ?", groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (d *DB) SetUserGroupTags(groupID uint64, tagIDs []uint64) error {
+	if _, err := d.db.Exec("DELETE FROM user_group_tags WHERE user_group_id = ?", groupID); err != nil {
+		return err
+	}
+	for _, tid := range tagIDs {
+		if _, err := d.db.Exec("INSERT INTO user_group_tags (user_group_id, user_tag_id) VALUES (?, ?)", groupID, tid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+

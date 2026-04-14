@@ -1,0 +1,490 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <h2 class="page-title">Permissions</h2>
+  <div class="text-muted">
+    Firewall-style rules. Higher <strong>priority</strong> wins. Enable or disable rules on the fly.
+  </div>
+</div>
+
+{{$isSuper := .User.IsSuperAdmin}}
+{{$csrf := .CSRFToken}}
+
+<style>
+  .target-picker-options .tp-opt {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; cursor: pointer; user-select: none;
+    border-radius: 4px; margin: 0 4px;
+  }
+  .target-picker-options .tp-opt:hover { background: #f1f5f9; }
+  .target-picker-options .tp-opt.tp-selected { background: #e0edff; }
+  .target-picker-options .tp-opt input[type="checkbox"] { margin: 0; }
+  .target-picker-options .tp-empty { padding: 12px; text-align: center; color: #94a3b8; font-size: 0.85rem; }
+  .target-picker-btn { min-width: 160px; text-align: left; }
+
+  .rule-enabled-toggle { background: none; border: none; padding: 4px; cursor: pointer; font-size: 1.15rem; line-height: 1; }
+  .rule-enabled-toggle.on { color: #2fb344; }
+  .rule-enabled-toggle.off { color: #94a3b8; }
+
+  tr.rule-disabled { opacity: 0.55; }
+</style>
+
+<!-- Editor section -->
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center">
+    <h3 class="card-title mb-0">Add a Rule</h3>
+    <button type="button" id="add-rule-btn" class="btn btn-sm btn-outline-secondary ms-auto">
+      <i class="ti ti-plus"></i> New Rule
+    </button>
+  </div>
+  <div class="card-body" id="editor-list">
+    <div id="editor-empty" class="text-muted text-center py-3">
+      Click <strong>+ New Rule</strong> above to start composing a rule.
+    </div>
+  </div>
+</div>
+
+<!-- Saved rules table -->
+<div class="card">
+  <div class="card-header"><h3 class="card-title">Rules</h3></div>
+  <div class="table-responsive">
+    <table class="table table-vcenter" id="rules-table">
+      <thead>
+        <tr>
+          <th class="w-1 text-center">On</th>
+          <th>Priority</th>
+          <th>Subject</th>
+          <th>Effect</th>
+          <th>Access</th>
+          <th>Target</th>
+          <th>Lock</th>
+          <th class="w-1 text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rules-tbody">
+        {{range $r := .Rules}}
+        {{$disabled := and $r.LockedBySuperadmin (not $isSuper)}}
+        <tr data-id="{{$r.ID}}"
+            data-priority="{{$r.Priority}}"
+            data-enabled="{{if $r.Enabled}}1{{else}}0{{end}}"
+            data-effect="{{$r.Effect}}"
+            data-access="{{$r.Access}}"
+            data-subject-type="{{$r.SubjectType}}"
+            data-subject-id="{{$r.SubjectID}}"
+            data-target-type="{{$r.TargetType}}"
+            data-target-id="{{$r.TargetID}}"
+            data-locked="{{if $r.LockedBySuperadmin}}1{{else}}0{{end}}"
+            class="{{if not $r.Enabled}}rule-disabled{{end}}">
+          <td class="text-center">
+            <button type="button" class="rule-enabled-toggle {{if $r.Enabled}}on{{else}}off{{end}}" {{if $disabled}}disabled{{end}} title="{{if $r.Enabled}}Enabled{{else}}Disabled{{end}} — click to toggle">
+              {{if $r.Enabled}}<i class="ti ti-circle-check-filled"></i>{{else}}<i class="ti ti-circle-x"></i>{{end}}
+            </button>
+          </td>
+          <td class="cell-priority">{{$r.Priority}}</td>
+          <td class="cell-subject">
+            {{if eq (printf "%s" $r.SubjectType) "user"}}{{with (index $.UserByID $r.SubjectID)}}User: <strong>{{.Username}}</strong>{{end}}
+            {{else if eq (printf "%s" $r.SubjectType) "user_group"}}{{with (index $.UserGroupByID $r.SubjectID)}}Group: <strong>{{.Name}}</strong>{{end}}
+            {{else if eq (printf "%s" $r.SubjectType) "user_tag"}}{{with (index $.UserTagByID $r.SubjectID)}}<span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span>{{end}}
+            {{end}}
+          </td>
+          <td class="cell-effect">
+            {{if eq (printf "%s" $r.Effect) "allow"}}<span class="badge text-bg-success">can</span>{{else}}<span class="badge text-bg-danger">cannot</span>{{end}}
+          </td>
+          <td class="cell-access">
+            {{if eq (printf "%s" $r.Access) "view"}}View{{else}}Edit{{end}}
+          </td>
+          <td class="cell-target">
+            {{if eq (printf "%s" $r.TargetType) "node"}}{{with (index $.NodeByID $r.TargetID)}}Node: <strong>{{.Name}}</strong>{{end}}
+            {{else if eq (printf "%s" $r.TargetType) "node_tag"}}{{with (index $.NodeTagByID $r.TargetID)}}<span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span>{{end}}
+            {{end}}
+          </td>
+          <td class="cell-lock">
+            {{if $r.LockedBySuperadmin}}<i class="ti ti-lock text-primary" title="Superadmin Lock"></i>{{end}}
+          </td>
+          <td class="text-end">
+            <div class="btn-list flex-nowrap justify-content-end">
+              <button type="button" class="btn btn-sm rule-edit-btn" {{if $disabled}}disabled{{end}}>Edit</button>
+              <button type="button" class="btn btn-sm btn-danger rule-delete-btn" {{if $disabled}}disabled{{end}}>Delete</button>
+            </div>
+          </td>
+        </tr>
+        {{else}}
+        <tr id="rules-empty-row"><td colspan="8" class="text-center text-muted py-3">No rules yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Data for cascading dropdowns -->
+<script id="perm-data" type="application/json">
+{
+  "user": [{{range $i, $u := .Users}}{{if $i}},{{end}}{"id":{{$u.ID}},"label":"{{$u.Username}}"}{{end}}],
+  "user_group": [{{range $i, $g := .UserGroups}}{{if $i}},{{end}}{"id":{{$g.ID}},"label":"{{$g.Name}}"}{{end}}],
+  "user_tag": [{{range $i, $t := .UserTags}}{{if $i}},{{end}}{"id":{{$t.ID}},"label":"{{$t.Name}}"}{{end}}],
+  "node": [{{range $i, $n := .Nodes}}{{if $i}},{{end}}{"id":{{$n.ID}},"label":"{{$n.Name}}"}{{end}}],
+  "node_tag": [{{range $i, $t := .NodeTags}}{{if $i}},{{end}}{"id":{{$t.ID}},"label":"{{$t.Name}}"}{{end}}]
+}
+</script>
+
+<!-- Editor row template -->
+<template id="editor-template">
+  <div class="rule-editor border rounded p-2 mb-2 d-flex gap-2 align-items-center flex-wrap">
+    <input type="hidden" name="rule_id" value="0">
+    <input type="number" name="rule_priority" value="1000" class="form-control form-control-sm" style="width: 85px;" title="Priority (higher wins)">
+    <span class="text-muted small">·</span>
+    <select name="rule_subject_type" class="form-select form-select-sm rule-subject-type" style="width: auto;">
+      <option value="user">User</option>
+      <option value="user_group">User Group</option>
+      <option value="user_tag" selected>User Tag</option>
+    </select>
+    <select name="rule_subject_id" class="form-select form-select-sm rule-subject-id" style="width: auto;"></select>
+    <select name="rule_effect" class="form-select form-select-sm" style="width: auto;">
+      <option value="allow" selected>can</option>
+      <option value="deny">cannot</option>
+    </select>
+    <select name="rule_access" class="form-select form-select-sm" style="width: auto;">
+      <option value="view">View</option>
+      <option value="manage" selected>Edit</option>
+    </select>
+    <select name="rule_target_type" class="form-select form-select-sm rule-target-type" style="width: auto;">
+      <option value="node">Node</option>
+      <option value="node_tag" selected>Node Tag</option>
+    </select>
+    <div class="target-picker position-relative">
+      <button type="button" class="btn btn-sm btn-outline-secondary target-picker-btn">Select…</button>
+      <div class="target-picker-panel border rounded bg-white shadow-sm" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 1050; min-width: 260px; max-width: 320px;">
+        <div class="p-2 border-bottom">
+          <input type="text" class="form-control form-control-sm target-picker-search" placeholder="Search…">
+        </div>
+        <div class="target-picker-options py-1" style="max-height: 220px; overflow-y: auto;"></div>
+        <div class="target-picker-footer border-top px-2 py-1 d-flex justify-content-between align-items-center" style="background: #f8fafc;">
+          <span class="small text-muted target-picker-count">0 selected</span>
+          <button type="button" class="btn btn-sm btn-link p-0 target-picker-clear" style="text-decoration: none;">Clear</button>
+        </div>
+      </div>
+      <input type="hidden" name="rule_target_ids_csv" value="" class="rule-target-ids-csv">
+    </div>
+    <input type="hidden" name="rule_locked_val" value="0" class="rule-locked-val">
+    {{if $isSuper}}
+    <label class="form-check form-check-inline mb-0 ms-auto">
+      <input class="form-check-input rule-lock-cb" type="checkbox">
+      <span class="form-check-label small"><i class="ti ti-lock"></i> Superadmin Lock</span>
+    </label>
+    {{end}}
+    <div class="ms-auto d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-danger rule-cancel-btn">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary rule-save-btn">Save Rule</button>
+    </div>
+  </div>
+</template>
+
+<script>
+(function(){
+  var data = JSON.parse(document.getElementById('perm-data').textContent);
+  var csrf = {{$csrf}};
+  var editorList = document.getElementById('editor-list');
+  var editorEmpty = document.getElementById('editor-empty');
+  var addBtn = document.getElementById('add-rule-btn');
+  var tmpl = document.getElementById('editor-template');
+  var tbody = document.getElementById('rules-tbody');
+
+  function populate(sel, kind, selectedIDs) {
+    var wanted = {};
+    if (selectedIDs != null) {
+      var arr = Array.isArray(selectedIDs) ? selectedIDs : [selectedIDs];
+      arr.forEach(function(v){ wanted[String(v)] = true; });
+    }
+    sel.innerHTML = '';
+    (data[kind] || []).forEach(function(opt){
+      var o = document.createElement('option');
+      o.value = opt.id;
+      o.textContent = opt.label;
+      if (wanted[String(opt.id)]) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
+  function hideEditorEmpty() { if (editorEmpty) editorEmpty.style.display = 'none'; }
+  function maybeShowEditorEmpty() {
+    if (editorList.querySelectorAll('.rule-editor').length === 0 && editorEmpty) editorEmpty.style.display = '';
+  }
+
+  function labelFor(kind, id) {
+    var list = data[kind] || [];
+    for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return list[i].label;
+    return '';
+  }
+
+  function wireTargetPicker(row) {
+    var picker = row.querySelector('.target-picker');
+    var tgtType = row.querySelector('.rule-target-type');
+    var btn = picker.querySelector('.target-picker-btn');
+    var panel = picker.querySelector('.target-picker-panel');
+    var opts = picker.querySelector('.target-picker-options');
+    var search = picker.querySelector('.target-picker-search');
+    var csvInput = picker.querySelector('.rule-target-ids-csv');
+
+    function currentIDs() { return (csvInput.value || '').split(',').filter(Boolean); }
+    function kind() { return tgtType.value; }
+    function term() { return kind() === 'node' ? 'Node' : 'Node Tag'; }
+    function renderBtn() {
+      var s = currentIDs();
+      if (s.length === 0) btn.textContent = 'Select ' + term() + '(s)';
+      else if (s.length === 1) btn.textContent = labelFor(kind(), s[0]) || term();
+      else btn.textContent = s.length + ' ' + term() + 's selected';
+    }
+    function renderCount() {
+      picker.querySelector('.target-picker-count').textContent = currentIDs().length + ' selected';
+    }
+    function renderOpts(f) {
+      var selected = currentIDs(); var set = {};
+      selected.forEach(function(v){ set[String(v)] = true; });
+      opts.innerHTML = '';
+      var q = (f || '').toLowerCase();
+      var any = false;
+      (data[kind()] || []).forEach(function(opt){
+        if (q && opt.label.toLowerCase().indexOf(q) === -1) return;
+        any = true;
+        var label = document.createElement('label');
+        label.className = 'tp-opt';
+        if (set[String(opt.id)]) label.classList.add('tp-selected');
+        var cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = opt.id; cb.checked = !!set[String(opt.id)];
+        cb.addEventListener('change', function(){
+          var s = currentIDs();
+          var i = s.indexOf(String(opt.id));
+          if (cb.checked && i === -1) s.push(String(opt.id));
+          if (!cb.checked && i !== -1) s.splice(i, 1);
+          csvInput.value = s.join(',');
+          renderBtn(); renderCount();
+          if (cb.checked) label.classList.add('tp-selected'); else label.classList.remove('tp-selected');
+        });
+        var sp = document.createElement('span'); sp.textContent = opt.label;
+        label.appendChild(cb); label.appendChild(sp);
+        opts.appendChild(label);
+      });
+      if (!any) {
+        var e = document.createElement('div'); e.className = 'tp-empty'; e.textContent = 'No matches.';
+        opts.appendChild(e);
+      }
+    }
+    btn.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var open = panel.style.display !== 'none';
+      document.querySelectorAll('.target-picker-panel').forEach(function(p){ p.style.display = 'none'; });
+      if (!open) {
+        search.value = ''; renderOpts(''); renderCount();
+        panel.style.display = 'block';
+        setTimeout(function(){ search.focus(); }, 0);
+      }
+    });
+    search.addEventListener('input', function(){ renderOpts(search.value); });
+    picker.querySelector('.target-picker-clear').addEventListener('click', function(ev){
+      ev.stopPropagation();
+      csvInput.value = ''; renderBtn(); renderCount(); renderOpts(search.value || '');
+    });
+    tgtType.addEventListener('change', function(){
+      csvInput.value = ''; renderBtn();
+      if (panel.style.display !== 'none') renderOpts(search.value || '');
+    });
+    document.addEventListener('click', function(ev){
+      if (!picker.contains(ev.target)) panel.style.display = 'none';
+    });
+    renderBtn();
+  }
+
+  function wireEditor(row) {
+    var subjType = row.querySelector('.rule-subject-type');
+    var subjID = row.querySelector('.rule-subject-id');
+    if (subjID.options.length === 0) populate(subjID, subjType.value);
+    subjType.addEventListener('change', function(){ populate(subjID, subjType.value); });
+    wireTargetPicker(row);
+    var cb = row.querySelector('.rule-lock-cb');
+    var hid = row.querySelector('.rule-locked-val');
+    if (cb && hid) cb.addEventListener('change', function(){ hid.value = cb.checked ? '1' : '0'; });
+
+    row.querySelector('.rule-cancel-btn').addEventListener('click', function(){
+      row.remove();
+      maybeShowEditorEmpty();
+    });
+    row.querySelector('.rule-save-btn').addEventListener('click', function(){
+      saveEditor(row);
+    });
+  }
+
+  function addEditor(preset) {
+    var row = tmpl.content.firstElementChild.cloneNode(true);
+    editorList.appendChild(row);
+    hideEditorEmpty();
+    wireEditor(row);
+    if (preset) {
+      row.querySelector('input[name="rule_id"]').value = preset.id;
+      row.querySelector('input[name="rule_priority"]').value = preset.priority;
+      row.querySelector('.rule-subject-type').value = preset.subject_type;
+      populate(row.querySelector('.rule-subject-id'), preset.subject_type, preset.subject_id);
+      row.querySelector('select[name="rule_effect"]').value = preset.effect;
+      row.querySelector('select[name="rule_access"]').value = preset.access;
+      row.querySelector('.rule-target-type').value = preset.target_type;
+      row.querySelector('.rule-target-ids-csv').value = String(preset.target_id);
+      // Trigger renderBtn via a fake change on type so UI reflects the preset.
+      var ev = new Event('click'); // not needed - renderBtn called in wireTargetPicker
+      // Force update:
+      row.querySelector('.target-picker-btn').textContent = (String(preset.target_id) ? labelFor(preset.target_type, preset.target_id) : 'Select…');
+      var cb = row.querySelector('.rule-lock-cb');
+      var hid = row.querySelector('.rule-locked-val');
+      if (cb) cb.checked = !!preset.locked_by_superadmin;
+      if (hid) hid.value = preset.locked_by_superadmin ? '1' : '0';
+    }
+  }
+
+  addBtn.addEventListener('click', function(){ addEditor(); });
+
+  function saveEditor(row) {
+    var fd = new FormData();
+    fd.append('csrf_token', csrf);
+    ['rule_id','rule_priority','rule_subject_type','rule_subject_id','rule_effect','rule_access','rule_target_type'].forEach(function(name){
+      fd.append(name, row.querySelector('[name="'+name+'"]').value);
+    });
+    fd.append('rule_target_ids_csv', row.querySelector('.rule-target-ids-csv').value);
+    fd.append('rule_locked_val', row.querySelector('.rule-locked-val').value);
+    fetch('/permissions/rule', { method: 'POST', body: fd, credentials: 'same-origin', headers: {'Accept': 'application/json'} })
+      .then(function(res){
+        if (!res.ok) return res.text().then(function(t){ throw new Error(t || 'Save failed'); });
+        return res.json();
+      })
+      .then(function(resp){
+        (resp.rules || []).forEach(function(rule){ upsertRuleRow(rule); });
+        row.remove();
+        maybeShowEditorEmpty();
+      })
+      .catch(function(err){ alert(err.message); });
+  }
+
+  function upsertRuleRow(rule) {
+    var emptyRow = document.getElementById('rules-empty-row');
+    if (emptyRow) emptyRow.remove();
+    var existing = tbody.querySelector('tr[data-id="'+rule.id+'"]');
+    if (existing) existing.remove();
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-id', rule.id);
+    tr.setAttribute('data-priority', rule.priority);
+    tr.setAttribute('data-enabled', rule.enabled ? '1' : '0');
+    tr.setAttribute('data-effect', rule.effect);
+    tr.setAttribute('data-access', rule.access);
+    tr.setAttribute('data-subject-type', rule.subject_type);
+    tr.setAttribute('data-subject-id', rule.subject_id);
+    tr.setAttribute('data-target-type', rule.target_type);
+    tr.setAttribute('data-target-id', rule.target_id);
+    tr.setAttribute('data-locked', rule.locked_by_superadmin ? '1' : '0');
+    if (!rule.enabled) tr.classList.add('rule-disabled');
+    tr.innerHTML = rowHTML(rule);
+    insertRowByPriority(tr);
+    wireRuleRow(tr);
+  }
+
+  function subjectCell(rule) {
+    if (rule.subject_type === 'user') return 'User: <strong>' + escapeHtml(labelFor('user', rule.subject_id)) + '</strong>';
+    if (rule.subject_type === 'user_group') return 'Group: <strong>' + escapeHtml(labelFor('user_group', rule.subject_id)) + '</strong>';
+    if (rule.subject_type === 'user_tag') return '<strong>' + escapeHtml(labelFor('user_tag', rule.subject_id)) + '</strong>';
+    return '';
+  }
+  function targetCell(rule) {
+    if (rule.target_type === 'node') return 'Node: <strong>' + escapeHtml(labelFor('node', rule.target_id)) + '</strong>';
+    if (rule.target_type === 'node_tag') return '<strong>' + escapeHtml(labelFor('node_tag', rule.target_id)) + '</strong>';
+    return '';
+  }
+  function effectCell(rule) {
+    return rule.effect === 'allow' ? '<span class="badge text-bg-success">can</span>' : '<span class="badge text-bg-danger">cannot</span>';
+  }
+  function accessCell(rule) { return rule.access === 'view' ? 'View' : 'Edit'; }
+  function lockCell(rule) { return rule.locked_by_superadmin ? '<i class="ti ti-lock text-primary" title="Superadmin Lock"></i>' : ''; }
+  function onCell(rule) {
+    var iconOn = '<i class="ti ti-circle-check-filled"></i>';
+    var iconOff = '<i class="ti ti-circle-x"></i>';
+    return '<button type="button" class="rule-enabled-toggle ' + (rule.enabled ? 'on' : 'off') + '" title="Click to toggle">' + (rule.enabled ? iconOn : iconOff) + '</button>';
+  }
+  function rowHTML(rule) {
+    return '<td class="text-center">' + onCell(rule) + '</td>' +
+           '<td class="cell-priority">' + rule.priority + '</td>' +
+           '<td class="cell-subject">' + subjectCell(rule) + '</td>' +
+           '<td class="cell-effect">' + effectCell(rule) + '</td>' +
+           '<td class="cell-access">' + accessCell(rule) + '</td>' +
+           '<td class="cell-target">' + targetCell(rule) + '</td>' +
+           '<td class="cell-lock">' + lockCell(rule) + '</td>' +
+           '<td class="text-end"><div class="btn-list flex-nowrap justify-content-end">' +
+             '<button type="button" class="btn btn-sm rule-edit-btn">Edit</button>' +
+             '<button type="button" class="btn btn-sm btn-danger rule-delete-btn">Delete</button>' +
+           '</div></td>';
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; });
+  }
+  function insertRowByPriority(tr) {
+    var p = parseInt(tr.getAttribute('data-priority') || '0', 10);
+    var rows = tbody.querySelectorAll('tr[data-id]');
+    for (var i = 0; i < rows.length; i++) {
+      var rp = parseInt(rows[i].getAttribute('data-priority') || '0', 10);
+      if (p > rp) { tbody.insertBefore(tr, rows[i]); return; }
+    }
+    tbody.appendChild(tr);
+  }
+
+  function wireRuleRow(tr) {
+    var id = tr.getAttribute('data-id');
+    var tgl = tr.querySelector('.rule-enabled-toggle');
+    if (tgl) tgl.addEventListener('click', function(){
+      var fd = new FormData(); fd.append('csrf_token', csrf);
+      fetch('/permissions/rule/' + id + '/toggle', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(function(res){ return res.json(); })
+        .then(function(resp){
+          tr.setAttribute('data-enabled', resp.enabled ? '1' : '0');
+          if (resp.enabled) { tr.classList.remove('rule-disabled'); tgl.classList.remove('off'); tgl.classList.add('on'); tgl.innerHTML = '<i class="ti ti-circle-check-filled"></i>'; }
+          else { tr.classList.add('rule-disabled'); tgl.classList.remove('on'); tgl.classList.add('off'); tgl.innerHTML = '<i class="ti ti-circle-x"></i>'; }
+        })
+        .catch(function(){ alert('Failed to toggle rule'); });
+    });
+
+    var del = tr.querySelector('.rule-delete-btn');
+    if (del) del.addEventListener('click', function(){
+      if (!confirm('Delete this rule?')) return;
+      var fd = new FormData(); fd.append('csrf_token', csrf);
+      fetch('/permissions/rule/' + id + '/delete', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(function(res){ if (!res.ok) throw new Error('Delete failed'); return res.json(); })
+        .then(function(){
+          tr.remove();
+          if (tbody.querySelectorAll('tr[data-id]').length === 0) {
+            var e = document.createElement('tr'); e.id = 'rules-empty-row';
+            e.innerHTML = '<td colspan="8" class="text-center text-muted py-3">No rules yet.</td>';
+            tbody.appendChild(e);
+          }
+        })
+        .catch(function(){ alert('Failed to delete'); });
+    });
+
+    var edit = tr.querySelector('.rule-edit-btn');
+    if (edit) edit.addEventListener('click', function(){
+      addEditor({
+        id: id,
+        priority: tr.getAttribute('data-priority'),
+        subject_type: tr.getAttribute('data-subject-type'),
+        subject_id: tr.getAttribute('data-subject-id'),
+        effect: tr.getAttribute('data-effect'),
+        access: tr.getAttribute('data-access'),
+        target_type: tr.getAttribute('data-target-type'),
+        target_id: tr.getAttribute('data-target-id'),
+        locked_by_superadmin: tr.getAttribute('data-locked') === '1'
+      });
+      tr.remove();
+      if (tbody.querySelectorAll('tr[data-id]').length === 0) {
+        var e = document.createElement('tr'); e.id = 'rules-empty-row';
+        e.innerHTML = '<td colspan="8" class="text-center text-muted py-3">No rules yet.</td>';
+        tbody.appendChild(e);
+      }
+    });
+  }
+
+  // Wire all existing saved rows.
+  tbody.querySelectorAll('tr[data-id]').forEach(wireRuleRow);
+})();
+</script>
+{{end}}

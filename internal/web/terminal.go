@@ -66,6 +66,9 @@ func (s *Server) HandleTerminalPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.EnforceNodeManage(w, r, node.ID) {
+		return
+	}
 	s.render(w, r, http.StatusOK, "terminal.html", terminalPageData{
 		PageData: s.newPageData(r),
 		Node:     node,

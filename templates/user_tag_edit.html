@@ -2,10 +2,10 @@
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
     <div class="col">
-      <h2 class="page-title">Edit Tag — <span class="badge" style="background-color: {{.Tag.Color}};">{{.Tag.Name}}</span></h2>
+      <h2 class="page-title">Edit User Tag — <span class="badge" style="background-color: {{.Tag.Color}}; color: {{.Tag.TextColor}};">{{.Tag.Name}}</span></h2>
     </div>
     <div class="col-auto">
-      <a href="/tags" class="btn">Back to Tags</a>
+      <a href="/user-tags" class="btn">Back to User Tags</a>
     </div>
   </div>
 </div>
@@ -17,7 +17,7 @@
     <div class="card">
       <div class="card-header"><h3 class="card-title">Tag Details</h3></div>
       <div class="card-body">
-        <form action="/tags/{{.Tag.ID}}/edit" method="POST" autocomplete="off">
+        <form action="/user-tags/{{.Tag.ID}}/edit" method="POST" autocomplete="off">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
           <div class="mb-3">
@@ -28,19 +28,19 @@
           <div class="row mb-3">
             <div class="col-6">
               <label class="form-label">Background</label>
-              <input type="color" name="color" id="color-bg" class="form-control form-control-color w-100" value="{{.Tag.Color}}">
-              <input type="text" id="color-bg-hex" class="form-control form-control-sm mt-1" value="{{.Tag.Color}}" maxlength="7" placeholder="#000000">
+              <input type="color" name="color" id="ut-bg" class="form-control form-control-color w-100" value="{{.Tag.Color}}">
+              <input type="text" id="ut-bg-hex" class="form-control form-control-sm mt-1" value="{{.Tag.Color}}" maxlength="7">
             </div>
             <div class="col-6">
               <label class="form-label">Text</label>
-              <input type="color" name="text_color" id="color-text" class="form-control form-control-color w-100" value="{{.Tag.TextColor}}">
-              <input type="text" id="color-text-hex" class="form-control form-control-sm mt-1" value="{{.Tag.TextColor}}" maxlength="7" placeholder="#ffffff">
+              <input type="color" name="text_color" id="ut-text" class="form-control form-control-color w-100" value="{{.Tag.TextColor}}">
+              <input type="text" id="ut-text-hex" class="form-control form-control-sm mt-1" value="{{.Tag.TextColor}}" maxlength="7">
             </div>
           </div>
 
           <div class="form-footer">
             <button type="submit" class="btn btn-primary">Save</button>
-            <a href="/tags" class="btn">Cancel</a>
+            <a href="/user-tags" class="btn">Cancel</a>
           </div>
         </form>
       </div>
@@ -59,8 +59,8 @@
       if (/^#[0-9a-fA-F]{6}$/.test(v)) picker.value = v;
     });
   }
-  syncColorPair('color-bg', 'color-bg-hex');
-  syncColorPair('color-text', 'color-text-hex');
+  syncColorPair('ut-bg', 'ut-bg-hex');
+  syncColorPair('ut-text', 'ut-text-hex');
 })();
 </script>
 {{end}}

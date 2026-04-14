@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -9,17 +10,21 @@ import (
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
+type tagNodeInfo struct {
+	ID   uint64
+	Name string
+}
+
 type tagsPageData struct {
 	PageData
-	Tags  []*models.Tag
+	Tags        []*models.Tag
+	NodesByTag  map[uint64][]tagNodeInfo
 }
 
 type tagEditPageData struct {
 	PageData
-	Tag       *models.Tag
-	Users     []*models.User
-	Assigned  map[uint64]bool
-	Error     string
+	Tag   *models.Tag
+	Error string
 }
 
 // HandleTags lists all tags.
@@ -31,9 +36,23 @@ func (s *Server) HandleTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load node assignments for each tag.
+	tagIDs := make([]uint64, len(tags))
+	for i, t := range tags {
+		tagIDs[i] = t.ID
+	}
+	usage, _ := s.DB.GetNodesUsingTags(tagIDs)
+	nodesByTag := make(map[uint64][]tagNodeInfo, len(usage))
+	for tagID, entries := range usage {
+		for _, e := range entries {
+			nodesByTag[tagID] = append(nodesByTag[tagID], tagNodeInfo{ID: e.NodeID, Name: e.NodeName})
+		}
+	}
+
 	s.render(w, r, http.StatusOK, "tags.html", tagsPageData{
-		PageData: s.newPageData(r),
-		Tags:     tags,
+		PageData:   s.newPageData(r),
+		Tags:       tags,
+		NodesByTag: nodesByTag,
 	})
 }
 
@@ -53,25 +72,10 @@ func (s *Server) HandleTagEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := s.DB.ListUsers()
-	if err != nil {
-		log.Printf("tag edit: list users: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	assignedIDs, _ := s.DB.GetTagUserIDs(id)
-	assigned := make(map[uint64]bool)
-	for _, uid := range assignedIDs {
-		assigned[uid] = true
-	}
-
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "tag_edit.html", tagEditPageData{
 			PageData: s.newPageData(r),
 			Tag:      tag,
-			Users:    users,
-			Assigned: assigned,
 		})
 		return
 	}
@@ -87,8 +91,6 @@ func (s *Server) HandleTagEdit(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, http.StatusUnprocessableEntity, "tag_edit.html", tagEditPageData{
 			PageData: s.newPageData(r),
 			Tag:      tag,
-			Users:    users,
-			Assigned: assigned,
 			Error:    "Tag name is required.",
 		})
 		return
@@ -101,17 +103,6 @@ func (s *Server) HandleTagEdit(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.DB.UpdateTag(id, name, color, textColor); err != nil {
 		log.Printf("tag edit: update: %v", err)
-	}
-
-	// Update user permissions.
-	var userIDs []uint64
-	for _, v := range r.Form["user_ids"] {
-		if uid, err := strconv.ParseUint(v, 10, 64); err == nil {
-			userIDs = append(userIDs, uid)
-		}
-	}
-	if err := s.DB.SetTagUsers(id, userIDs); err != nil {
-		log.Printf("tag edit: set users: %v", err)
 	}
 
 	setFlash(w, "Tag updated.")
@@ -143,9 +134,22 @@ func (s *Server) HandleTagCreate(w http.ResponseWriter, r *http.Request) {
 	if textColor == "" {
 		textColor = "#ffffff"
 	}
-	if _, err := s.DB.CreateTagWithTextColor(name, color, textColor); err != nil {
+	newID, err := s.DB.CreateTagWithTextColor(name, color, textColor)
+	wantsJSON := strings.Contains(r.Header.Get("Accept"), "application/json")
+	if err != nil {
 		log.Printf("tag create: %v", err)
+		if wantsJSON {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"error":"Could not create tag (name may already exist)."}`))
+			return
+		}
 		setFlash(w, "Could not create tag (name may already exist).")
+	} else if wantsJSON {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"id":%d,"name":%q,"color":%q,"text_color":%q}`, newID, name, color, textColor)
+		return
 	} else {
 		setFlash(w, "Tag created.")
 	}
@@ -155,6 +159,74 @@ func (s *Server) HandleTagCreate(w http.ResponseWriter, r *http.Request) {
 		ref = "/tags"
 	}
 	http.Redirect(w, r, ref, http.StatusSeeOther)
+}
+
+// HandleTagCheckUsage returns, for each tag_id in the form, which nodes use it.
+// POST /tags/check-usage, Accept: application/json. Body: tag_ids=... repeated.
+func (s *Server) HandleTagCheckUsage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	var ids []uint64
+	for _, v := range r.Form["tag_ids"] {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	usage, err := s.DB.GetNodesUsingTags(ids)
+	if err != nil {
+		log.Printf("tag check usage: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	// Build a JSON response: {"assignments":[{"tag_name":"X","node_name":"Y"},...]}
+	var parts []string
+	for _, entries := range usage {
+		for _, e := range entries {
+			parts = append(parts, fmt.Sprintf(`{"tag_name":%q,"node_name":%q}`, e.TagName, e.NodeName))
+		}
+	}
+	fmt.Fprintf(w, `{"assignments":[%s]}`, strings.Join(parts, ","))
+}
+
+// HandleTagBulkDelete deletes multiple tags in one request (POST /tags/bulk-delete).
+func (s *Server) HandleTagBulkDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	var count int
+	for _, v := range r.Form["tag_ids"] {
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			continue
+		}
+		if err := s.DB.DeleteTag(id); err != nil {
+			log.Printf("tag bulk delete: %v", err)
+			continue
+		}
+		count++
+	}
+	setFlash(w, fmt.Sprintf("Deleted %d tag(s).", count))
+	http.Redirect(w, r, "/tags", http.StatusSeeOther)
 }
 
 // HandleTagDelete deletes a tag.

@@ -310,6 +310,49 @@ func (s *Server) EnforceBrowseRepo(w http.ResponseWriter, r *http.Request) bool 
 	return true
 }
 
+// EffectiveNodeAccess returns the effective AccessLevel a user has on a node.
+// Superadmin always gets 'manage'. Others go through client-scope + tag rules + per-user overrides,
+// then capped by role (user/guest → max 'view').
+func (s *Server) EffectiveNodeAccess(user *models.User, nodeID uint64) models.AccessLevel {
+	if user == nil {
+		return models.AccessNone
+	}
+	if user.IsSuperAdmin() {
+		return models.AccessManage
+	}
+	visible, err := s.DB.ListVisibleNodeIDsForUser(user.ID)
+	if err != nil {
+		return models.AccessNone
+	}
+	acc, ok := visible[nodeID]
+	if !ok {
+		return models.AccessNone
+	}
+	return models.CapByRole(user.Role, acc)
+}
+
+// EnforceNodeManage returns true if the user has 'manage' on the node; else writes 403.
+func (s *Server) EnforceNodeManage(w http.ResponseWriter, r *http.Request, nodeID uint64) bool {
+	user, _ := r.Context().Value(ctxUser).(*models.User)
+	access := s.EffectiveNodeAccess(user, nodeID)
+	if !access.CanManage() {
+		http.Error(w, "Forbidden — insufficient permissions for this node", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// EnforceNodeView returns true if the user has at least 'view' on the node; else writes 404 (don't leak).
+func (s *Server) EnforceNodeView(w http.ResponseWriter, r *http.Request, nodeID uint64) bool {
+	user, _ := r.Context().Value(ctxUser).(*models.User)
+	access := s.EffectiveNodeAccess(user, nodeID)
+	if !access.AtLeastView() {
+		http.NotFound(w, r)
+		return false
+	}
+	return true
+}
+
 // validateCSRF returns true if the CSRF token in the form matches the expected value.
 func (s *Server) validateCSRF(r *http.Request) bool {
 	tok, _ := r.Context().Value(ctxSession).(string)

@@ -121,10 +121,19 @@ func main() {
 	mux.HandleFunc("/nodes/new", webServer.RequireAuth(webServer.HandleNodeNew))
 	mux.HandleFunc("/nodes/", webServer.RequireAuth(nodeRouter(webServer)))
 
-	// Tags
+	// Tags (node tags)
 	mux.HandleFunc("/tags", webServer.RequireAuth(webServer.HandleTags))
 	mux.HandleFunc("/tags/new", webServer.RequireManagerOrAbove(webServer.HandleTagCreate))
+	mux.HandleFunc("/tags/bulk-delete", webServer.RequireManagerOrAbove(webServer.HandleTagBulkDelete))
+	mux.HandleFunc("/tags/check-usage", webServer.RequireManagerOrAbove(webServer.HandleTagCheckUsage))
 	mux.HandleFunc("/tags/", webServer.RequireManagerOrAbove(tagRouter(webServer)))
+
+	// User Tags (separate catalog — superadmin only)
+	mux.HandleFunc("/user-tags", webServer.RequireSuperAdmin(webServer.HandleUserTags))
+	mux.HandleFunc("/user-tags/new", webServer.RequireSuperAdmin(webServer.HandleUserTagCreate))
+	mux.HandleFunc("/user-tags/bulk-delete", webServer.RequireSuperAdmin(webServer.HandleUserTagBulkDelete))
+	mux.HandleFunc("/user-tags/check-usage", webServer.RequireSuperAdmin(webServer.HandleUserTagCheckUsage))
+	mux.HandleFunc("/user-tags/", webServer.RequireSuperAdmin(userTagRouter(webServer)))
 
 	// Terminal WebSocket (separate from /nodes/ tree because it uses a different path style)
 	mux.HandleFunc("/ws/terminal", webServer.RequireAuth(webServer.HandleTerminalWS))
@@ -142,6 +151,16 @@ func main() {
 	mux.HandleFunc("/users", webServer.RequireManagerOrAbove(webServer.HandleUsers))
 	mux.HandleFunc("/users/new", webServer.RequireManagerOrAbove(webServer.HandleUserNew))
 	mux.HandleFunc("/users/", webServer.RequireManagerOrAbove(userRouter(webServer)))
+
+	// Permissions (manager+ can edit unlocked rules; superadmin can lock)
+	mux.HandleFunc("/permissions", webServer.RequireManagerOrAbove(webServer.HandlePermissions))
+	mux.HandleFunc("/permissions/rule", webServer.RequireManagerOrAbove(webServer.HandlePermissionRuleSave))
+	mux.HandleFunc("/permissions/rule/", webServer.RequireManagerOrAbove(permissionRuleRouter(webServer)))
+
+	// User Groups (superadmin only)
+	mux.HandleFunc("/user-groups", webServer.RequireSuperAdmin(webServer.HandleUserGroups))
+	mux.HandleFunc("/user-groups/new", webServer.RequireSuperAdmin(webServer.HandleUserGroupNew))
+	mux.HandleFunc("/user-groups/", webServer.RequireSuperAdmin(userGroupRouter(webServer)))
 
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
@@ -243,6 +262,63 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleRepoDownloadZip(w, r)
 		case "repo/download-rsync-zip":
 			s.HandleRepoDownloadRsyncZip(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func permissionRuleRouter(s *web.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/permissions/rule/")
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[1] {
+		case "toggle":
+			s.HandlePermissionRuleToggle(w, r)
+		case "delete":
+			s.HandlePermissionRuleDelete(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func userGroupRouter(s *web.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/user-groups/")
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[1] {
+		case "edit":
+			s.HandleUserGroupEdit(w, r)
+		case "delete":
+			s.HandleUserGroupDelete(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func userTagRouter(s *web.Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/user-tags/")
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		switch parts[1] {
+		case "edit":
+			s.HandleUserTagEdit(w, r)
+		case "delete":
+			s.HandleUserTagDelete(w, r)
 		default:
 			http.NotFound(w, r)
 		}

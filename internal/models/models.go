@@ -17,7 +17,7 @@ type User struct {
 	Role         string // "superadmin" | "manager" | "user" | "guest"
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
-	Tags         []Tag  // populated separately
+	UserTags     []UserTag // populated separately
 }
 
 // EmailStr returns the email or empty string if nil.
@@ -294,6 +294,106 @@ type Tag struct {
 	Color     string // background hex color e.g. "#206bc4"
 	TextColor string // text hex color e.g. "#ffffff"
 }
+
+// UserTag represents a user-defined label that can be attached to users.
+// Fully separate from node Tags — different catalog, different junction.
+type UserTag struct {
+	ID        uint64
+	Name      string
+	Color     string
+	TextColor string
+	CreatedAt time.Time
+}
+
+// AccessLevel represents the effective permission on a node.
+// "none" means the user cannot see the node at all.
+type AccessLevel string
+
+const (
+	AccessNone   AccessLevel = "none"
+	AccessView   AccessLevel = "view"
+	AccessManage AccessLevel = "manage"
+)
+
+// AtLeastView returns true if access is view or manage.
+func (a AccessLevel) AtLeastView() bool   { return a == AccessView || a == AccessManage }
+func (a AccessLevel) CanManage() bool     { return a == AccessManage }
+
+// MaxAccess returns the higher of two access levels.
+func MaxAccess(a, b AccessLevel) AccessLevel {
+	order := map[AccessLevel]int{AccessNone: 0, AccessView: 1, AccessManage: 2}
+	if order[a] >= order[b] {
+		return a
+	}
+	return b
+}
+
+// CapByRole caps an access level according to the user's role.
+// - superadmin: returns as-is (caller should bypass)
+// - manager: can reach manage
+// - user/guest: capped at view
+func CapByRole(role string, access AccessLevel) AccessLevel {
+	if role == "superadmin" || role == "manager" {
+		return access
+	}
+	if access == AccessManage {
+		return AccessView
+	}
+	return access
+}
+
+// Effect is allow (grant) or deny (block).
+type Effect string
+
+const (
+	EffectAllow Effect = "allow"
+	EffectDeny  Effect = "deny"
+)
+
+// SubjectType / TargetType enumerate what a rule can reference.
+type SubjectType string
+type TargetType string
+
+const (
+	SubjectUser      SubjectType = "user"
+	SubjectUserGroup SubjectType = "user_group"
+	SubjectUserTag   SubjectType = "user_tag"
+
+	TargetNode    TargetType = "node"
+	TargetNodeTag TargetType = "node_tag"
+)
+
+// PermissionRule — unified rule with priority, effect, polymorphic subject and target.
+type PermissionRule struct {
+	ID                 uint64
+	Priority           int
+	Enabled            bool
+	Effect             Effect
+	Access             AccessLevel // "view" or "manage" (not "none")
+	SubjectType        SubjectType
+	SubjectID          uint64
+	TargetType         TargetType
+	TargetID           uint64
+	LockedBySuperadmin bool
+	CreatedBy          *uint64
+	CreatedAt          time.Time
+}
+
+// UserGroup — a team of users scoped to a client.
+type UserGroup struct {
+	ID            uint64
+	Name          string
+	ClientGroupID uint64
+	CreatedAt     time.Time
+}
+
+// UserGroupMember — membership, with optional lead flag.
+type UserGroupMember struct {
+	UserGroupID uint64
+	UserID      uint64
+	IsLead      bool
+}
+
 
 // ReportFilter holds query parameters for filtering check-in history.
 type ReportFilter struct {

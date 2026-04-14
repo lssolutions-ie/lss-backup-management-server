@@ -12,9 +12,9 @@ import (
 
 type usersPageData struct {
 	PageData
-	Users       []*models.User
+	Users        []*models.User
 	GroupsByUser map[uint64][]*models.ClientGroup
-	TagsByUser  map[uint64][]models.Tag
+	TagsByUser   map[uint64][]models.UserTag
 }
 
 type userFormPageData struct {
@@ -22,7 +22,7 @@ type userFormPageData struct {
 	TargetUser  *models.User
 	Groups      []*models.ClientGroup
 	Assigned    map[uint64]bool
-	AllTags     []*models.Tag
+	AllUserTags []*models.UserTag
 	UserTagIDs  map[uint64]bool
 	Error       string
 }
@@ -63,7 +63,7 @@ func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tagsByUser, _ := s.DB.GetAllUserTags()
+	tagsByUser, _ := s.DB.GetAllUserTagsByUser()
 
 	s.render(w, r, http.StatusOK, "users.html", usersPageData{
 		PageData:     s.newPageData(r),
@@ -81,15 +81,15 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allTags, _ := s.DB.ListTags()
+	allUserTags, _ := s.DB.ListUserTags()
 
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "user_form.html", userFormPageData{
-			PageData:   s.newPageData(r),
-			Groups:     groups,
-			Assigned:   map[uint64]bool{},
-			AllTags:    allTags,
-			UserTagIDs: map[uint64]bool{},
+			PageData:    s.newPageData(r),
+			Groups:      groups,
+			Assigned:    map[uint64]bool{},
+			AllUserTags: allUserTags,
+			UserTagIDs:  map[uint64]bool{},
 		})
 		return
 	}
@@ -146,7 +146,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	// Save user tags.
 	tagIDs := parseTagIDs(r)
 	if len(tagIDs) > 0 {
-		if err := s.DB.SetUserTags(userID, tagIDs); err != nil {
+		if err := s.DB.SetUserTagsForUser(userID, tagIDs); err != nil {
 			log.Printf("user new: set tags: %v", err)
 		}
 	}
@@ -179,8 +179,8 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 		assigned[id] = true
 	}
 
-	allTags, _ := s.DB.ListTags()
-	userTags, _ := s.DB.GetUserTags(target.ID)
+	allUserTags, _ := s.DB.ListUserTags()
+	userTags, _ := s.DB.GetUserTagsForUser(target.ID)
 	userTagIDs := make(map[uint64]bool, len(userTags))
 	for _, t := range userTags {
 		userTagIDs[t.ID] = true
@@ -188,12 +188,12 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "user_form.html", userFormPageData{
-			PageData:   s.newPageData(r),
-			TargetUser: target,
-			Groups:     groups,
-			Assigned:   assigned,
-			AllTags:    allTags,
-			UserTagIDs: userTagIDs,
+			PageData:    s.newPageData(r),
+			TargetUser:  target,
+			Groups:      groups,
+			Assigned:    assigned,
+			AllUserTags: allUserTags,
+			UserTagIDs:  userTagIDs,
 		})
 		return
 	}
@@ -254,7 +254,7 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 
 	// Save user tags.
 	tagIDs := parseTagIDs(r)
-	if err := s.DB.SetUserTags(target.ID, tagIDs); err != nil {
+	if err := s.DB.SetUserTagsForUser(target.ID, tagIDs); err != nil {
 		log.Printf("user edit: set tags: %v", err)
 	}
 

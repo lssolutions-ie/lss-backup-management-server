@@ -72,17 +72,17 @@
       </div>
 
       <div class="mb-3">
-        <label class="form-label">Tags</label>
+        <label class="form-label">User Tags</label>
         <div>
           {{$userTagIDs := .UserTagIDs}}
-          {{range .AllTags}}
+          {{range .AllUserTags}}
           <label class="form-check form-check-inline">
             <input class="form-check-input" type="checkbox" name="tag_ids" value="{{.ID}}"
                    {{if index $userTagIDs .ID}}checked{{end}}>
             <span class="form-check-label"><span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span></span>
           </label>
           {{else}}
-          <span class="text-muted">No tags exist yet.</span>
+          <span class="text-muted">No user tags exist yet. <a href="/user-tags">Create some</a>.</span>
           {{end}}
         </div>
       </div>

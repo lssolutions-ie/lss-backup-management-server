@@ -39,9 +39,31 @@
           <li class="nav-item">
             <a class="nav-link" href="/tags">
               <span class="nav-link-icon"><i class="ti ti-tags"></i></span>
-              <span class="nav-link-title">Tags</span>
+              <span class="nav-link-title">Node Tags</span>
             </a>
           </li>
+          {{if .User.IsSuperAdmin}}
+          <li class="nav-item">
+            <a class="nav-link" href="/user-tags">
+              <span class="nav-link-icon"><i class="ti ti-user-plus"></i></span>
+              <span class="nav-link-title">User Tags</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/user-groups">
+              <span class="nav-link-icon"><i class="ti ti-users-group"></i></span>
+              <span class="nav-link-title">User Groups</span>
+            </a>
+          </li>
+          {{end}}
+          {{if .User.CanManageUsers}}
+          <li class="nav-item">
+            <a class="nav-link" href="/permissions">
+              <span class="nav-link-icon"><i class="ti ti-lock"></i></span>
+              <span class="nav-link-title">Permissions</span>
+            </a>
+          </li>
+          {{end}}
           {{if .User.CanManageUsers}}
           <li class="nav-item">
             <a class="nav-link" href="/groups">

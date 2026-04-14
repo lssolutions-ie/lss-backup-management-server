@@ -123,6 +123,10 @@
           <i class="ti ti-tag"></i> Tag
         </button>
         <div class="dropdown-menu">
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByTag('__none__', '#adb5bd')">
+            <span class="badge me-1 text-bg-secondary">&nbsp;</span> No tags
+          </a>
+          <div class="dropdown-divider"></div>
           {{range .AllTags}}
           <a class="dropdown-item" href="javascript:void(0)" onclick="filterByTag('{{.Name}}', '{{.Color}}')">
             <span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}};">&nbsp;</span> {{.Name}}
@@ -232,7 +236,7 @@
     if (window._activeTag === tag) { clearTagFilter(); return; }
     window._activeTag = tag;
     var label = document.getElementById('tag-filter-label');
-    document.getElementById('tag-filter-name').textContent = tag;
+    document.getElementById('tag-filter-name').textContent = tag === '__none__' ? 'No tags' : tag;
     label.style.display = '';
     label.style.backgroundColor = color;
     applyFilters();
@@ -309,7 +313,7 @@
       const rowOnline = (row.getAttribute('data-online') || '');
       const matchSearch = !q || text.indexOf(q) !== -1;
       const matchGroup = !group || rowGroup === group;
-      const matchTag = !tag || rowTags.indexOf(tag + ',') !== -1;
+      const matchTag = !tag || (tag === '__none__' ? rowTags === '' : rowTags.indexOf(tag + ',') !== -1);
       const matchStatus = !status || rowStatus === status;
       const matchOnline = !online || rowOnline === online;
       row.style.display = (matchSearch && matchGroup && matchTag && matchStatus && matchOnline) ? '' : 'none';

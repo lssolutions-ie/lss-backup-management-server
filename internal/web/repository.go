@@ -58,6 +58,9 @@ func (s *Server) HandleRepoPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.EnforceNodeView(w, r, node.ID) {
+		return
+	}
 	s.render(w, r, http.StatusOK, "repository.html", repoPageData{
 		PageData: s.newPageData(r),
 		Node:     node,

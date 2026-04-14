@@ -17,7 +17,7 @@
         Node ID <code>{{.Node.UID}}</code> · Client <strong>{{.Node.ClientGroup}}</strong>
       </div>
     </div>
-    {{if .User.CanWrite}}
+    {{if eq (printf "%s" .NodeAccess) "manage"}}
     <div class="col-auto">
       <div class="btn-list flex-nowrap">
         {{if .User.CanTerminal}}<a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>{{end}}
@@ -41,14 +41,14 @@
   {{range .Node.Tags}}
   <span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.85rem;">{{.Name}}</span>
   {{end}}
-  {{if .User.CanWrite}}
+  {{if eq (printf "%s" .NodeAccess) "manage"}}
   <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#tag-modal">
     <i class="ti ti-tag"></i> Manage Tags
   </button>
   {{end}}
 </div>
 
-{{if .User.CanWrite}}
+{{if eq (printf "%s" .NodeAccess) "manage"}}
 <div class="modal modal-blur fade" id="tag-modal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -59,40 +59,51 @@
       <form action="/nodes/{{.Node.ID}}/tags" method="POST">
         <div class="modal-body">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          {{if .AllTags}}
-          <div class="mb-3">
+          <div id="tag-list" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; max-height: 120px; overflow-y: auto; padding-right: 4px;">
             {{$nodeTags := .Node.Tags}}
             {{range $tag := .AllTags}}
-            <label class="form-check">
-              <input class="form-check-input" type="checkbox" name="tag_ids" value="{{$tag.ID}}"
+            <label class="form-check mb-0 d-flex align-items-center">
+              <input class="form-check-input mt-0 me-2" type="checkbox" name="tag_ids" value="{{$tag.ID}}"
                 {{range $nodeTags}}{{if eq .ID $tag.ID}}checked{{end}}{{end}}>
-              <span class="form-check-label">
-                <span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span>
-              </span>
+              <span class="badge" style="background-color: {{.Color}}; color: {{.TextColor}};">{{.Name}}</span>
             </label>
             {{end}}
+            {{if not .AllTags}}
+            <p class="text-muted mb-0" id="no-tags-msg" style="grid-column: 1 / -1;">No tags exist yet. Create one below.</p>
+            {{end}}
           </div>
-          {{else}}
-          <p class="text-muted">No tags exist yet. Create one below.</p>
-          {{end}}
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Tags</button>
+          <div class="row g-2 w-100 m-0">
+            <div class="col-6 p-0 pe-1"><button type="submit" class="btn btn-primary w-100">Save Tags</button></div>
+            <div class="col-6 p-0 ps-1"><button type="button" class="btn w-100" data-bs-dismiss="modal">Cancel</button></div>
+          </div>
         </div>
       </form>
       <div class="modal-body border-top">
         <div class="small text-muted mb-2">Create a new tag</div>
-        <form action="/tags/new" method="POST" class="d-flex gap-2 align-items-center flex-wrap">
+        <form id="new-tag-form" action="/tags/new" method="POST">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <input type="text" name="name" class="form-control form-control-sm" placeholder="Tag name" required style="width: 120px;">
-          <span class="text-muted small">bg</span>
-          <input type="color" name="color" id="modal-color-bg" class="form-control form-control-sm form-control-color" value="#206bc4" style="width: 40px; padding: 2px;">
-          <input type="text" id="modal-color-bg-hex" class="form-control form-control-sm" value="#206bc4" maxlength="7" style="width: 80px;">
-          <span class="text-muted small">text</span>
-          <input type="color" name="text_color" id="modal-color-text" class="form-control form-control-sm form-control-color" value="#ffffff" style="width: 40px; padding: 2px;">
-          <input type="text" id="modal-color-text-hex" class="form-control form-control-sm" value="#ffffff" maxlength="7" style="width: 80px;">
-          <button type="submit" class="btn btn-sm btn-primary text-nowrap">Add</button>
+          <div class="mb-2">
+            <input type="text" name="name" class="form-control form-control-sm" placeholder="Tag name" required>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small mb-1">Background</label>
+              <div class="d-flex gap-2 align-items-center">
+                <input type="color" name="color" id="modal-color-bg" class="form-control form-control-sm form-control-color" value="#206bc4" style="width: 40px; padding: 2px; flex-shrink: 0;">
+                <input type="text" id="modal-color-bg-hex" class="form-control form-control-sm" value="#206bc4" maxlength="7">
+              </div>
+            </div>
+            <div class="col-6">
+              <label class="form-label small mb-1">Text</label>
+              <div class="d-flex gap-2 align-items-center">
+                <input type="color" name="text_color" id="modal-color-text" class="form-control form-control-sm form-control-color" value="#ffffff" style="width: 40px; padding: 2px; flex-shrink: 0;">
+                <input type="text" id="modal-color-text-hex" class="form-control form-control-sm" value="#ffffff" maxlength="7">
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary w-100">Add Tag</button>
         </form>
       </div>
     </div>
@@ -268,6 +279,50 @@ function toggleJobConfig(jobID) {
   syncColorPair('modal-color-bg', 'modal-color-bg-hex');
   syncColorPair('modal-color-text', 'modal-color-text-hex');
 })();
+
+// Intercept the "create new tag" form — keep modal open, append new tag to list.
+document.addEventListener('DOMContentLoaded', function(){
+  var form = document.getElementById('new-tag-form');
+  if (!form) return;
+  var list = document.getElementById('tag-list');
+  form.addEventListener('submit', function(ev){
+    ev.preventDefault();
+    var fd = new FormData(form);
+    fetch('/tags/new', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
+    })
+    .then(function(res){ return res.json().then(function(data){ return { ok: res.ok, data: data }; }); })
+    .then(function(r){
+      if (!r.ok) { alert(r.data.error || 'Could not create tag'); return; }
+      // Remove "no tags exist yet" message if present.
+      var noMsg = document.getElementById('no-tags-msg');
+      if (noMsg) noMsg.remove();
+      // Append a checked checkbox for the new tag.
+      var label = document.createElement('label');
+      label.className = 'form-check mb-0 d-flex align-items-center';
+      var cb = document.createElement('input');
+      cb.className = 'form-check-input mt-0 me-2';
+      cb.type = 'checkbox';
+      cb.name = 'tag_ids';
+      cb.value = r.data.id;
+      cb.checked = true;
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.style.backgroundColor = r.data.color;
+      badge.style.color = r.data.text_color;
+      badge.textContent = r.data.name;
+      label.appendChild(cb);
+      label.appendChild(badge);
+      list.appendChild(label);
+      // Reset the create-tag form.
+      form.querySelector('input[name="name"]').value = '';
+    })
+    .catch(function(err){ console.error(err); alert('Failed to create tag'); });
+  });
+});
 </script>
 
 <div class="card">

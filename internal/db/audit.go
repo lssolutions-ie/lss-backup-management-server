@@ -7,8 +7,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
+
+var auditDBLg = logx.Component("db.audit")
+
+// gapStalenessThreshold is how old a gap must be before the ingest path skips
+// past it. A gap that's never been filled in this long is assumed permanently
+// lost (e.g. CLI-side migration trimmed an event the server never received).
+const gapStalenessThreshold = 1 * time.Hour
 
 // InsertServerAuditLog records a user-originated action on the management server.
 // userID may be 0 if unauthenticated (login failures etc.).
@@ -35,36 +43,91 @@ func (d *DB) InsertServerAuditLog(userID uint64, username, ip, category, severit
 	return err
 }
 
-// InsertNodeAuditEvents inserts a batch of events shipped from a CLI node.
-// Returns the highest contiguous seq that was successfully inserted — used for the heartbeat ack.
-// Events may arrive with gaps; we insert in-order and stop at the first gap.
+// InsertNodeAuditEvents inserts a batch of events shipped from a CLI node and
+// returns the highest contiguous seq currently stored for this node — used for
+// the heartbeat ack.
+//
+// Events may arrive with gaps; we insert each one (idempotent via
+// UNIQUE(source_node_id, source_seq)). After the batch lands we reconcile the
+// ack pointer from actual DB state, walking seqs starting at prevAck+1 and
+// advancing through the contiguous run. This handles three cases correctly:
+//   1. Normal in-order delivery: ack advances with every event.
+//   2. CLI-side migration that backfilled rows: events already in DB still
+//      count toward the contiguous run.
+//   3. Real gaps: ack stops at the missing seq; CLI resends next heartbeat.
+//
 // Caller must pass events sorted by seq ascending.
 func (d *DB) InsertNodeAuditEvents(nodeID uint64, prevAck uint64, events []models.AuditEvent) (uint64, error) {
-	if len(events) == 0 {
-		return prevAck, nil
-	}
-	ackedSeq := prevAck
 	for _, e := range events {
-		// Enforce strict-in-order ack: we only advance the ack pointer if seq == ackedSeq+1.
-		if e.Seq != ackedSeq+1 {
-			// Store the event anyway (idempotent via UNIQUE (source_node_id, source_seq)),
-			// but stop advancing the ack so the CLI resends the missing one next heartbeat.
-			if err := d.insertNodeAudit(nodeID, e); err != nil {
-				return ackedSeq, err
-			}
-			continue
-		}
 		if err := d.insertNodeAudit(nodeID, e); err != nil {
-			return ackedSeq, err
-		}
-		ackedSeq = e.Seq
-	}
-	if ackedSeq > prevAck {
-		if _, err := d.db.Exec("UPDATE nodes SET audit_ack_seq = ? WHERE id = ?", ackedSeq, nodeID); err != nil {
-			return ackedSeq, err
+			return prevAck, err
 		}
 	}
-	return ackedSeq, nil
+	newAck, err := d.computeContiguousAck(nodeID, prevAck)
+	if err != nil {
+		return prevAck, err
+	}
+
+	// If reconcile didn't move the pointer but events ARE present past prevAck,
+	// there's a gap. CLI-side queue/migration bugs can permanently drop a seq;
+	// skip past gaps that have been there longer than gapStalenessThreshold so
+	// the ack doesn't freeze forever.
+	if newAck == prevAck {
+		var nextSeq sql.NullInt64
+		var nextDetected sql.NullTime
+		err := d.db.QueryRow(
+			"SELECT MIN(source_seq), MIN(detected_at) FROM audit_log WHERE source_node_id=? AND source_seq > ?",
+			nodeID, prevAck).Scan(&nextSeq, &nextDetected)
+		if err == nil && nextSeq.Valid && nextDetected.Valid {
+			missingFrom := prevAck + 1
+			missingTo := uint64(nextSeq.Int64) - 1
+			if missingFrom <= missingTo && time.Since(nextDetected.Time) > gapStalenessThreshold {
+				skipTo := uint64(nextSeq.Int64) - 1
+				auditDBLg.Warn("audit ack stuck; skipping stale gap",
+					"node_id", nodeID,
+					"missing_from", missingFrom,
+					"missing_to", missingTo,
+					"gap_age", time.Since(nextDetected.Time).String())
+				newAck = skipTo
+				newAck, err = d.computeContiguousAck(nodeID, newAck)
+				if err != nil {
+					return prevAck, err
+				}
+			}
+		}
+	}
+
+	if newAck > prevAck {
+		if _, err := d.db.Exec("UPDATE nodes SET audit_ack_seq = ? WHERE id = ?", newAck, nodeID); err != nil {
+			return prevAck, err
+		}
+	}
+	return newAck, nil
+}
+
+// computeContiguousAck returns the highest seq M such that every seq in
+// (prevAck, M] is present for the given node. Walks at most a few thousand
+// rows per call — bounded by typical heartbeat batch sizes.
+func (d *DB) computeContiguousAck(nodeID uint64, prevAck uint64) (uint64, error) {
+	rows, err := d.db.Query(
+		"SELECT source_seq FROM audit_log WHERE source_node_id=? AND source_seq > ? ORDER BY source_seq ASC LIMIT 5000",
+		nodeID, prevAck)
+	if err != nil {
+		return prevAck, err
+	}
+	defer rows.Close()
+	ack := prevAck
+	for rows.Next() {
+		var s uint64
+		if err := rows.Scan(&s); err != nil {
+			return ack, err
+		}
+		if s != ack+1 {
+			break
+		}
+		ack = s
+	}
+	return ack, rows.Err()
 }
 
 func (d *DB) insertNodeAudit(nodeID uint64, e models.AuditEvent) error {

@@ -54,9 +54,19 @@ func (d *DB) RunMigrations(dir string) error {
 
 	var files []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
-			files = append(files, e.Name())
+		if e.IsDir() {
+			continue
 		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".sql") {
+			continue
+		}
+		// Down-migrations are documentation/operator-rollback only — the runner
+		// never auto-applies them. See migrations/README.md.
+		if strings.HasSuffix(name, ".down.sql") {
+			continue
+		}
+		files = append(files, name)
 	}
 	sort.Strings(files)
 

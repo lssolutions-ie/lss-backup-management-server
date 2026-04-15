@@ -1629,7 +1629,8 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       anomaly_snapshot_drop_threshold, anomaly_files_drop_pct, anomaly_files_drop_min,
 		       anomaly_bytes_drop_pct, anomaly_bytes_drop_min_mb,
 		       anomaly_ack_retention_days, audit_retention_days,
-		       terminal_recording_enabled, terminal_recording_retention_days
+		       terminal_recording_enabled, terminal_recording_retention_days,
+		       silent_alert_threshold_minutes
 		FROM server_tuning WHERE id = 1`).
 		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
 			&t.RetentionRawDays, &t.RetentionPostRunDays,
@@ -1638,7 +1639,8 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			&t.AnomalySnapshotDropThreshold, &t.AnomalyFilesDropPct, &t.AnomalyFilesDropMin,
 			&t.AnomalyBytesDropPct, &t.AnomalyBytesDropMinMB,
 			&t.AnomalyAckRetentionDays, &t.AuditRetentionDays,
-			&t.TerminalRecordingEnabled, &t.TerminalRecordingRetentionDays)
+			&t.TerminalRecordingEnabled, &t.TerminalRecordingRetentionDays,
+			&t.SilentAlertThresholdMinutes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &models.ServerTuning{
 			RepoStatsIntervalSeconds:     86400,
@@ -1657,6 +1659,7 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			AuditRetentionDays:             0,
 			TerminalRecordingEnabled:       true,
 			TerminalRecordingRetentionDays: 30,
+			SilentAlertThresholdMinutes:    7,
 		}, nil
 	}
 	return t, err
@@ -1680,7 +1683,8 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		  anomaly_ack_retention_days     = ?,
 		  audit_retention_days           = ?,
 		  terminal_recording_enabled      = ?,
-		  terminal_recording_retention_days = ?
+		  terminal_recording_retention_days = ?,
+		  silent_alert_threshold_minutes  = ?
 		WHERE id = 1`,
 		t.RepoStatsIntervalSeconds, t.RepoStatsTimeoutSeconds,
 		t.RetentionRawDays, t.RetentionPostRunDays,
@@ -1689,7 +1693,8 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		t.AnomalySnapshotDropThreshold, t.AnomalyFilesDropPct, t.AnomalyFilesDropMin,
 		t.AnomalyBytesDropPct, t.AnomalyBytesDropMinMB,
 		t.AnomalyAckRetentionDays, t.AuditRetentionDays,
-		t.TerminalRecordingEnabled, t.TerminalRecordingRetentionDays)
+		t.TerminalRecordingEnabled, t.TerminalRecordingRetentionDays,
+		t.SilentAlertThresholdMinutes)
 	return err
 }
 
@@ -1776,7 +1781,8 @@ func (d *DB) ListJobAnomalies(nodeID uint64, jobID string, onlyUnacked bool, lim
 	args = append(args, limit)
 	rows, err := d.db.Query(`
 		SELECT id, node_id, job_id, detected_at, anomaly_type, prev_value, curr_value,
-		       delta_value, delta_pct, snapshot_id, acknowledged, acknowledged_by, acknowledged_at
+		       delta_value, delta_pct, snapshot_id, acknowledged, acknowledged_by, acknowledged_at,
+		       COALESCE(resolution_note, '')
 		FROM job_anomalies `+where+`
 		ORDER BY detected_at DESC LIMIT ?`, args...)
 	if err != nil {
@@ -1791,7 +1797,7 @@ func (d *DB) ListJobAnomalies(nodeID uint64, jobID string, onlyUnacked bool, lim
 		var ackedAt sql.NullTime
 		var acked int
 		if err := rows.Scan(&a.ID, &a.NodeID, &a.JobID, &a.DetectedAt, &atype, &a.PrevValue, &a.CurrValue,
-			&a.DeltaValue, &a.DeltaPct, &a.SnapshotID, &acked, &ackedBy, &ackedAt); err != nil {
+			&a.DeltaValue, &a.DeltaPct, &a.SnapshotID, &acked, &ackedBy, &ackedAt, &a.ResolutionNote); err != nil {
 			return nil, err
 		}
 		a.AnomalyType = models.AnomalyType(atype)
@@ -1809,13 +1815,28 @@ func (d *DB) ListJobAnomalies(nodeID uint64, jobID string, onlyUnacked bool, lim
 	return out, rows.Err()
 }
 
-func (d *DB) AcknowledgeAnomaly(id uint64, userID uint64) error {
-	_, err := d.db.Exec("UPDATE job_anomalies SET acknowledged = 1, acknowledged_by = ?, acknowledged_at = NOW() WHERE id = ?", userID, id)
+// GetAnomalyTarget returns (node_id, job_id) for an anomaly row — needed when
+// the ack flow optionally creates a silence on the same (node, job) pair.
+func (d *DB) GetAnomalyTarget(id uint64) (uint64, string, error) {
+	var nodeID uint64
+	var jobID string
+	err := d.db.QueryRow("SELECT node_id, job_id FROM job_anomalies WHERE id = ?", id).Scan(&nodeID, &jobID)
+	return nodeID, jobID, err
+}
+
+func (d *DB) AcknowledgeAnomaly(id uint64, userID uint64, note string) error {
+	if len(note) > 500 {
+		note = note[:497] + "…"
+	}
+	_, err := d.db.Exec(
+		"UPDATE job_anomalies SET acknowledged = 1, acknowledged_by = ?, acknowledged_at = NOW(), resolution_note = ? WHERE id = ?",
+		userID, note, id)
 	return err
 }
 
 func (d *DB) UnacknowledgeAnomaly(id uint64) error {
-	_, err := d.db.Exec("UPDATE job_anomalies SET acknowledged = 0, acknowledged_by = NULL, acknowledged_at = NULL WHERE id = ?", id)
+	_, err := d.db.Exec(
+		"UPDATE job_anomalies SET acknowledged = 0, acknowledged_by = NULL, acknowledged_at = NULL, resolution_note = '' WHERE id = ?", id)
 	return err
 }
 
@@ -1890,6 +1911,7 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 	rows, err := d.db.Query(`
 		SELECT a.id, a.node_id, a.job_id, a.detected_at, a.anomaly_type, a.prev_value, a.curr_value,
 		       a.delta_value, a.delta_pct, a.snapshot_id, a.acknowledged, a.acknowledged_by, a.acknowledged_at,
+		       COALESCE(a.resolution_note, ''),
 		       n.name, n.uid, n.client_group_id, COALESCE(c.name, ''),
 		       COALESCE(j.job_name, ''), COALESCE(j.program, ''),
 		       COALESCE(u.username, '')
@@ -1914,7 +1936,7 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 		if err := rows.Scan(&ea.JobAnomaly.ID, &ea.JobAnomaly.NodeID, &ea.JobAnomaly.JobID, &ea.JobAnomaly.DetectedAt,
 			&atype, &ea.JobAnomaly.PrevValue, &ea.JobAnomaly.CurrValue,
 			&ea.JobAnomaly.DeltaValue, &ea.JobAnomaly.DeltaPct, &ea.JobAnomaly.SnapshotID,
-			&acked, &ackedBy, &ackedAt,
+			&acked, &ackedBy, &ackedAt, &ea.JobAnomaly.ResolutionNote,
 			&ea.NodeName, &ea.NodeUID, &ea.ClientID, &ea.ClientName,
 			&ea.JobName, &ea.JobProgram, &ea.AckedByName); err != nil {
 			return nil, err

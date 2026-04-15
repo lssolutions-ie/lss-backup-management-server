@@ -18,7 +18,7 @@ else
     C_RED= C_GREEN= C_YELLOW= C_BLUE= C_RESET=
 fi
 
-step()  { echo; echo "${C_BLUE}[STEP $1/11]${C_RESET} $2"; }
+step()  { echo; echo "${C_BLUE}[STEP $1/12]${C_RESET} $2"; }
 info()  { echo "  ${C_GREEN}→${C_RESET} $*"; }
 warn()  { echo "  ${C_YELLOW}⚠${C_RESET} $*"; }
 error() { echo "${C_RED}✗ $*${C_RESET}" >&2; }
@@ -44,7 +44,12 @@ TUNNEL_USER="lss-tunnel"
 TUNNEL_AUTHKEYS_FILE="$STATE_DIR/tunnel_authorized_keys"
 TUNNEL_AUTHKEYS_SCRIPT="/usr/local/bin/lss-tunnel-authkeys.sh"
 SSHD_DROPIN="/etc/ssh/sshd_config.d/lss-tunnel.conf"
+SESSIONS_DIR="$STATE_DIR/sessions"
+BACKUP_SCRIPT_PATH="/usr/local/bin/lss-mgmt-backup.sh"
 GO_MIN_VERSION="1.22"
+
+# trap any error with a line number — easier to triage mid-install failures
+trap 'error "Install failed at line $LINENO"; exit 1' ERR
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Check prerequisites
@@ -153,9 +158,17 @@ mkdir -p "$STATE_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
 chmod 755 "$STATE_DIR"
 
-info "Config dir: $CONFIG_DIR"
-info "Log dir:    $LOG_DIR"
-info "State dir:  $STATE_DIR"
+# Sessions dir for asciinema .cast recordings written by the terminal feature.
+# Without this the recorder would silently fail to write — first SSH session
+# would log "recorder init failed: mkdir sessions: permission denied".
+mkdir -p "$SESSIONS_DIR"
+chown "$SERVICE_USER:$SERVICE_USER" "$SESSIONS_DIR"
+chmod 750 "$SESSIONS_DIR"
+
+info "Config dir:   $CONFIG_DIR"
+info "Log dir:      $LOG_DIR"
+info "State dir:    $STATE_DIR"
+info "Sessions dir: $SESSIONS_DIR"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 4 — Configure MySQL
@@ -290,9 +303,20 @@ EOF
 chown root:root "$SSHD_DROPIN"
 chmod 0644 "$SSHD_DROPIN"
 
+# Belt-and-braces: ensure /etc/ssh/sshd_config has the Include line for
+# sshd_config.d/. Default on Ubuntu 22.04+, but some hardened images strip it.
+if [[ -f /etc/ssh/sshd_config ]] && ! grep -qE '^\s*Include\s+/etc/ssh/sshd_config\.d/' /etc/ssh/sshd_config; then
+    warn "/etc/ssh/sshd_config missing 'Include /etc/ssh/sshd_config.d/*.conf' — drop-in won't be applied"
+    warn "Add this line manually at the top of /etc/ssh/sshd_config:"
+    warn "    Include /etc/ssh/sshd_config.d/*.conf"
+fi
+
 if sshd -t 2>/dev/null; then
-    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
-    info "sshd reloaded with drop-in $SSHD_DROPIN"
+    if systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null; then
+        info "sshd reloaded with drop-in $SSHD_DROPIN"
+    else
+        warn "Could not reload sshd. Try: sudo systemctl reload ssh"
+    fi
 else
     warn "sshd config test failed — tunnel drop-in not applied; run 'sshd -t' to inspect"
 fi
@@ -342,6 +366,9 @@ secret_key_file = "$SECRET_KEY_FILE"
 [session]
 cookie_name   = "lss_session"
 max_age_hours = 24
+
+[terminal]
+sessions_dir = "$SESSIONS_DIR"
 EOF
     chown "$SERVICE_USER:$SERVICE_USER" "$CONFIG_FILE"
     chmod 640 "$CONFIG_FILE"
@@ -408,14 +435,57 @@ else
     info "Service started"
 fi
 
-sleep 3
+# First-run can take a while — it applies all migrations on startup. Poll for
+# up to 30s rather than guessing with sleep 3.
+for i in {1..30}; do
+    if systemctl is-active --quiet lss-management; then
+        break
+    fi
+    sleep 1
+done
 
 if systemctl is-active --quiet lss-management; then
     info "${C_GREEN}Service is running${C_RESET}"
 else
-    error "Service failed to start. Run:"
-    error "    journalctl -u lss-management -n 50"
+    error "Service failed to start within 30s. Run:"
+    error "    journalctl -u lss-management -n 50 --no-pager"
     die "Installation incomplete"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 12 — Install MySQL backup script
+# ═════════════════════════════════════════════════════════════════════════════
+step 12 "Installing MySQL backup script"
+
+cp "$REPO_ROOT/install/lss-mgmt-backup.sh" "$BACKUP_SCRIPT_PATH"
+chown root:root "$BACKUP_SCRIPT_PATH"
+chmod 750 "$BACKUP_SCRIPT_PATH"
+info "Installed $BACKUP_SCRIPT_PATH"
+
+# Stash the DB password where the backup script will read it.
+if [[ ! -f /etc/default/lss-mgmt-backup ]]; then
+    umask 077
+    cat > /etc/default/lss-mgmt-backup <<EOF
+# Defaults for /usr/local/bin/lss-mgmt-backup.sh
+LSS_BACKUP_PASS="$DB_PASSWORD"
+# Optional off-host shipment (rsync target). Leave empty to disable:
+# LSS_BACKUP_REMOTE="user@offsite:/backups/lss-mgmt/"
+# Override defaults:
+# LSS_BACKUP_DIR=/var/backups/lss-mgmt
+# LSS_BACKUP_KEEP=14
+EOF
+    umask 022
+    chmod 600 /etc/default/lss-mgmt-backup
+    info "Wrote /etc/default/lss-mgmt-backup (mode 600)"
+fi
+
+# Wire a daily cron entry if not already present.
+CRONLINE='30 3 * * * /usr/local/bin/lss-mgmt-backup.sh >> /var/log/lss-mgmt-backup.log 2>&1'
+if ! crontab -u root -l 2>/dev/null | grep -qF "lss-mgmt-backup.sh"; then
+    ( crontab -u root -l 2>/dev/null; echo "$CRONLINE" ) | crontab -u root -
+    info "Cron entry installed (03:30 daily)"
+else
+    info "Cron entry already present"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -460,6 +530,17 @@ cat <<SUMMARY
  Important files to back up:
    $SECRET_KEY_FILE   (losing this = re-register all nodes)
    $DB_PASSWORD_FILE  (MySQL credentials)
-   MySQL database dump
+   /var/backups/lss-mgmt/                    (daily MySQL dumps — already wired)
+
+ Firewall checklist (ufw / iptables — not configured by this script):
+   - allow 80/tcp + 443/tcp (web + node /api/v1/status + /ws/ssh-tunnel)
+   - allow 22/tcp ONLY from your trusted admin range
+   - DO NOT expose 3306/tcp (MySQL) or 8080/tcp (Go server) to the world
+
+ Edit /etc/default/lss-mgmt-backup to set LSS_BACKUP_REMOTE for off-host
+ shipment of the daily DB dumps.
+
+ Threat-model assumptions and what's NOT defended against:
+   See docs/THREAT_MODEL.md (if present).
 ============================================================
 SUMMARY

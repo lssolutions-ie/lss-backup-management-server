@@ -185,7 +185,7 @@ func (d *DB) ListAuditLog(nodeID uint64, source string, limit int) ([]*EnrichedA
 		conds = append(conds, "a.source_node_id = ?")
 		args = append(args, nodeID)
 	}
-	if source == "server" || source == "node" {
+	if source == "server" || source == "node" || source == "host" {
 		conds = append(conds, "a.source = ?")
 		args = append(args, source)
 	}
@@ -238,6 +238,71 @@ func (d *DB) ListAuditLog(nodeID uint64, source string, limit int) ([]*EnrichedA
 		out = append(out, ea)
 	}
 	return out, rows.Err()
+}
+
+// GetHostAuditCursor returns the journal cursor we last successfully consumed
+// host-audit events past. Empty string on first run = "start from now".
+func (d *DB) GetHostAuditCursor() (string, error) {
+	var cur string
+	err := d.db.QueryRow("SELECT journal_cursor FROM host_audit_state WHERE id = 1").Scan(&cur)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return cur, err
+}
+
+// SetHostAuditCursor persists the cursor so the next tick resumes after it.
+func (d *DB) SetHostAuditCursor(cursor string) error {
+	_, err := d.db.Exec(
+		"INSERT INTO host_audit_state (id, journal_cursor) VALUES (1, ?) ON DUPLICATE KEY UPDATE journal_cursor = VALUES(journal_cursor)",
+		cursor)
+	return err
+}
+
+// InsertHostAuditEvent records one event observed from the local systemd
+// journal. Best-effort dedup is the caller's responsibility (use the journal
+// cursor to avoid re-emitting old events).
+func (d *DB) InsertHostAuditEvent(category, severity, actor, message string, details map[string]string) error {
+	var detailsJSON sql.NullString
+	if len(details) > 0 {
+		b, err := json.Marshal(details)
+		if err == nil {
+			if len(b) > 8192 {
+				b = b[:8192]
+			}
+			detailsJSON = sql.NullString{String: string(b), Valid: true}
+		}
+	}
+	_, err := d.db.Exec(`
+		INSERT INTO audit_log
+		  (ts, source, category, severity, actor, message, details_json)
+		VALUES (NOW(), 'host', ?, ?, ?, ?, ?)`,
+		category, severity, actor, truncate(message, 500), detailsJSON)
+	return err
+}
+
+// FireSilentNodeAlerts inserts one audit_log row per node whose last_seen_at is
+// older than thresholdMinutes AND doesn't already have a 'node_silent' alert
+// since that last_seen_at. Atomic-ish: a single INSERT … SELECT statement so
+// concurrent calls converge on at most one alert per silence transition.
+func (d *DB) FireSilentNodeAlerts(thresholdMinutes uint32) error {
+	q := fmt.Sprintf(`
+		INSERT INTO audit_log
+		  (ts, source, source_node_id, category, severity, actor, action, entity_type, entity_id, message)
+		SELECT NOW(), 'server', n.id, 'node_silent', 'warn', 'system', 'detect', 'node',
+		       CAST(n.id AS CHAR),
+		       CONCAT('Node "', n.name, '" missed heartbeat — last seen ', DATE_FORMAT(n.last_seen_at, '%%Y-%%m-%%d %%H:%%i:%%s'))
+		FROM nodes n
+		WHERE n.last_seen_at IS NOT NULL
+		  AND n.last_seen_at < NOW() - INTERVAL %d MINUTE
+		  AND NOT EXISTS (
+		    SELECT 1 FROM audit_log a
+		    WHERE a.source_node_id = n.id
+		      AND a.category = 'node_silent'
+		      AND a.ts > n.last_seen_at
+		  )`, thresholdMinutes)
+	_, err := d.db.Exec(q)
+	return err
 }
 
 // PruneAuditLog deletes rows older than N days. Safe no-op if days == 0 (forever).

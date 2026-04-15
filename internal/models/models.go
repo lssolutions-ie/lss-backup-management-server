@@ -241,6 +241,7 @@ type JobAnomaly struct {
 	Acknowledged   bool
 	AcknowledgedBy *uint64
 	AcknowledgedAt *time.Time
+	ResolutionNote string
 }
 
 type NodeReport struct {
@@ -394,6 +395,7 @@ type ServerTuning struct {
 	AuditRetentionDays             uint32
 	TerminalRecordingEnabled       bool
 	TerminalRecordingRetentionDays uint32
+	SilentAlertThresholdMinutes    uint32
 }
 
 // AuditEvent is the wire format CLI nodes send inside the heartbeat payload.

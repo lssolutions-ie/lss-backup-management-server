@@ -15,6 +15,7 @@
           <a href="/audit" class="btn {{if eq .Source ""}}btn-primary{{else}}btn-outline-secondary{{end}}">All sources</a>
           <a href="/audit?source=server" class="btn {{if eq .Source "server"}}btn-primary{{else}}btn-outline-secondary{{end}}">Server</a>
           <a href="/audit?source=node" class="btn {{if eq .Source "node"}}btn-primary{{else}}btn-outline-secondary{{end}}">Nodes</a>
+          <a href="/audit?source=host" class="btn {{if eq .Source "host"}}btn-primary{{else}}btn-outline-secondary{{end}}">Host</a>
         </div>
       {{end}}
     </div>
@@ -140,7 +141,9 @@
     return '<span class="badge ' + cls + '">' + escapeHtml(s) + '</span>';
   }
   function sourceBadge(s) {
-    return s === 'node' ? '<span class="badge text-bg-info">Node</span>' : '<span class="badge text-bg-primary">Server</span>';
+    if (s === 'node') return '<span class="badge text-bg-info">Node</span>';
+    if (s === 'host') return '<span class="badge text-bg-warning">Host</span>';
+    return '<span class="badge text-bg-primary">Server</span>';
   }
   function detailsCell(r) {
     var hasTerminal = (r.category === 'terminal_opened' || r.category === 'terminal_closed') && r.details && r.details.session_file;

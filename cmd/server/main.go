@@ -64,6 +64,10 @@ func main() {
 	// Start background workers
 	offlineChecker := worker.NewOfflineChecker(database, notifier)
 	offlineChecker.Start()
+	silentChecker := worker.NewSilentNodeChecker(database)
+	silentChecker.Start()
+	hostAuditWorker := worker.NewHostAuditWorker(database)
+	hostAuditWorker.Start()
 	retentionWorker := worker.NewRetentionWorker(database, cfg.Terminal.SessionsDir)
 	retentionWorker.Start()
 

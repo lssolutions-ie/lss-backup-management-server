@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
@@ -118,15 +119,26 @@ func (s *Server) HandleAnomalyBulkAck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
-	var done int
+	note := strings.TrimSpace(r.FormValue("note"))
+	muteHours, _ := strconv.Atoi(r.FormValue("mute_hours")) // 0 or absent = no mute
+	var done, muted int
 	for _, part := range strings.Split(raw, ",") {
 		id, err := strconv.ParseUint(strings.TrimSpace(part), 10, 64)
 		if err != nil {
 			continue
 		}
 		if action == "ack" {
-			if err := s.DB.AcknowledgeAnomaly(id, user.ID); err == nil {
+			if err := s.DB.AcknowledgeAnomaly(id, user.ID, note); err == nil {
 				done++
+				if muteHours > 0 {
+					if nodeID, jobID, err := s.DB.GetAnomalyTarget(id); err == nil {
+						until := time.Now().Add(time.Duration(muteHours) * time.Hour)
+						if err := s.DB.SetJobSilence(nodeID, jobID, &until,
+							"muted via anomaly ack: "+note, user.ID); err == nil {
+							muted++
+						}
+					}
+				}
 			}
 		} else {
 			if err := s.DB.UnacknowledgeAnomaly(id); err == nil {
@@ -143,9 +155,16 @@ func (s *Server) HandleAnomalyBulkAck(w http.ResponseWriter, r *http.Request) {
 			category = "anomaly_unacknowledged"
 			severity = "warn"
 		}
+		details := map[string]string{"count": strconv.Itoa(done), "ids": raw}
+		if note != "" {
+			details["note"] = note
+		}
+		if muted > 0 {
+			details["muted"] = strconv.Itoa(muted)
+			details["mute_hours"] = strconv.Itoa(muteHours)
+		}
 		s.auditServer(r, category, severity, "bulk_"+verb, "anomaly", raw,
-			"Bulk "+verb+" of "+strconv.Itoa(done)+" anomalies",
-			map[string]string{"count": strconv.Itoa(done), "ids": raw})
+			"Bulk "+verb+" of "+strconv.Itoa(done)+" anomalies", details)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true,"updated":` + strconv.Itoa(done) + `}`))
@@ -174,13 +193,30 @@ func (s *Server) HandleAnomalyAck(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	note := strings.TrimSpace(r.FormValue("note"))
+	muteHours, _ := strconv.Atoi(r.FormValue("mute_hours"))
 	switch parts[1] {
 	case "ack":
-		if err := s.DB.AcknowledgeAnomaly(id, user.ID); err != nil {
+		if err := s.DB.AcknowledgeAnomaly(id, user.ID, note); err != nil {
 			s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 			return
 		}
-		s.auditServer(r, "anomaly_acknowledged", "info", "ack", "anomaly", strconv.FormatUint(id, 10), "Acknowledged anomaly", nil)
+		details := map[string]string{}
+		if note != "" {
+			details["note"] = note
+		}
+		if muteHours > 0 {
+			if nodeID, jobID, err := s.DB.GetAnomalyTarget(id); err == nil {
+				until := time.Now().Add(time.Duration(muteHours) * time.Hour)
+				if err := s.DB.SetJobSilence(nodeID, jobID, &until,
+					"muted via anomaly ack: "+note, user.ID); err == nil {
+					details["muted_until"] = until.Format(time.RFC3339)
+					details["mute_hours"] = strconv.Itoa(muteHours)
+				}
+			}
+		}
+		s.auditServer(r, "anomaly_acknowledged", "info", "ack", "anomaly", strconv.FormatUint(id, 10),
+			"Acknowledged anomaly", details)
 	case "unack":
 		if err := s.DB.UnacknowledgeAnomaly(id); err != nil {
 			s.Fail(w, r, http.StatusInternalServerError, err, "DB error")

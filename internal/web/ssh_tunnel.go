@@ -54,6 +54,16 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-UID exponential backoff. Defends against a leaked PSK letting an
+	// attacker brute the HMAC space at line rate.
+	limiter := getTunnelLimiter()
+	if ok, retryAfter := limiter.allow(uid); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())+1))
+		tunnelLg.Warn("rate-limited", "uid", uid, "retry_after_sec", int(retryAfter.Seconds())+1)
+		http.Error(w, "too many failed attempts", http.StatusTooManyRequests)
+		return
+	}
+
 	// Replay / clock skew guard. Reject anything outside ±2 min.
 	ts, err := strconv.ParseInt(tsStr, 10, 64)
 	if err != nil {
@@ -63,6 +73,7 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	if ts < now-sshTunnelMaxSkewSec || ts > now+sshTunnelMaxSkewSec {
 		tunnelLg.Warn("stale timestamp", "uid", uid, "skew_sec", now-ts)
+		limiter.recordFailure(uid)
 		http.Error(w, "stale timestamp", http.StatusUnauthorized)
 		return
 	}
@@ -76,6 +87,7 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if node == nil {
 		tunnelLg.Warn("unknown uid", "uid", uid)
+		limiter.recordFailure(uid)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -92,9 +104,12 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	psk = "" //nolint:ineffassign
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(mac)) != 1 {
 		tunnelLg.Warn("hmac mismatch", "node_id", node.ID, "uid", uid)
+		limiter.recordFailure(uid)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	// HMAC verified — clear any prior backoff for this UID.
+	limiter.recordSuccess(uid)
 
 	// Upgrade to WebSocket.
 	ws, err := sshTunnelUpgrader.Upgrade(w, r, nil)

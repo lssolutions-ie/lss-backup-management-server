@@ -271,6 +271,7 @@ type NodeStatus struct {
 	Jobs           []JobStatus   `json:"jobs"`
 	Tunnel         *TunnelInfo   `json:"tunnel,omitempty"`
 	Hardware       *HardwareInfo `json:"hardware,omitempty"`
+	AuditEvents    []AuditEvent  `json:"audit_events,omitempty"` // v3+
 }
 
 // HardwareInfo is collected on heartbeats (not post_run).
@@ -389,7 +390,41 @@ type ServerTuning struct {
 	AnomalyFilesDropMin          uint32
 	AnomalyBytesDropPct          uint32
 	AnomalyBytesDropMinMB        uint32
-	AnomalyAckRetentionDays      uint32
+	AnomalyAckRetentionDays        uint32
+	AuditRetentionDays             uint32
+	TerminalRecordingEnabled       bool
+	TerminalRecordingRetentionDays uint32
+}
+
+// AuditEvent is the wire format CLI nodes send inside the heartbeat payload.
+type AuditEvent struct {
+	Seq      uint64            `json:"seq"`
+	TS       int64             `json:"ts"` // Unix seconds, UTC
+	Category string            `json:"category"`
+	Severity string            `json:"severity"` // info | warn | critical
+	Actor    string            `json:"actor"`
+	Message  string            `json:"message"`
+	Details  map[string]string `json:"details,omitempty"`
+}
+
+// AuditLog is a single row from the audit_log table, used for display + query.
+type AuditLog struct {
+	ID            uint64
+	TS            time.Time
+	Source        string // "server" | "node"
+	SourceNodeID  *uint64
+	SourceSeq     *uint64
+	UserID        *uint64
+	Username      string
+	IP            string
+	Category      string
+	Severity      string
+	Actor         string
+	Action        string
+	EntityType    string
+	EntityID      string
+	Message       string
+	DetailsJSON   string
 }
 
 // SMTPConfig holds email server configuration.

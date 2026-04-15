@@ -5,17 +5,19 @@ import (
 	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-management-server/internal/recorder"
 )
 
 // RetentionWorker runs periodically to aggregate old node_reports into
 // job_daily_stats and prune the raw history according to server_tuning.
 type RetentionWorker struct {
-	db       *db.DB
-	interval time.Duration
+	db          *db.DB
+	sessionsDir string
+	interval    time.Duration
 }
 
-func NewRetentionWorker(d *db.DB) *RetentionWorker {
-	return &RetentionWorker{db: d, interval: 1 * time.Hour}
+func NewRetentionWorker(d *db.DB, sessionsDir string) *RetentionWorker {
+	return &RetentionWorker{db: d, sessionsDir: sessionsDir, interval: 1 * time.Hour}
 }
 
 func (w *RetentionWorker) Start() {
@@ -55,5 +57,17 @@ func (w *RetentionWorker) tick() {
 		log.Printf("retention: prune all: %v", err)
 	} else if n > 0 {
 		log.Printf("retention: pruned %d reports older than %d days", n, tuning.RetentionPostRunDays)
+	}
+	// Step 4: prune audit_log rows older than configured retention (0 = forever).
+	if n, err := w.db.PruneAuditLog(tuning.AuditRetentionDays); err != nil {
+		log.Printf("retention: prune audit: %v", err)
+	} else if n > 0 {
+		log.Printf("retention: pruned %d audit rows older than %d days", n, tuning.AuditRetentionDays)
+	}
+	// Step 5: prune terminal session .cast recordings.
+	if n, err := recorder.PruneOlderThan(w.sessionsDir, tuning.TerminalRecordingRetentionDays); err != nil {
+		log.Printf("retention: prune recordings: %v", err)
+	} else if n > 0 {
+		log.Printf("retention: pruned %d session recordings older than %d days", n, tuning.TerminalRecordingRetentionDays)
 	}
 }

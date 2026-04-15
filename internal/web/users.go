@@ -151,6 +151,11 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.auditServer(r, "user_created", "info", "create", "user",
+		strconv.FormatUint(userID, 10),
+		"Created user "+username,
+		map[string]string{"username": username, "email": email, "role": role})
+
 	setFlash(w, "User created.")
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
@@ -258,6 +263,14 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 		log.Printf("user edit: set tags: %v", err)
 	}
 
+	details := map[string]string{"username": target.Username, "email": email, "role": role}
+	if password != "" {
+		details["password_changed"] = "true"
+	}
+	s.auditServer(r, "user_updated", "info", "update", "user",
+		strconv.FormatUint(target.ID, 10),
+		"Updated user "+target.Username, details)
+
 	setFlash(w, "User updated.")
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
@@ -291,6 +304,11 @@ func (s *Server) HandleUserDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/users", http.StatusSeeOther)
 		return
 	}
+
+	s.auditServer(r, "user_deleted", "critical", "delete", "user",
+		strconv.FormatUint(target.ID, 10),
+		"Deleted user "+target.Username,
+		map[string]string{"username": target.Username, "role": string(target.Role)})
 
 	setFlash(w, "User deleted.")
 	http.Redirect(w, r, "/users", http.StatusSeeOther)

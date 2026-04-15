@@ -53,6 +53,10 @@ func (s *Server) HandleJobSilence(w http.ResponseWriter, r *http.Request) {
 		if err := s.DB.DeleteJobSilence(nodeID, jobID); err != nil {
 			log.Printf("silence: delete: %v", err)
 		}
+		s.auditServer(r, "silence_cleared", "info", "delete", "silence",
+			fmt.Sprintf("%d:%s", nodeID, jobID),
+			fmt.Sprintf("Unmuted job %s on node %d", jobID, nodeID),
+			map[string]string{"node_id": strconv.FormatUint(nodeID, 10), "job_id": jobID})
 	case "mute":
 		dur, _ := strconv.ParseInt(r.FormValue("duration_seconds"), 10, 64)
 		var until *time.Time
@@ -64,6 +68,15 @@ func (s *Server) HandleJobSilence(w http.ResponseWriter, r *http.Request) {
 		if err := s.DB.SetJobSilence(nodeID, jobID, until, reason, user.ID); err != nil {
 			log.Printf("silence: set: %v", err)
 		}
+		details := map[string]string{
+			"node_id":          strconv.FormatUint(nodeID, 10),
+			"job_id":           jobID,
+			"duration_seconds": strconv.FormatInt(dur, 10),
+			"reason":           reason,
+		}
+		s.auditServer(r, "silence_created", "warn", "create", "silence",
+			fmt.Sprintf("%d:%s", nodeID, jobID),
+			fmt.Sprintf("Muted job %s on node %d", jobID, nodeID), details)
 	default:
 		http.Error(w, "Unknown action", http.StatusBadRequest)
 		return

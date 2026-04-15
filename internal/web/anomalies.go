@@ -137,6 +137,19 @@ func (s *Server) HandleAnomalyBulkAck(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if done > 0 {
+		verb := "ack"
+		category := "anomaly_acknowledged"
+		severity := "info"
+		if action == "unack" {
+			verb = "unack"
+			category = "anomaly_unacknowledged"
+			severity = "warn"
+		}
+		s.auditServer(r, category, severity, "bulk_"+verb, "anomaly", raw,
+			"Bulk "+verb+" of "+strconv.Itoa(done)+" anomalies",
+			map[string]string{"count": strconv.Itoa(done), "ids": raw})
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true,"updated":` + strconv.Itoa(done) + `}`))
 }
@@ -170,11 +183,13 @@ func (s *Server) HandleAnomalyAck(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "DB error", http.StatusInternalServerError)
 			return
 		}
+		s.auditServer(r, "anomaly_acknowledged", "info", "ack", "anomaly", strconv.FormatUint(id, 10), "Acknowledged anomaly", nil)
 	case "unack":
 		if err := s.DB.UnacknowledgeAnomaly(id); err != nil {
 			http.Error(w, "DB error", http.StatusInternalServerError)
 			return
 		}
+		s.auditServer(r, "anomaly_unacknowledged", "warn", "unack", "anomaly", strconv.FormatUint(id, 10), "Unacknowledged anomaly", nil)
 	default:
 		http.NotFound(w, r)
 		return

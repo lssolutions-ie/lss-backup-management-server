@@ -150,6 +150,25 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 				return fmt.Sprintf("%s%d B", sign, abs)
 			}
 		},
+		"deref": func(p *uint64) uint64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"jsonStr": func(s string) template.JS {
+			b, err := json.Marshal(s)
+			if err != nil {
+				return template.JS(`""`)
+			}
+			return template.JS(string(b))
+		},
+		"rawJSON": func(s string) template.JS {
+			if s == "" {
+				return template.JS("null")
+			}
+			return template.JS(s)
+		},
 		"uniqueClients": func(list []*db.EnrichedAnomaly) []string {
 			seen := map[string]bool{}
 			var out []string

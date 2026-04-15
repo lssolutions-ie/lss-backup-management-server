@@ -1,0 +1,385 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col pe-5">
+      <h2 class="page-title"><i class="ti ti-history me-1"></i> Audit Log{{if .NodeName}} — {{.NodeName}}{{end}}</h2>
+      <div class="text-muted">
+        {{if .NodeName}}Every auditable action the node has reported, plus any server-side actions against this node.{{else}}Every auditable action on the management server and every event reported by nodes.{{end}}
+      </div>
+    </div>
+    <div class="col-auto ps-4">
+      {{if .NodeID}}
+        <a href="/nodes/{{.NodeID}}" class="btn btn-outline-secondary"><i class="ti ti-arrow-back"></i> Back to node</a>
+      {{else}}
+        <div class="btn-group" role="group">
+          <a href="/audit" class="btn {{if eq .Source ""}}btn-primary{{else}}btn-outline-secondary{{end}}">All sources</a>
+          <a href="/audit?source=server" class="btn {{if eq .Source "server"}}btn-primary{{else}}btn-outline-secondary{{end}}">Server</a>
+          <a href="/audit?source=node" class="btn {{if eq .Source "node"}}btn-primary{{else}}btn-outline-secondary{{end}}">Nodes</a>
+        </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+    <input type="text" id="aud-search" class="form-control form-control-sm" placeholder="Search across all columns…" style="width: 260px;">
+
+    <select id="aud-filter-field" class="form-select form-select-sm" style="width: 170px;">
+      <option value="">Filter…</option>
+      <option value="source">Source</option>
+      <option value="category">Category</option>
+      <option value="severity">Severity</option>
+      <option value="username">User</option>
+      <option value="node_name">Node</option>
+      <option value="client_name">Client</option>
+    </select>
+
+    <div id="aud-filter-values-wrap" class="d-none position-relative" style="min-width: 240px;">
+      <input type="text" id="aud-filter-values-btn" class="form-control form-control-sm" readonly placeholder="Pick values…" style="cursor:pointer;background:#fff;">
+      <div id="aud-filter-values-panel" class="d-none card shadow-sm position-absolute" style="top:100%;left:0;z-index:1050;min-width:260px;max-width:320px;">
+        <div class="p-2 border-bottom">
+          <input type="text" id="aud-filter-values-search" class="form-control form-control-sm" placeholder="Search values…">
+        </div>
+        <div id="aud-filter-values-list" style="max-height: 240px; overflow-y: auto;" class="p-2"></div>
+      </div>
+    </div>
+
+    <button type="button" id="aud-filter-apply" class="btn btn-sm btn-primary d-none">Apply Filter</button>
+    <button type="button" id="aud-filter-reset" class="btn btn-sm btn-outline-secondary">Reset Filters</button>
+  </div>
+
+  <div id="aud-active-filters" class="card-header border-top d-none flex-wrap gap-2 align-items-center py-2"></div>
+
+  <div class="table-responsive">
+    <table class="table table-vcenter" id="aud-table">
+      <thead>
+        <tr>
+          <th class="aud-sort" data-key="ts" style="cursor:pointer;user-select:none;">When <span class="aud-arrow"></span></th>
+          <th class="aud-sort" data-key="source" style="cursor:pointer;user-select:none;">Source <span class="aud-arrow"></span></th>
+          <th class="aud-sort" data-key="category" style="cursor:pointer;user-select:none;">Category <span class="aud-arrow"></span></th>
+          <th class="aud-sort" data-key="severity" style="cursor:pointer;user-select:none;">Severity <span class="aud-arrow"></span></th>
+          <th class="aud-sort" data-key="actor" style="cursor:pointer;user-select:none;">Actor <span class="aud-arrow"></span></th>
+          <th>Message</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody id="aud-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="card-footer d-flex align-items-center gap-3 flex-wrap">
+    <div class="text-muted small">
+      Showing <span id="aud-range-start">0</span>–<span id="aud-range-end">0</span> of <span id="aud-range-total">0</span>
+    </div>
+    <ul id="aud-pager" class="pagination pagination-sm m-0 ms-auto"></ul>
+    <div class="d-flex align-items-center gap-2">
+      <label class="text-muted small mb-0" for="aud-page-size">Rows per page</label>
+      <select id="aud-page-size" class="form-select form-select-sm" style="width: 90px;">
+        <option value="10">10</option>
+        <option value="15">15</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="0">All</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<script id="aud-data" type="application/json">
+[
+{{range $i, $a := .Entries}}{{if $i}},{{end}}{
+  "id": {{$a.ID}},
+  "ts": {{$a.TS.Unix}},
+  "ts_str": "{{$a.TS.Format "02-01-2006 15:04:05"}}",
+  "source": "{{$a.Source}}",
+  "node_id": {{if $a.SourceNodeID}}{{deref $a.SourceNodeID}}{{else}}0{{end}},
+  "node_name": "{{$a.NodeName}}",
+  "node_uid": "{{$a.NodeUID}}",
+  "client_id": {{$a.ClientID}},
+  "client_name": "{{$a.ClientName}}",
+  "username": "{{$a.Username}}",
+  "category": "{{$a.Category}}",
+  "severity": "{{$a.Severity}}",
+  "actor": "{{$a.Actor}}",
+  "action": "{{$a.Action}}",
+  "entity_type": "{{$a.EntityType}}",
+  "entity_id": "{{$a.EntityID}}",
+  "message": {{jsonStr $a.Message}},
+  "details": {{rawJSON $a.DetailsJSON}}
+}{{end}}
+]
+</script>
+
+<script>
+(function(){
+  var rows = JSON.parse(document.getElementById('aud-data').textContent);
+  var tbody = document.getElementById('aud-tbody');
+  var search = document.getElementById('aud-search');
+
+  var sortKey = 'ts';
+  var sortDir = 'desc';
+  var filters = {};
+  var globalQ = '';
+  var pageSize = 25;
+  var page = 1;
+  var editField = '';
+  var editSelections = {};
+
+  var FIELD_LABELS = {
+    source: 'Source', category: 'Category', severity: 'Severity',
+    username: 'User', node_name: 'Node', client_name: 'Client'
+  };
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; });
+  }
+  function severityBadge(s) {
+    var cls = s === 'critical' ? 'text-bg-danger' : s === 'warn' ? 'text-bg-warning' : 'text-bg-secondary';
+    return '<span class="badge ' + cls + '">' + escapeHtml(s) + '</span>';
+  }
+  function sourceBadge(s) {
+    return s === 'node' ? '<span class="badge text-bg-info">Node</span>' : '<span class="badge text-bg-primary">Server</span>';
+  }
+  function detailsCell(r) {
+    var hasTerminal = (r.category === 'terminal_opened' || r.category === 'terminal_closed') && r.details && r.details.session_file;
+    if (hasTerminal) {
+      var base = r.details.session_file.split('/').pop();
+      return '<a href="/audit/session/' + encodeURIComponent(base) + '" target="_blank" class="btn btn-sm btn-primary"><i class="ti ti-player-play"></i> Replay</a>';
+    }
+    if (!r.details || typeof r.details !== 'object') return '<span class="text-muted">—</span>';
+    var keys = Object.keys(r.details);
+    if (keys.length === 0) return '<span class="text-muted">—</span>';
+    return keys.map(function(k){
+      return '<code class="small">' + escapeHtml(k) + '=' + escapeHtml(String(r.details[k])) + '</code>';
+    }).join(' ');
+  }
+
+  function arrow(k) {
+    if (sortKey === k) return ' <span style="color:#206bc4;font-weight:bold;">' + (sortDir === 'asc' ? '▲' : '▼') + '</span>';
+    return ' <span style="color:#cbd5e1;font-size:0.7em;">⇅</span>';
+  }
+  function updateArrows() {
+    document.querySelectorAll('.aud-sort').forEach(function(th){
+      var k = th.getAttribute('data-key');
+      var sp = th.querySelector('.aud-arrow');
+      sp.outerHTML = '<span class="aud-arrow">' + arrow(k) + '</span>';
+    });
+  }
+
+  function uniqueValues(field) {
+    var seen = {}, out = [];
+    rows.forEach(function(r){
+      var v = r[field]; if (v === undefined || v === null || v === '') return;
+      var s = String(v);
+      if (!seen[s]) { seen[s] = true; out.push(s); }
+    });
+    out.sort(function(a,b){ return a.localeCompare(b); });
+    return out;
+  }
+
+  function rowMatchesFilters(r) {
+    for (var k in filters) {
+      var vals = filters[k];
+      if (!vals || vals.length === 0) continue;
+      if (vals.indexOf(String(r[k])) === -1) return false;
+    }
+    if (globalQ) {
+      var q = globalQ.toLowerCase();
+      var detailsStr = r.details ? JSON.stringify(r.details) : '';
+      var hay = [
+        r.ts_str, r.source, r.category, r.severity, r.actor, r.action,
+        r.entity_type, r.entity_id, r.username, r.node_name, r.node_uid,
+        r.client_name, r.message, detailsStr
+      ].join(' ').toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  }
+
+  function sortedFilteredRows() {
+    var sorted = rows.slice().sort(function(a, b){
+      var av = a[sortKey], bv = b[sortKey];
+      var an = (typeof av === 'number'); var bn = (typeof bv === 'number');
+      if (an && bn) return sortDir === 'asc' ? av - bv : bv - av;
+      av = String(av || ''); bv = String(bv || '');
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted.filter(rowMatchesFilters);
+  }
+
+  function render() {
+    var visible = sortedFilteredRows();
+    var total = visible.length, start, end, pageRows;
+    if (pageSize === 0) { start = 0; end = total; pageRows = visible; }
+    else {
+      var pages = Math.max(1, Math.ceil(total / pageSize));
+      if (page > pages) page = pages;
+      start = (page - 1) * pageSize;
+      end = Math.min(start + pageSize, total);
+      pageRows = visible.slice(start, end);
+    }
+    document.getElementById('aud-range-start').textContent = total === 0 ? 0 : start + 1;
+    document.getElementById('aud-range-end').textContent = end;
+    document.getElementById('aud-range-total').textContent = total;
+
+    if (pageRows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No matching audit events.</td></tr>';
+    } else {
+      var html = '';
+      pageRows.forEach(function(r){
+        var actor = r.actor || (r.username ? 'user:' + r.username : 'system');
+        var nodeCell = r.node_id ? '<a href="/nodes/' + r.node_id + '">' + escapeHtml(r.node_name) + '</a>' : '';
+        html += '<tr>' +
+          '<td class="text-nowrap small"><div>' + r.ts_str.split(' ')[0] + '</div><div class="text-muted">' + r.ts_str.split(' ')[1] + '</div></td>' +
+          '<td>' + sourceBadge(r.source) + (nodeCell ? '<div class="small text-muted">' + nodeCell + '</div>' : '') + '</td>' +
+          '<td><code class="small">' + escapeHtml(r.category) + '</code></td>' +
+          '<td>' + severityBadge(r.severity) + '</td>' +
+          '<td class="small">' + escapeHtml(actor) + '</td>' +
+          '<td class="small">' + escapeHtml(r.message) + '</td>' +
+          '<td>' + detailsCell(r) + '</td>' +
+        '</tr>';
+      });
+      tbody.innerHTML = html;
+    }
+    renderPager(total);
+    renderActiveFilters();
+  }
+
+  function renderPager(total) {
+    var pager = document.getElementById('aud-pager');
+    if (pageSize === 0 || total <= pageSize) { pager.innerHTML = ''; return; }
+    var pages = Math.max(1, Math.ceil(total / pageSize));
+    var parts = [];
+    function item(label, p, disabled, active) {
+      var cls = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
+      return '<li class="' + cls + '"><a class="page-link" href="#" data-page="' + p + '">' + label + '</a></li>';
+    }
+    parts.push(item('«', 1, page === 1, false));
+    parts.push(item('‹', page - 1, page === 1, false));
+    var windowSize = 5;
+    var startP = Math.max(1, page - Math.floor(windowSize / 2));
+    var endP = Math.min(pages, startP + windowSize - 1);
+    startP = Math.max(1, endP - windowSize + 1);
+    for (var p = startP; p <= endP; p++) parts.push(item(String(p), p, false, p === page));
+    parts.push(item('›', page + 1, page === pages, false));
+    parts.push(item('»', pages, page === pages, false));
+    pager.innerHTML = parts.join('');
+    pager.querySelectorAll('a.page-link').forEach(function(a){
+      a.addEventListener('click', function(ev){
+        ev.preventDefault();
+        var p = parseInt(a.getAttribute('data-page'), 10);
+        if (!isNaN(p) && p >= 1 && p <= pages) { page = p; render(); }
+      });
+    });
+  }
+
+  function renderActiveFilters() {
+    var bar = document.getElementById('aud-active-filters');
+    var parts = [];
+    Object.keys(filters).forEach(function(k){
+      (filters[k] || []).forEach(function(v){
+        parts.push('<span class="badge text-bg-primary-lt d-inline-flex align-items-center gap-1">' +
+          escapeHtml((FIELD_LABELS[k] || k) + ': ' + v) +
+          ' <a href="#" class="aud-pill-x text-decoration-none" data-field="' + k + '" data-val="' + escapeHtml(v) + '">×</a></span>');
+      });
+    });
+    if (parts.length === 0) { bar.classList.add('d-none'); bar.classList.remove('d-flex'); bar.innerHTML = ''; return; }
+    bar.classList.remove('d-none'); bar.classList.add('d-flex');
+    bar.innerHTML = '<span class="text-muted small me-1">Active filters:</span>' + parts.join('');
+    bar.querySelectorAll('.aud-pill-x').forEach(function(x){
+      x.addEventListener('click', function(ev){
+        ev.preventDefault();
+        var f = x.getAttribute('data-field'), v = x.getAttribute('data-val');
+        filters[f] = (filters[f] || []).filter(function(s){ return s !== v; });
+        page = 1; render();
+      });
+    });
+  }
+
+  function renderValuesList(query) {
+    var list = document.getElementById('aud-filter-values-list');
+    if (!editField) { list.innerHTML = ''; return; }
+    var q = (query || '').toLowerCase();
+    var vals = uniqueValues(editField).filter(function(v){ return !q || v.toLowerCase().indexOf(q) !== -1; });
+    if (vals.length === 0) { list.innerHTML = '<div class="text-muted small">No values.</div>'; return; }
+    list.innerHTML = vals.map(function(v){
+      var ck = editSelections[v] ? ' checked' : '';
+      return '<label class="d-flex align-items-center gap-2 py-1" style="cursor:pointer;"><input type="checkbox" class="form-check-input aud-val-cb" data-val="' + escapeHtml(v) + '"' + ck + '><span>' + escapeHtml(v) + '</span></label>';
+    }).join('');
+    list.querySelectorAll('.aud-val-cb').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        var v = cb.getAttribute('data-val');
+        if (cb.checked) editSelections[v] = true; else delete editSelections[v];
+        updateValuesButton();
+      });
+    });
+  }
+  function updateValuesButton() {
+    var n = Object.keys(editSelections).length;
+    var btn = document.getElementById('aud-filter-values-btn');
+    if (n === 0) btn.value = 'Pick values…';
+    else if (n <= 2) btn.value = Object.keys(editSelections).join(', ');
+    else btn.value = n + ' selected';
+  }
+  function openFilterEditor(field) {
+    editField = field;
+    editSelections = {};
+    (filters[field] || []).forEach(function(v){ editSelections[v] = true; });
+    document.getElementById('aud-filter-values-wrap').classList.remove('d-none');
+    document.getElementById('aud-filter-apply').classList.remove('d-none');
+    document.getElementById('aud-filter-values-search').value = '';
+    updateValuesButton();
+    renderValuesList('');
+  }
+  function closeFilterEditor() {
+    editField = ''; editSelections = {};
+    document.getElementById('aud-filter-field').value = '';
+    document.getElementById('aud-filter-values-wrap').classList.add('d-none');
+    document.getElementById('aud-filter-values-panel').classList.add('d-none');
+    document.getElementById('aud-filter-apply').classList.add('d-none');
+  }
+
+  document.querySelectorAll('.aud-sort').forEach(function(th){
+    th.addEventListener('click', function(){
+      var k = th.getAttribute('data-key');
+      if (sortKey === k) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { sortKey = k; sortDir = (k === 'ts') ? 'desc' : 'asc'; }
+      updateArrows(); render();
+    });
+  });
+  search.addEventListener('input', function(){ globalQ = search.value; page = 1; render(); });
+  document.getElementById('aud-filter-field').addEventListener('change', function(){
+    var v = this.value; if (!v) { closeFilterEditor(); return; } openFilterEditor(v);
+  });
+  document.getElementById('aud-filter-values-btn').addEventListener('click', function(){
+    document.getElementById('aud-filter-values-panel').classList.toggle('d-none');
+  });
+  document.getElementById('aud-filter-values-search').addEventListener('input', function(){ renderValuesList(this.value); });
+  document.addEventListener('click', function(ev){
+    var wrap = document.getElementById('aud-filter-values-wrap');
+    if (!wrap.contains(ev.target)) document.getElementById('aud-filter-values-panel').classList.add('d-none');
+  });
+  document.getElementById('aud-filter-apply').addEventListener('click', function(){
+    if (!editField) return;
+    var picked = Object.keys(editSelections);
+    if (picked.length === 0) delete filters[editField];
+    else filters[editField] = picked;
+    closeFilterEditor();
+    page = 1; render();
+  });
+  document.getElementById('aud-filter-reset').addEventListener('click', function(){
+    filters = {}; closeFilterEditor(); page = 1; render();
+  });
+  document.getElementById('aud-page-size').addEventListener('change', function(){
+    pageSize = parseInt(this.value, 10); page = 1; render();
+  });
+
+  updateArrows();
+  render();
+})();
+</script>
+{{end}}

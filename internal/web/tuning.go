@@ -53,6 +53,9 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 		t.AnomalyBytesDropPct = parse("anomaly_bytes_drop_pct", t.AnomalyBytesDropPct)
 		t.AnomalyBytesDropMinMB = parse("anomaly_bytes_drop_min_mb", t.AnomalyBytesDropMinMB)
 		t.AnomalyAckRetentionDays = parse("anomaly_ack_retention_days", t.AnomalyAckRetentionDays)
+		t.AuditRetentionDays = parse("audit_retention_days", t.AuditRetentionDays)
+		t.TerminalRecordingEnabled = r.FormValue("terminal_recording_enabled") == "1"
+		t.TerminalRecordingRetentionDays = parse("terminal_recording_retention_days", t.TerminalRecordingRetentionDays)
 		if err := s.DB.UpdateServerTuning(t); err != nil {
 			log.Printf("tuning: save: %v", err)
 			s.render(w, r, http.StatusInternalServerError, "tuning.html", tuningPageData{
@@ -60,6 +63,13 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		s.auditServer(r, "tuning_saved", "warn", "save", "tuning", "",
+			"Updated server tuning settings",
+			map[string]string{
+				"offline_threshold_minutes": strconv.FormatUint(uint64(t.OfflineThresholdMinutes), 10),
+				"retention_raw_days":        strconv.FormatUint(uint64(t.RetentionRawDays), 10),
+				"audit_retention_days":      strconv.FormatUint(uint64(t.AuditRetentionDays), 10),
+			})
 		setFlash(w, "Server tuning updated.")
 		http.Redirect(w, r, "/settings/tuning", http.StatusSeeOther)
 		return

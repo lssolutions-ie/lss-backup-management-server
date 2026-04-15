@@ -1,0 +1,30 @@
+{{define "content"}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.7.1/dist/bundle/asciinema-player.min.css">
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title"><i class="ti ti-player-play me-1"></i> Session Replay</h2>
+      <div class="text-muted">File: <code>{{.Filename}}</code></div>
+    </div>
+    <div class="col-auto">
+      <a href="/audit" class="btn btn-outline-secondary"><i class="ti ti-arrow-back"></i> Back to audit log</a>
+      <a href="/audit/session/{{.Filename}}.raw" class="btn btn-outline-primary"><i class="ti ti-download"></i> Download .cast</a>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div id="player-container" style="background:#000; padding: 8px;"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.7.1/dist/bundle/asciinema-player.min.js"></script>
+<script>
+  AsciinemaPlayer.create('/audit/session/{{.Filename}}.raw', document.getElementById('player-container'), {
+    fit: 'width',
+    terminalFontFamily: 'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace',
+    idleTimeLimit: 2
+  });
+</script>
+{{end}}

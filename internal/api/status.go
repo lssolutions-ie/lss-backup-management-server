@@ -74,8 +74,8 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest)
 		return
 	}
-	// Accept v1 (original) and v2 (v2.2.0+ CLIs with JobResult). Unknown versions rejected.
-	if status.PayloadVersion != "1" && status.PayloadVersion != "2" {
+	// Accept v1 (original), v2 (v2.2.0+ CLIs with JobResult), v3 (v2.3.0+ with audit_events).
+	if status.PayloadVersion != "1" && status.PayloadVersion != "2" && status.PayloadVersion != "3" {
 		log.Printf("api: unknown payload_version %q from node=%d", status.PayloadVersion, node.ID)
 		apiError(w, http.StatusBadRequest)
 		return
@@ -196,6 +196,21 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// client knows it's safe to start the SSH tunnel without an auth race.
 	if status.Tunnel != nil && status.Tunnel.PublicKey != "" {
 		resp["tunnel_key_registered"] = true
+	}
+
+	// Ingest audit events (v3+ CLI). Dedup via UNIQUE (source_node_id, seq).
+	if len(status.AuditEvents) > 0 {
+		prevAck, _ := h.DB.GetNodeAuditAckSeq(node.ID)
+		newAck, err := h.DB.InsertNodeAuditEvents(node.ID, prevAck, status.AuditEvents)
+		if err != nil {
+			log.Printf("api: audit ingest node=%d: %v", node.ID, err)
+		}
+		resp["audit_ack_seq"] = newAck
+	} else {
+		// Always return current ack seq so CLI can reconcile if it lost local state.
+		if ack, err := h.DB.GetNodeAuditAckSeq(node.ID); err == nil && ack > 0 {
+			resp["audit_ack_seq"] = ack
+		}
 	}
 
 	// On heartbeats: tell the CLI which jobs need fresh `restic stats` this cycle.

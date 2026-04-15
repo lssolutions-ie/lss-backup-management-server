@@ -327,6 +327,16 @@ func (s *Server) HandleRepoDownloadRsync(w http.ResponseWriter, r *http.Request)
 		filename = "download"
 	}
 
+	s.auditServer(r, "repo_download", "info", "download", "repo",
+		fmt.Sprintf("%d", node.ID),
+		fmt.Sprintf("Rsync file download from node %s: %s", node.Name, req.Path),
+		map[string]string{
+			"node_id": fmt.Sprintf("%d", node.ID),
+			"job_id":  req.JobID,
+			"path":    req.Path,
+			"kind":    "rsync_file",
+		})
+
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 
@@ -401,6 +411,16 @@ func (s *Server) HandleRepoDownloadRsyncZip(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	stdin.Close()
+
+	s.auditServer(r, "repo_download", "info", "download", "repo",
+		fmt.Sprintf("%d", node.ID),
+		fmt.Sprintf("Rsync zip download from node %s (%d paths)", node.Name, len(req.Paths)),
+		map[string]string{
+			"node_id":     fmt.Sprintf("%d", node.ID),
+			"job_id":      req.JobID,
+			"path_count":  fmt.Sprintf("%d", len(req.Paths)),
+			"kind":        "rsync_zip",
+		})
 
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", req.JobID+".tar"))
@@ -482,6 +502,17 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 	if filename == "" {
 		filename = "download"
 	}
+
+	s.auditServer(r, "repo_download", "info", "download", "repo",
+		fmt.Sprintf("%d", node.ID),
+		fmt.Sprintf("Restic file download from node %s: %s", node.Name, req.Path),
+		map[string]string{
+			"node_id":     fmt.Sprintf("%d", node.ID),
+			"job_id":      req.JobID,
+			"snapshot_id": req.SnapshotID,
+			"path":        req.Path,
+			"kind":        "restic_file",
+		})
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
@@ -571,6 +602,17 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	if len(shortID) > 8 {
 		shortID = shortID[:8]
 	}
+
+	s.auditServer(r, "repo_download", "info", "download", "repo",
+		fmt.Sprintf("%d", node.ID),
+		fmt.Sprintf("Restic zip download from node %s snapshot %s (%d paths)", node.Name, shortID, len(req.Paths)),
+		map[string]string{
+			"node_id":     fmt.Sprintf("%d", node.ID),
+			"job_id":      req.JobID,
+			"snapshot_id": req.SnapshotID,
+			"path_count":  fmt.Sprintf("%d", len(req.Paths)),
+			"kind":        "restic_zip",
+		})
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "snapshot-"+shortID+".zip"))

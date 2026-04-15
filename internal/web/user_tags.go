@@ -71,10 +71,15 @@ func (s *Server) HandleUserTagCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	color := r.FormValue("color")
 	textColor := r.FormValue("text_color")
-	if _, err := s.DB.CreateUserTag(name, color, textColor); err != nil {
+	id, err := s.DB.CreateUserTag(name, color, textColor)
+	if err != nil {
 		log.Printf("user tag create: %v", err)
 		setFlash(w, "Could not create user tag (name may already exist).")
 	} else {
+		s.auditServer(r, "user_tag_created", "info", "create", "user_tag",
+			strconv.FormatUint(id, 10),
+			"Created user tag "+name,
+			map[string]string{"name": name, "color": color})
 		setFlash(w, "User tag created.")
 	}
 	http.Redirect(w, r, "/user-tags", http.StatusSeeOther)
@@ -121,6 +126,10 @@ func (s *Server) HandleUserTagEdit(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.UpdateUserTag(id, name, color, textColor); err != nil {
 		log.Printf("user tag edit: %v", err)
 	}
+	s.auditServer(r, "user_tag_updated", "info", "update", "user_tag",
+		strconv.FormatUint(id, 10),
+		"Updated user tag "+name,
+		map[string]string{"name": name, "color": color})
 	setFlash(w, "User tag updated.")
 	http.Redirect(w, r, "/user-tags", http.StatusSeeOther)
 }
@@ -212,6 +221,9 @@ func (s *Server) HandleUserTagBulkDelete(w http.ResponseWriter, r *http.Request)
 		}
 		count++
 	}
+	s.auditServer(r, "user_tag_bulk_deleted", "warn", "delete", "user_tag", "",
+		fmt.Sprintf("Bulk deleted %d user tag(s)", count),
+		map[string]string{"count": strconv.Itoa(count)})
 	setFlash(w, strconv.Itoa(count)+" user tag(s) deleted.")
 	http.Redirect(w, r, "/user-tags", http.StatusSeeOther)
 }
@@ -236,6 +248,8 @@ func (s *Server) HandleUserTagDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.DeleteUserTag(id); err != nil {
 		log.Printf("user tag delete: %v", err)
 	}
+	s.auditServer(r, "user_tag_deleted", "warn", "delete", "user_tag",
+		strconv.FormatUint(id, 10), "Deleted user tag", nil)
 	setFlash(w, "User tag deleted.")
 	http.Redirect(w, r, "/user-tags", http.StatusSeeOther)
 }

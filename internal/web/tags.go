@@ -105,6 +105,11 @@ func (s *Server) HandleTagEdit(w http.ResponseWriter, r *http.Request) {
 		log.Printf("tag edit: update: %v", err)
 	}
 
+	s.auditServer(r, "tag_updated", "info", "update", "tag",
+		strconv.FormatUint(id, 10),
+		"Updated tag "+name,
+		map[string]string{"name": name, "color": color})
+
 	setFlash(w, "Tag updated.")
 	http.Redirect(w, r, "/tags", http.StatusSeeOther)
 }
@@ -146,11 +151,19 @@ func (s *Server) HandleTagCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		setFlash(w, "Could not create tag (name may already exist).")
 	} else if wantsJSON {
+		s.auditServer(r, "tag_created", "info", "create", "tag",
+			strconv.FormatUint(newID, 10),
+			"Created tag "+name,
+			map[string]string{"name": name, "color": color})
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"id":%d,"name":%q,"color":%q,"text_color":%q}`, newID, name, color, textColor)
 		return
 	} else {
+		s.auditServer(r, "tag_created", "info", "create", "tag",
+			strconv.FormatUint(newID, 10),
+			"Created tag "+name,
+			map[string]string{"name": name, "color": color})
 		setFlash(w, "Tag created.")
 	}
 
@@ -225,6 +238,9 @@ func (s *Server) HandleTagBulkDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
+	s.auditServer(r, "tag_bulk_deleted", "warn", "delete", "tag", "",
+		fmt.Sprintf("Bulk deleted %d tag(s)", count),
+		map[string]string{"count": strconv.Itoa(count)})
 	setFlash(w, fmt.Sprintf("Deleted %d tag(s).", count))
 	http.Redirect(w, r, "/tags", http.StatusSeeOther)
 }
@@ -251,6 +267,8 @@ func (s *Server) HandleTagDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.DeleteTag(id); err != nil {
 		log.Printf("tag delete: %v", err)
 	}
+	s.auditServer(r, "tag_deleted", "warn", "delete", "tag",
+		strconv.FormatUint(id, 10), "Deleted tag", nil)
 	setFlash(w, "Tag deleted.")
 
 	ref := r.Header.Get("Referer")

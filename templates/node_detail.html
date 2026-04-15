@@ -21,6 +21,7 @@
     <div class="col-auto">
       <div class="btn-list flex-nowrap">
         <a href="/nodes/{{.Node.ID}}/anomalies" class="btn btn-outline-danger" title="Security anomalies"><i class="ti ti-shield"></i> Security</a>
+        <a href="/nodes/{{.Node.ID}}/audit" class="btn btn-outline-secondary" title="Audit log"><i class="ti ti-history"></i> Audit</a>
         {{if .User.CanTerminal}}<a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>{{end}}
         <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
         <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">

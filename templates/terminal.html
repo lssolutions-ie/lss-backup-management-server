@@ -15,6 +15,13 @@
   </div>
 </div>
 
+{{if .Recording}}
+<div class="alert alert-danger d-flex align-items-center mb-3" role="alert">
+  <i class="ti ti-video me-2" style="font-size: 1.2rem;"></i>
+  <div><strong>This session is being recorded.</strong> Every keystroke and every byte of output will be captured and stored for forensic replay by superadmins. Avoid typing or pasting secrets.</div>
+</div>
+{{end}}
+
 <div id="creds-card" class="card mb-3">
   <div class="card-header"><h3 class="card-title">SSH Connection</h3></div>
   <div class="card-body">

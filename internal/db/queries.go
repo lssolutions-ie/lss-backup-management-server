@@ -1628,7 +1628,8 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       default_silence_seconds,
 		       anomaly_snapshot_drop_threshold, anomaly_files_drop_pct, anomaly_files_drop_min,
 		       anomaly_bytes_drop_pct, anomaly_bytes_drop_min_mb,
-		       anomaly_ack_retention_days
+		       anomaly_ack_retention_days, audit_retention_days,
+		       terminal_recording_enabled, terminal_recording_retention_days
 		FROM server_tuning WHERE id = 1`).
 		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
 			&t.RetentionRawDays, &t.RetentionPostRunDays,
@@ -1636,7 +1637,8 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			&t.DefaultSilenceSeconds,
 			&t.AnomalySnapshotDropThreshold, &t.AnomalyFilesDropPct, &t.AnomalyFilesDropMin,
 			&t.AnomalyBytesDropPct, &t.AnomalyBytesDropMinMB,
-			&t.AnomalyAckRetentionDays)
+			&t.AnomalyAckRetentionDays, &t.AuditRetentionDays,
+			&t.TerminalRecordingEnabled, &t.TerminalRecordingRetentionDays)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &models.ServerTuning{
 			RepoStatsIntervalSeconds:     86400,
@@ -1651,7 +1653,10 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			AnomalyFilesDropMin:          10,
 			AnomalyBytesDropPct:          10,
 			AnomalyBytesDropMinMB:        100,
-			AnomalyAckRetentionDays:      30,
+			AnomalyAckRetentionDays:        30,
+			AuditRetentionDays:             0,
+			TerminalRecordingEnabled:       true,
+			TerminalRecordingRetentionDays: 30,
 		}, nil
 	}
 	return t, err
@@ -1672,7 +1677,10 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		  anomaly_files_drop_min         = ?,
 		  anomaly_bytes_drop_pct         = ?,
 		  anomaly_bytes_drop_min_mb      = ?,
-		  anomaly_ack_retention_days     = ?
+		  anomaly_ack_retention_days     = ?,
+		  audit_retention_days           = ?,
+		  terminal_recording_enabled      = ?,
+		  terminal_recording_retention_days = ?
 		WHERE id = 1`,
 		t.RepoStatsIntervalSeconds, t.RepoStatsTimeoutSeconds,
 		t.RetentionRawDays, t.RetentionPostRunDays,
@@ -1680,7 +1688,8 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		t.DefaultSilenceSeconds,
 		t.AnomalySnapshotDropThreshold, t.AnomalyFilesDropPct, t.AnomalyFilesDropMin,
 		t.AnomalyBytesDropPct, t.AnomalyBytesDropMinMB,
-		t.AnomalyAckRetentionDays)
+		t.AnomalyAckRetentionDays, t.AuditRetentionDays,
+		t.TerminalRecordingEnabled, t.TerminalRecordingRetentionDays)
 	return err
 }
 

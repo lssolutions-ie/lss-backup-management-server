@@ -3,9 +3,11 @@ package web
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"image/png"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -84,12 +86,18 @@ func (s *Server) HandleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.DB.CreateUser(username, string(hash), "superadmin"); err != nil {
+	uid, err := s.DB.CreateUser(username, string(hash), "superadmin")
+	if err != nil {
 		log.Printf("setup: create user: %v", err)
 		s.renderStandalone(w, http.StatusUnprocessableEntity, "setup.html",
 			setupPageData{Error: "Could not create user: " + err.Error()})
 		return
 	}
+
+	s.auditServerFor(r, nil, "user_created", "critical", "create", "user",
+		strconv.FormatUint(uid, 10),
+		"Initial superadmin created",
+		map[string]string{"username": username, "role": "superadmin"})
 
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
@@ -127,6 +135,9 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if user == nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
 		recordLoginFailure(r.RemoteAddr)
 		log.Printf("auth: login failed user=%q ip=%s", username, r.RemoteAddr)
+		s.auditServerFor(r, nil, "auth_login_failed", "warn", "login_failed", "user", "",
+			"Failed login attempt for "+username,
+			map[string]string{"username": username})
 		s.renderStandalone(w, http.StatusUnauthorized, "login.html",
 			loginPageData{Error: "Invalid username or password."})
 		return
@@ -204,6 +215,9 @@ func (s *Server) HandleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 	if !totp.Validate(code, user.TOTPSecret) {
 		recordLoginFailure(r.RemoteAddr)
 		log.Printf("auth: 2fa failed user=%q ip=%s", user.Username, r.RemoteAddr)
+		s.auditServerFor(r, user, "auth_2fa_failed", "warn", "2fa_failed", "user",
+			strconv.FormatUint(user.ID, 10),
+			"Failed 2FA verification for "+user.Username, nil)
 		s.renderStandalone(w, http.StatusUnauthorized, "totp_verify.html",
 			totpVerifyPageData{Error: "Invalid code. Please try again."})
 		return
@@ -235,6 +249,10 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, user *mod
 	}
 
 	log.Printf("auth: login ok user=%q role=%s ip=%s 2fa=%v", user.Username, user.Role, r.RemoteAddr, user.TOTPEnabled)
+	s.auditServerFor(r, user, "auth_login", "info", "login", "user",
+		strconv.FormatUint(user.ID, 10),
+		"Logged in as "+user.Username,
+		map[string]string{"role": string(user.Role), "2fa": fmt.Sprintf("%t", user.TOTPEnabled)})
 	s.setSessionCookie(w, token)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -331,6 +349,8 @@ func (s *Server) HandleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("auth: 2fa enabled user=%q", user.Username)
+	s.auditServerFor(r, user, "auth_2fa_enabled", "info", "2fa_enable", "user",
+		strconv.FormatUint(user.ID, 10), "2FA enabled for "+user.Username, nil)
 	setFlash(w, "Two-factor authentication has been enabled.")
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
@@ -355,6 +375,8 @@ func (s *Server) HandleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("auth: 2fa disabled user=%q", user.Username)
+	s.auditServerFor(r, user, "auth_2fa_disabled", "warn", "2fa_disable", "user",
+		strconv.FormatUint(user.ID, 10), "2FA disabled for "+user.Username, nil)
 	setFlash(w, "Two-factor authentication has been disabled.")
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
@@ -366,11 +388,16 @@ func (s *Server) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	u, _ := r.Context().Value(ctxUser).(*models.User)
 	if cookie, err := r.Cookie(s.Config.Session.CookieName); err == nil {
 		ClearSessionSSHCreds(cookie.Value)
 		if err := s.DB.DeleteSession(cookie.Value); err != nil {
 			log.Printf("logout: delete session: %v", err)
 		}
+	}
+	if u != nil {
+		s.auditServerFor(r, u, "auth_logout", "info", "logout", "user",
+			strconv.FormatUint(u.ID, 10), "Logged out "+u.Username, nil)
 	}
 
 	s.clearSessionCookie(w)

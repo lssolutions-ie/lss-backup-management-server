@@ -13,13 +13,15 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
+	"github.com/lssolutions-ie/lss-management-server/internal/recorder"
 	"golang.org/x/crypto/ssh"
 )
 
 // terminalPageData is used by templates/terminal.html.
 type terminalPageData struct {
 	PageData
-	Node *models.Node
+	Node      *models.Node
+	Recording bool
 }
 
 // terminalAuthMsg is the first WebSocket message the browser sends after the
@@ -69,9 +71,14 @@ func (s *Server) HandleTerminalPage(w http.ResponseWriter, r *http.Request) {
 	if !s.EnforceNodeManage(w, r, node.ID) {
 		return
 	}
+	rec := false
+	if t, err := s.DB.GetServerTuning(); err == nil && t != nil {
+		rec = t.TerminalRecordingEnabled
+	}
 	s.render(w, r, http.StatusOK, "terminal.html", terminalPageData{
-		PageData: s.newPageData(r),
-		Node:     node,
+		PageData:  s.newPageData(r),
+		Node:      node,
+		Recording: rec,
 	})
 }
 
@@ -149,11 +156,64 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	mode := map[bool]string{true: "via-tunnel", false: "direct"}[viaTunnel]
 	log.Printf("terminal: user=%s opening ssh %s=%s@%s:%d",
 		user.Username, mode, auth.Username, dialHost, dialPort)
+
+	// Session recording — one .cast file per connection when enabled in tuning.
+	var rec *recorder.Recorder
+	var castPath string
+	sessionID := fmt.Sprintf("%d-%s-%d", time.Now().UnixNano(), user.Username, auth.NodeID)
+	if tuning, _ := s.DB.GetServerTuning(); tuning != nil && tuning.TerminalRecordingEnabled {
+		title := fmt.Sprintf("%s → %s@%s:%d (%s)", user.Username, auth.Username, dialHost, dialPort, mode)
+		r2, p, err := recorder.New(s.Config.Terminal.SessionsDir, sessionID, title, auth.Cols, auth.Rows)
+		if err != nil {
+			log.Printf("terminal: recorder init failed: %v", err)
+		} else {
+			rec = r2
+			castPath = p
+		}
+	}
+
+	openDetails := map[string]string{
+		"mode":        mode,
+		"ssh_user":    auth.Username,
+		"dial_host":   dialHost,
+		"dial_port":   fmt.Sprintf("%d", dialPort),
+		"session_id":  sessionID,
+	}
+	if castPath != "" {
+		openDetails["session_file"] = castPath
+	}
+	if auth.NodeID > 0 {
+		openDetails["node_id"] = fmt.Sprintf("%d", auth.NodeID)
+	}
+	s.auditServerFor(r, user, "terminal_opened", "warn", "open", "terminal",
+		fmt.Sprintf("%d", auth.NodeID),
+		fmt.Sprintf("Opened SSH terminal %s to %s@%s:%d", mode, auth.Username, dialHost, dialPort),
+		openDetails)
 	sessionStart := time.Now()
 	defer func() {
+		dur := time.Since(sessionStart).Truncate(time.Second)
+		if rec != nil {
+			_ = rec.Close()
+		}
 		log.Printf("terminal: user=%s closed ssh %s=%s@%s:%d duration=%s",
-			user.Username, mode, auth.Username, dialHost, dialPort,
-			time.Since(sessionStart).Truncate(time.Second))
+			user.Username, mode, auth.Username, dialHost, dialPort, dur)
+		closeDetails := map[string]string{
+			"mode":       mode,
+			"ssh_user":   auth.Username,
+			"dial_host":  dialHost,
+			"duration":   dur.String(),
+			"session_id": sessionID,
+		}
+		if castPath != "" {
+			closeDetails["session_file"] = castPath
+		}
+		if auth.NodeID > 0 {
+			closeDetails["node_id"] = fmt.Sprintf("%d", auth.NodeID)
+		}
+		s.auditServerFor(r, user, "terminal_closed", "info", "close", "terminal",
+			fmt.Sprintf("%d", auth.NodeID),
+			fmt.Sprintf("Closed SSH terminal after %s", dur),
+			closeDetails)
 	}()
 
 	// Dial SSH with TOFU (Trust On First Use) host key verification.
@@ -216,6 +276,9 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	// on a *websocket.Conn.
 	var wsWriteMu sync.Mutex
 	sendOutput := func(data []byte) error {
+		if rec != nil {
+			rec.WriteOutput(data)
+		}
 		msg := terminalServerMsg{Type: "output", Data: string(data)}
 		b, _ := json.Marshal(msg)
 		wsWriteMu.Lock()
@@ -244,11 +307,17 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		}
 		switch msg.Type {
 		case "input":
+			if rec != nil {
+				rec.WriteInput([]byte(msg.Data))
+			}
 			if _, err := stdin.Write([]byte(msg.Data)); err != nil {
 				break
 			}
 		case "resize":
 			if msg.Cols > 0 && msg.Rows > 0 {
+				if rec != nil {
+					rec.Resize(msg.Cols, msg.Rows)
+				}
 				_ = session.WindowChange(msg.Rows, msg.Cols)
 			}
 		}

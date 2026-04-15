@@ -122,6 +122,10 @@ func (s *Server) HandleUserGroupNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyMembersAndTags(s, r, gid)
+	s.auditServer(r, "user_group_created", "info", "create", "user_group",
+		strconv.FormatUint(gid, 10),
+		"Created user group "+name,
+		map[string]string{"name": name, "client_group_id": strconv.FormatUint(clientID, 10)})
 	setFlash(w, "User group created.")
 	http.Redirect(w, r, "/user-groups", http.StatusSeeOther)
 }
@@ -196,6 +200,10 @@ func (s *Server) HandleUserGroupEdit(w http.ResponseWriter, r *http.Request) {
 		log.Printf("user-group edit: %v", err)
 	}
 	applyMembersAndTags(s, r, id)
+	s.auditServer(r, "user_group_updated", "info", "update", "user_group",
+		strconv.FormatUint(id, 10),
+		"Updated user group "+name,
+		map[string]string{"name": name, "client_group_id": strconv.FormatUint(clientID, 10)})
 	setFlash(w, "User group updated.")
 	http.Redirect(w, r, "/user-groups", http.StatusSeeOther)
 }
@@ -220,6 +228,8 @@ func (s *Server) HandleUserGroupDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.DeleteUserGroup(id); err != nil {
 		log.Printf("user-group delete: %v", err)
 	}
+	s.auditServer(r, "user_group_deleted", "warn", "delete", "user_group",
+		strconv.FormatUint(id, 10), "Deleted user group", nil)
 	setFlash(w, "User group deleted.")
 	http.Redirect(w, r, "/user-groups", http.StatusSeeOther)
 }

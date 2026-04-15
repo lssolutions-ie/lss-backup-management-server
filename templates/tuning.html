@@ -42,6 +42,11 @@
             <input type="number" name="retention_post_run_days" class="form-control" min="1" value="{{.Tuning.RetentionPostRunDays}}">
             <small class="form-hint">Beyond this age, only daily aggregates survive.</small>
           </div>
+          <div class="mb-3">
+            <label class="form-label">Keep audit log entries (days)</label>
+            <input type="number" name="audit_retention_days" class="form-control" min="0" value="{{.Tuning.AuditRetentionDays}}">
+            <small class="form-hint"><strong>0</strong> = keep forever. Applies to both server-originated and node-originated audit rows.</small>
+          </div>
         </div>
       </div>
     </div>
@@ -72,6 +77,31 @@
             <label class="form-label">Default silence duration (seconds)</label>
             <input type="number" name="default_silence_seconds" class="form-control" min="60" value="{{.Tuning.DefaultSilenceSeconds}}">
             <small class="form-hint">Used when users silence an alert without picking a duration.</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-12">
+      <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title">Terminal Session Recording</h3></div>
+        <div class="card-body">
+          <p class="text-muted small">Every SSH session opened from the dashboard is recorded end-to-end (keystrokes + output) in asciinema v2 format. Superadmins can replay from the <a href="/audit">audit log</a>. Warning: anything typed or printed is captured including pasted secrets.</p>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label d-block">Record terminal sessions</label>
+              <label class="form-check form-switch">
+                <input type="hidden" name="terminal_recording_enabled" value="0">
+                <input type="checkbox" name="terminal_recording_enabled" value="1" class="form-check-input" {{if .Tuning.TerminalRecordingEnabled}}checked{{end}}>
+                <span class="form-check-label">{{if .Tuning.TerminalRecordingEnabled}}Enabled{{else}}Disabled{{end}}</span>
+              </label>
+              <small class="form-hint">A red banner appears on the terminal page while recording is active.</small>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Keep recordings (days)</label>
+              <input type="number" name="terminal_recording_retention_days" class="form-control" min="0" value="{{.Tuning.TerminalRecordingRetentionDays}}">
+              <small class="form-hint"><strong>0</strong> = keep forever. Older <code>.cast</code> files are pruned from disk hourly.</small>
+            </div>
           </div>
         </div>
       </div>

@@ -21,6 +21,9 @@ type Config struct {
 		CookieName  string
 		MaxAgeHours int
 	}
+	Terminal struct {
+		SessionsDir string
+	}
 }
 
 // Load reads a TOML config file from the given path.
@@ -36,6 +39,7 @@ func Load(path string) (*Config, error) {
 	cfg.Server.ListenAddr = "127.0.0.1:8080"
 	cfg.Session.CookieName = "lss_session"
 	cfg.Session.MaxAgeHours = 24
+	cfg.Terminal.SessionsDir = "/var/lib/lss-management/sessions"
 
 	var section string
 	for _, raw := range strings.Split(string(data), "\n") {
@@ -73,6 +77,8 @@ func Load(path string) (*Config, error) {
 				return nil, fmt.Errorf("invalid max_age_hours %q: %w", val, err)
 			}
 			cfg.Session.MaxAgeHours = n
+		case "terminal.sessions_dir":
+			cfg.Terminal.SessionsDir = val
 		}
 	}
 

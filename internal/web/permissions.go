@@ -215,6 +215,18 @@ func (s *Server) HandlePermissionRuleSave(w http.ResponseWriter, r *http.Request
 				http.Error(w, "DB error", http.StatusInternalServerError)
 				return
 			}
+			s.auditServer(r, "permission_rule_updated", "info", "update", "permission_rule",
+				strconv.FormatUint(prev.ID, 10),
+				fmt.Sprintf("Updated permission rule #%d", prev.ID),
+				map[string]string{
+					"effect":       string(effect),
+					"access":       string(access),
+					"subject_type": string(subjectType),
+					"subject_id":   strconv.FormatUint(subjectID, 10),
+					"target_type":  string(targetType),
+					"target_id":    strconv.FormatUint(tid, 10),
+					"priority":     strconv.Itoa(priority),
+				})
 			results = append(results, ruleToJSON(prev))
 		} else {
 			nr := &models.PermissionRule{
@@ -235,6 +247,18 @@ func (s *Server) HandlePermissionRuleSave(w http.ResponseWriter, r *http.Request
 				return
 			}
 			nr.ID = id
+			s.auditServer(r, "permission_rule_created", "info", "create", "permission_rule",
+				strconv.FormatUint(id, 10),
+				fmt.Sprintf("Created permission rule #%d", id),
+				map[string]string{
+					"effect":       string(effect),
+					"access":       string(access),
+					"subject_type": string(subjectType),
+					"subject_id":   strconv.FormatUint(subjectID, 10),
+					"target_type":  string(targetType),
+					"target_id":    strconv.FormatUint(tid, 10),
+					"priority":     strconv.Itoa(priority),
+				})
 			results = append(results, ruleToJSON(nr))
 		}
 	}
@@ -276,6 +300,14 @@ func (s *Server) HandlePermissionRuleToggle(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
+	sev := "info"
+	if !newEnabled {
+		sev = "warn"
+	}
+	s.auditServer(r, "permission_rule_toggled", sev, "toggle", "permission_rule",
+		strconv.FormatUint(id, 10),
+		fmt.Sprintf("Toggled permission rule #%d enabled=%t", id, newEnabled),
+		map[string]string{"enabled": fmt.Sprintf("%t", newEnabled)})
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"id":%d,"enabled":%t}`, id, newEnabled)
 }
@@ -312,6 +344,17 @@ func (s *Server) HandlePermissionRuleDelete(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
+	s.auditServer(r, "permission_rule_deleted", "warn", "delete", "permission_rule",
+		strconv.FormatUint(id, 10),
+		fmt.Sprintf("Deleted permission rule #%d", id),
+		map[string]string{
+			"effect":       string(prev.Effect),
+			"access":       string(prev.Access),
+			"subject_type": string(prev.SubjectType),
+			"subject_id":   strconv.FormatUint(prev.SubjectID, 10),
+			"target_type":  string(prev.TargetType),
+			"target_id":    strconv.FormatUint(prev.TargetID, 10),
+		})
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"id":%d,"deleted":true}`, id)
 }

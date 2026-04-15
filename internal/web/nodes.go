@@ -259,6 +259,11 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 		_ = s.DB.SetNodeTags(nodeID, tagIDs)
 	}
 
+	s.auditServer(r, "node_created", "info", "create", "node",
+		strconv.FormatUint(nodeID, 10),
+		"Registered node "+name,
+		map[string]string{"name": name, "uid": uid, "client_group_id": strconv.FormatUint(groupID, 10)})
+
 	s.setPSKFlash(w, psk)
 	http.Redirect(w, r, fmt.Sprintf("/nodes/%d/psk", nodeID), http.StatusSeeOther)
 }
@@ -359,6 +364,11 @@ func (s *Server) HandleNodeEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.auditServer(r, "node_updated", "info", "update", "node",
+		strconv.FormatUint(node.ID, 10),
+		"Updated node "+name,
+		map[string]string{"name": name, "client_group_id": strconv.FormatUint(groupID, 10)})
+
 	setFlash(w, "Node updated.")
 	http.Redirect(w, r, fmt.Sprintf("/nodes/%d", node.ID), http.StatusSeeOther)
 }
@@ -392,6 +402,11 @@ func (s *Server) HandleNodeDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/nodes/%d", node.ID), http.StatusSeeOther)
 		return
 	}
+
+	s.auditServer(r, "node_deleted", "critical", "delete", "node",
+		strconv.FormatUint(node.ID, 10),
+		"Deleted node "+node.Name,
+		map[string]string{"name": node.Name, "uid": node.UID})
 
 	setFlash(w, "Node deleted.")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -440,6 +455,11 @@ func (s *Server) HandleNodeRegeneratePSK(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	s.auditServer(r, "node_psk_regenerated", "warn", "regenerate", "node",
+		strconv.FormatUint(node.ID, 10),
+		"Regenerated PSK for node "+node.Name,
+		map[string]string{"name": node.Name, "uid": node.UID})
+
 	s.setPSKFlash(w, psk)
 	http.Redirect(w, r, fmt.Sprintf("/nodes/%d/psk", node.ID), http.StatusSeeOther)
 }
@@ -478,6 +498,11 @@ func (s *Server) HandleNodeTags(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.SetNodeTags(node.ID, tagIDs); err != nil {
 		log.Printf("node tags: %v", err)
 	}
+
+	s.auditServer(r, "node_tags_updated", "info", "update", "node",
+		strconv.FormatUint(node.ID, 10),
+		"Updated tags for node "+node.Name,
+		map[string]string{"name": node.Name, "tag_count": strconv.Itoa(len(tagIDs))})
 
 	setFlash(w, "Tags updated.")
 	http.Redirect(w, r, fmt.Sprintf("/nodes/%d", node.ID), http.StatusSeeOther)

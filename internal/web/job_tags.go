@@ -50,10 +50,15 @@ func (s *Server) HandleJobTagCreate(w http.ResponseWriter, r *http.Request) {
 	color := r.FormValue("color")
 	textColor := r.FormValue("text_color")
 	prio, _ := strconv.ParseUint(r.FormValue("priority"), 10, 8)
-	if _, err := s.DB.CreateJobTag(name, color, textColor, uint8(prio)); err != nil {
+	id, err := s.DB.CreateJobTag(name, color, textColor, uint8(prio))
+	if err != nil {
 		log.Printf("job tag create: %v", err)
 		setFlash(w, "Could not create tag (name may already exist).")
 	} else {
+		s.auditServer(r, "job_tag_created", "info", "create", "job_tag",
+			strconv.FormatUint(id, 10),
+			"Created job tag "+name,
+			map[string]string{"name": name, "color": color, "priority": strconv.FormatUint(prio, 10)})
 		setFlash(w, "Job tag created.")
 	}
 	http.Redirect(w, r, "/job-tags", http.StatusSeeOther)
@@ -101,6 +106,10 @@ func (s *Server) HandleJobTagEdit(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.UpdateJobTag(id, name, color, textColor, uint8(prio)); err != nil {
 		log.Printf("job tag edit: %v", err)
 	}
+	s.auditServer(r, "job_tag_updated", "info", "update", "job_tag",
+		strconv.FormatUint(id, 10),
+		"Updated job tag "+name,
+		map[string]string{"name": name, "color": color, "priority": strconv.FormatUint(prio, 10)})
 	setFlash(w, "Job tag updated.")
 	http.Redirect(w, r, "/job-tags", http.StatusSeeOther)
 }
@@ -124,6 +133,8 @@ func (s *Server) HandleJobTagDelete(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.DeleteJobTag(id); err != nil {
 		log.Printf("job tag delete: %v", err)
 	}
+	s.auditServer(r, "job_tag_deleted", "warn", "delete", "job_tag",
+		strconv.FormatUint(id, 10), "Deleted job tag", nil)
 	setFlash(w, "Job tag deleted.")
 	http.Redirect(w, r, "/job-tags", http.StatusSeeOther)
 }

@@ -63,7 +63,7 @@ func main() {
 	// Start background workers
 	offlineChecker := worker.NewOfflineChecker(database, notifier)
 	offlineChecker.Start()
-	retentionWorker := worker.NewRetentionWorker(database)
+	retentionWorker := worker.NewRetentionWorker(database, cfg.Terminal.SessionsDir)
 	retentionWorker.Start()
 
 	web.ServerVersion = Version
@@ -158,6 +158,10 @@ func main() {
 	mux.HandleFunc("/users", webServer.RequireManagerOrAbove(webServer.HandleUsers))
 	mux.HandleFunc("/users/new", webServer.RequireManagerOrAbove(webServer.HandleUserNew))
 	mux.HandleFunc("/users/", webServer.RequireManagerOrAbove(userRouter(webServer)))
+
+	// Audit log — superadmin/manager only
+	mux.HandleFunc("/audit", webServer.RequireManagerOrAbove(webServer.HandleAudit))
+	mux.HandleFunc("/audit/session/", webServer.RequireSuperAdmin(webServer.HandleSessionReplay))
 
 	// Anomalies global page + archive + per-row ack
 	mux.HandleFunc("/anomalies", webServer.RequireAuth(webServer.HandleAnomalies))
@@ -270,6 +274,10 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 		}
 		if parts[1] == "anomaly-counts" {
 			s.HandleNodeAnomalyCounts(w, r)
+			return
+		}
+		if parts[1] == "audit" {
+			s.HandleNodeAudit(w, r)
 			return
 		}
 		switch parts[1] {

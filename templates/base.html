@@ -34,6 +34,14 @@
               <span class="nav-link-title">Anomalies</span>
             </a>
           </li>
+          {{if or .User.IsSuperAdmin .User.IsManager}}
+          <li class="nav-item">
+            <a class="nav-link" href="/audit">
+              <span class="nav-link-icon"><i class="ti ti-history"></i></span>
+              <span class="nav-link-title">Audit Log</span>
+            </a>
+          </li>
+          {{end}}
           {{if .User.CanWrite}}
           <li class="nav-item">
             <a class="nav-link" href="/nodes/new">

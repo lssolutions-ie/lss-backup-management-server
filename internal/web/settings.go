@@ -85,6 +85,11 @@ func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.auditServerFor(r, user, "user_password_changed", "warn", "update", "user",
+		strconv.FormatUint(user.ID, 10),
+		"Changed own password for "+user.Username,
+		map[string]string{"username": user.Username})
+
 	s.render(w, r, http.StatusOK, "settings.html", settingsPageData{
 		PageData: s.newPageData(r),
 		Success:  "Password updated successfully.",
@@ -164,6 +169,11 @@ func (s *Server) HandleForcePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	s.auditServerFor(r, user, "user_password_changed", "warn", "update", "user",
+		strconv.FormatUint(user.ID, 10),
+		"Forced password change for "+user.Username,
+		map[string]string{"username": user.Username, "forced": "true"})
 
 	log.Printf("auth: forced password change user=%q", user.Username)
 	// Next request will hit RequireAuth which will redirect to 2FA setup.
@@ -249,6 +259,17 @@ func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	s.auditServer(r, "smtp_config_saved", "warn", "save", "smtp_config", "",
+		"Saved SMTP configuration",
+		map[string]string{
+			"host":         cfg.Host,
+			"port":         strconv.Itoa(cfg.Port),
+			"username":     cfg.Username,
+			"from_address": cfg.FromAddress,
+			"use_tls":      fmt.Sprintf("%t", cfg.UseTLS),
+			"enabled":      fmt.Sprintf("%t", cfg.Enabled),
+		})
 
 	log.Printf("smtp: config updated by user")
 	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
@@ -341,6 +362,9 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 
 	if sendErr != nil {
 		log.Printf("smtp test: failed: %v", sendErr)
+		s.auditServer(r, "smtp_test", "warn", "test", "smtp_config", "",
+			"SMTP test email failed",
+			map[string]string{"to": to, "error": sendErr.Error()})
 		s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
 			PageData: s.newPageData(r),
 			SMTP:     cfg,
@@ -348,6 +372,10 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	s.auditServer(r, "smtp_test", "info", "test", "smtp_config", "",
+		"SMTP test email sent to "+to,
+		map[string]string{"to": to})
 
 	log.Printf("smtp test: sent to %s", to)
 	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{

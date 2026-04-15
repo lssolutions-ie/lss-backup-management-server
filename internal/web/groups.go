@@ -56,7 +56,8 @@ func (s *Server) HandleGroupNew(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rank := r.FormValue("rank")
-	if _, err := s.DB.CreateClientGroup(name, rank); err != nil {
+	gid, err := s.DB.CreateClientGroup(name, rank)
+	if err != nil {
 		log.Printf("group new: %v", err)
 		s.render(w, r, http.StatusUnprocessableEntity, "group_form.html", groupFormPageData{
 			PageData: s.newPageData(r),
@@ -64,6 +65,11 @@ func (s *Server) HandleGroupNew(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	s.auditServer(r, "group_created", "info", "create", "group",
+		strconv.FormatUint(gid, 10),
+		"Created client group "+name,
+		map[string]string{"name": name, "rank": rank})
 
 	setFlash(w, "Group created.")
 	http.Redirect(w, r, "/groups", http.StatusSeeOther)
@@ -109,6 +115,11 @@ func (s *Server) HandleGroupEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.auditServer(r, "group_updated", "info", "update", "group",
+		strconv.FormatUint(group.ID, 10),
+		"Updated client group "+name,
+		map[string]string{"name": name, "rank": rank})
+
 	setFlash(w, "Group updated.")
 	http.Redirect(w, r, "/groups", http.StatusSeeOther)
 }
@@ -147,6 +158,11 @@ func (s *Server) HandleGroupDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/groups", http.StatusSeeOther)
 		return
 	}
+
+	s.auditServer(r, "group_deleted", "warn", "delete", "group",
+		strconv.FormatUint(group.ID, 10),
+		"Deleted client group "+group.Name,
+		map[string]string{"name": group.Name})
 
 	setFlash(w, "Group deleted.")
 	http.Redirect(w, r, "/groups", http.StatusSeeOther)

@@ -3,7 +3,6 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,8 +34,7 @@ func (s *Server) HandlePermissions(w http.ResponseWriter, r *http.Request) {
 	}
 	rules, err := s.DB.ListPermissionRules()
 	if err != nil {
-		log.Printf("permissions: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	users, _ := s.DB.ListUsers()
@@ -212,7 +210,7 @@ func (s *Server) HandlePermissionRuleSave(w http.ResponseWriter, r *http.Request
 			prev.TargetID = tid
 			prev.LockedBySuperadmin = locked
 			if err := s.DB.UpdatePermissionRule(prev); err != nil {
-				http.Error(w, "DB error", http.StatusInternalServerError)
+				s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 				return
 			}
 			s.auditServer(r, "permission_rule_updated", "info", "update", "permission_rule",
@@ -243,7 +241,7 @@ func (s *Server) HandlePermissionRuleSave(w http.ResponseWriter, r *http.Request
 			}
 			id, err := s.DB.CreatePermissionRule(nr)
 			if err != nil {
-				http.Error(w, "DB error", http.StatusInternalServerError)
+				s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 				return
 			}
 			nr.ID = id
@@ -297,7 +295,7 @@ func (s *Server) HandlePermissionRuleToggle(w http.ResponseWriter, r *http.Reque
 	}
 	newEnabled := !prev.Enabled
 	if err := s.DB.SetPermissionRuleEnabled(id, newEnabled); err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 		return
 	}
 	sev := "info"
@@ -341,7 +339,7 @@ func (s *Server) HandlePermissionRuleDelete(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.DB.DeletePermissionRule(id); err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 		return
 	}
 	s.auditServer(r, "permission_rule_deleted", "warn", "delete", "permission_rule",

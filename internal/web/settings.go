@@ -75,13 +75,11 @@ func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("settings: bcrypt: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	if err := s.DB.UpdateUserPassword(user.ID, string(hash)); err != nil {
-		log.Printf("settings: update password: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -160,13 +158,11 @@ func (s *Server) HandleForcePassword(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("force-password: bcrypt: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	if err := s.DB.UpdateUserPassword(user.ID, string(hash)); err != nil {
-		log.Printf("force-password: update: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -191,8 +187,7 @@ type smtpPageData struct {
 func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 	cfg, err := s.DB.GetSMTPConfig()
 	if err != nil {
-		log.Printf("smtp settings: get: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -226,8 +221,7 @@ func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 	if password != "" {
 		enc, err := encryptSMTPPassword(password, s.AppKey)
 		if err != nil {
-			log.Printf("smtp settings: encrypt: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 		passwordEnc = enc

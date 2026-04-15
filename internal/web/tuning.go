@@ -19,8 +19,7 @@ type tuningPageData struct {
 func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 	t, err := s.DB.GetServerTuning()
 	if err != nil {
-		log.Printf("tuning: load: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 

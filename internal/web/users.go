@@ -30,15 +30,13 @@ type userFormPageData struct {
 func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := s.DB.ListUsers()
 	if err != nil {
-		log.Printf("users: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	allGroups, err := s.DB.ListClientGroups()
 	if err != nil {
-		log.Printf("users: list groups: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	groupByID := make(map[uint64]*models.ClientGroup, len(allGroups))
@@ -76,8 +74,7 @@ func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	groups, err := s.DB.ListClientGroups()
 	if err != nil {
-		log.Printf("user new: list groups: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -119,8 +116,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	// All new users get the default password and are forced to change it on first login.
 	hash, err := bcrypt.GenerateFromPassword([]byte("lssbackuppassword"), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("user new: bcrypt: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -168,15 +164,13 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 
 	groups, err := s.DB.ListClientGroups()
 	if err != nil {
-		log.Printf("user edit: list groups: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	assignedIDs, err := s.DB.GetUserClientGroupIDs(target.ID)
 	if err != nil {
-		log.Printf("user edit: get access: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	assigned := make(map[uint64]bool, len(assignedIDs))
@@ -232,13 +226,11 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
-			log.Printf("user edit: bcrypt: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 		if err := s.DB.UpdateUserPassword(target.ID, string(hash)); err != nil {
-			log.Printf("user edit: update password: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 	}
@@ -324,8 +316,7 @@ func (s *Server) userFromPath(w http.ResponseWriter, r *http.Request) (*models.U
 	}
 	u, err := s.DB.GetUserByID(id)
 	if err != nil {
-		log.Printf("userFromPath: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return nil, false
 	}
 	if u == nil {

@@ -211,8 +211,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 
 	tmpl, err := template.New("base.html").Funcs(funcs).ParseFiles("templates/base.html", "templates/"+name)
 	if err != nil {
-		log.Printf("template parse %s: %v", name, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	w.WriteHeader(status)

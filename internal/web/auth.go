@@ -51,8 +51,7 @@ type pendingTOTPEntry struct {
 func (s *Server) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	count, err := s.DB.CountUsers()
 	if err != nil {
-		log.Printf("setup: count users: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	if count > 0 {
@@ -81,8 +80,7 @@ func (s *Server) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	// Default password — user will be forced to change it on first login.
 	hash, err := bcrypt.GenerateFromPassword([]byte("lssbackuppassword"), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("setup: bcrypt: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -147,7 +145,7 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if user.TOTPEnabled {
 		token, err := generateSessionToken()
 		if err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 
@@ -236,15 +234,13 @@ func (s *Server) HandleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, user *models.User) {
 	token, err := generateSessionToken()
 	if err != nil {
-		log.Printf("login: generate token: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	expiresAt := time.Now().Add(time.Duration(s.Config.Session.MaxAgeHours) * time.Hour)
 	if err := s.DB.CreateSession(token, user.ID, expiresAt); err != nil {
-		log.Printf("login: create session: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -272,29 +268,25 @@ func (s *Server) HandleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 			AccountName: user.Username,
 		})
 		if err != nil {
-			log.Printf("totp setup: generate: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 
 		// Store the secret (not yet enabled).
 		if err := s.DB.SetTOTPSecret(user.ID, key.Secret()); err != nil {
-			log.Printf("totp setup: save secret: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 
 		// Generate QR code as base64 PNG.
 		img, err := key.Image(200, 200)
 		if err != nil {
-			log.Printf("totp setup: qr image: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, img); err != nil {
-			log.Printf("totp setup: png encode: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 		qrB64 := base64.StdEncoding.EncodeToString(buf.Bytes())
@@ -318,7 +310,7 @@ func (s *Server) HandleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	// Re-read user to get the secret we just saved.
 	user, err := s.DB.GetUserByID(user.ID)
 	if err != nil || user == nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -343,8 +335,7 @@ func (s *Server) HandleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.EnableTOTP(user.ID); err != nil {
-		log.Printf("totp setup: enable: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -369,8 +360,7 @@ func (s *Server) HandleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.DisableTOTP(user.ID); err != nil {
-		log.Printf("totp disable: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 

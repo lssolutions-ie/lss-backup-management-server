@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/lssolutions-ie/lss-management-server/internal/api"
 	"github.com/lssolutions-ie/lss-management-server/internal/config"
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/notify"
 	"github.com/lssolutions-ie/lss-management-server/internal/web"
 	"github.com/lssolutions-ie/lss-management-server/internal/worker"
@@ -22,8 +24,7 @@ import (
 var Version = "dev"
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
-	log.SetPrefix("lss-mgmt: ")
+	logx.Init()
 
 	configPath := os.Getenv("LSS_CONFIG")
 	if configPath == "" {
@@ -191,11 +192,13 @@ func main() {
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
 	mux.HandleFunc("/settings/tuning", webServer.RequireSuperAdmin(webServer.HandleServerTuning))
 
-	// Wrap mux with security headers.
-	handler := securityHeaders(mux)
+	// Wrap mux with request-id/access-log, then security headers.
+	handler := securityHeaders(webServer.RequestLog(mux))
 
-	log.Printf("starting server version=%s listen=%s tunnel_authkeys=%s",
-		Version, cfg.Server.ListenAddr, tunnelAuthKeysFile)
+	slog.Info("starting server",
+		"version", Version,
+		"listen", cfg.Server.ListenAddr,
+		"tunnel_authkeys", tunnelAuthKeysFile)
 	if err := http.ListenAndServe(cfg.Server.ListenAddr, handler); err != nil {
 		log.Fatalf("server: %v", err)
 	}

@@ -1,7 +1,6 @@
 package web
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 
@@ -25,8 +24,7 @@ func (s *Server) HandleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.DB.ListAuditLog(0, src, limit)
 	if err != nil {
-		log.Printf("audit: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	s.render(w, r, http.StatusOK, "audit.html", auditPageData{
@@ -47,8 +45,7 @@ func (s *Server) HandleNodeAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.DB.ListAuditLog(node.ID, "", 1000)
 	if err != nil {
-		log.Printf("node audit: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	s.render(w, r, http.StatusOK, "audit.html", auditPageData{

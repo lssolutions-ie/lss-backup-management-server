@@ -58,8 +58,7 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 
 	jobs, err := s.DB.ListJobSnapshots(node.ID)
 	if err != nil {
-		log.Printf("node detail: list jobs: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -96,15 +95,13 @@ func (s *Server) HandleNodeDetail(w http.ResponseWriter, r *http.Request) {
 
 	total, err := s.DB.CountNodeReportsFiltered(filter)
 	if err != nil {
-		log.Printf("node detail: count reports: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	reports, err := s.DB.ListNodeReportsFiltered(filter)
 	if err != nil {
-		log.Printf("node detail: list reports: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -159,8 +156,7 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 	}
 	groups, err := s.DB.ListClientGroups()
 	if err != nil {
-		log.Printf("node new: list groups: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -207,15 +203,13 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 
 	psk, err := crypto.GeneratePSK()
 	if err != nil {
-		log.Printf("node new: generate psk: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	encrypted, err := crypto.EncryptPSK(psk, s.AppKey)
 	if err != nil {
-		log.Printf("node new: encrypt psk: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -310,8 +304,7 @@ func (s *Server) HandleNodeEdit(w http.ResponseWriter, r *http.Request) {
 
 	groups, err := s.DB.ListClientGroups()
 	if err != nil {
-		log.Printf("node edit: list groups: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -437,21 +430,18 @@ func (s *Server) HandleNodeRegeneratePSK(w http.ResponseWriter, r *http.Request)
 
 	psk, err := crypto.GeneratePSK()
 	if err != nil {
-		log.Printf("regen psk: generate: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	encrypted, err := crypto.EncryptPSK(psk, s.AppKey)
 	if err != nil {
-		log.Printf("regen psk: encrypt: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	if err := s.DB.UpdateNodePSK(node.ID, encrypted); err != nil {
-		log.Printf("regen psk: update: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -524,8 +514,7 @@ func (s *Server) nodeFromPath(w http.ResponseWriter, r *http.Request, prefix str
 
 	node, err := s.DB.GetNodeByID(id)
 	if err != nil {
-		log.Printf("nodeFromPath: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return nil, false
 	}
 	if node == nil {

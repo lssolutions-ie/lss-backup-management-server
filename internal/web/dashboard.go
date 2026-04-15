@@ -1,7 +1,6 @@
 package web
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
@@ -30,37 +29,32 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	if !user.IsSuperAdmin() {
 		ids, err := s.DB.GetUserClientGroupIDs(user.ID)
 		if err != nil {
-			log.Printf("dashboard: get group ids: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 		groupIDs = ids
 		visibleNodeIDs, err = s.DB.ListVisibleNodeIDsForUser(user.ID)
 		if err != nil {
-			log.Printf("dashboard: visible nodes: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 			return
 		}
 	}
 
 	stats, err := s.DB.GetDashboardStats(groupIDs)
 	if err != nil {
-		log.Printf("dashboard: get stats: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	groups, err := s.DB.ListGroupsWithStats(groupIDs)
 	if err != nil {
-		log.Printf("dashboard: list groups: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
 	nodes, err := s.DB.ListNodesWithStatus(groupIDs)
 	if err != nil {
-		log.Printf("dashboard: list nodes: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 

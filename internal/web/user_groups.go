@@ -33,8 +33,7 @@ type userGroupFormPageData struct {
 func (s *Server) HandleUserGroups(w http.ResponseWriter, r *http.Request) {
 	groups, err := s.DB.ListUserGroups()
 	if err != nil {
-		log.Printf("user-groups list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	clients, _ := s.DB.ListClientGroups()
@@ -63,8 +62,7 @@ func (s *Server) HandleUserGroups(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleUserGroupNew(w http.ResponseWriter, r *http.Request) {
 	clients, err := s.DB.ListClientGroups()
 	if err != nil {
-		log.Printf("user-group new: clients: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	users, _ := s.DB.ListUsers()

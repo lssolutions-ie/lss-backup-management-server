@@ -23,8 +23,7 @@ type groupFormPageData struct {
 func (s *Server) HandleGroups(w http.ResponseWriter, r *http.Request) {
 	groups, err := s.DB.ListClientGroups()
 	if err != nil {
-		log.Printf("groups: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	s.render(w, r, http.StatusOK, "groups.html", groupsPageData{
@@ -142,8 +141,7 @@ func (s *Server) HandleGroupDelete(w http.ResponseWriter, r *http.Request) {
 
 	count, err := s.DB.CountNodesInGroup(group.ID)
 	if err != nil {
-		log.Printf("group delete: count: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	if count > 0 {
@@ -178,8 +176,7 @@ func (s *Server) groupFromPath(w http.ResponseWriter, r *http.Request) (*models.
 	}
 	group, err := s.DB.GetClientGroupByID(id)
 	if err != nil {
-		log.Printf("groupFromPath: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return nil, false
 	}
 	if group == nil {

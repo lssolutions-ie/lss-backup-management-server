@@ -31,8 +31,7 @@ type tagEditPageData struct {
 func (s *Server) HandleTags(w http.ResponseWriter, r *http.Request) {
 	tags, err := s.DB.ListTags()
 	if err != nil {
-		log.Printf("tags: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 
@@ -197,8 +196,7 @@ func (s *Server) HandleTagCheckUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	usage, err := s.DB.GetNodesUsingTags(ids)
 	if err != nil {
-		log.Printf("tag check usage: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

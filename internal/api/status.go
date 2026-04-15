@@ -9,6 +9,7 @@ import (
 	"github.com/lssolutions-ie/lss-management-server/internal/classify"
 	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"github.com/lssolutions-ie/lss-management-server/internal/notify"
 )
@@ -108,7 +109,11 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		reportType = "post_run"
 	}
 
-	log.Printf("api: %s from node=%d uid=%s jobs=%d", reportType, node.ID, node.UID, len(status.Jobs))
+	// Routine per-heartbeat line demoted to DEBUG so it doesn't drown the journal.
+	// Override via LSS_LOG_LEVEL=debug when you actually need to see every ping.
+	logx.Component("api").Debug("status report",
+		"type", reportType, "node_id", node.ID, "uid", node.UID, "jobs", len(status.Jobs))
+	_ = log.Default // keep import used by other sites below
 
 	// 5. Upsert job snapshots, detect anomalies, and remove stale jobs.
 	tuning, _ := h.DB.GetServerTuning()

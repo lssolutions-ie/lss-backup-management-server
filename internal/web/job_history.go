@@ -72,8 +72,7 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 
 	reports, err := s.DB.ListRecentPostRunReports(nodeID, from, to, poolSize)
 	if err != nil {
-		log.Printf("job history: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 

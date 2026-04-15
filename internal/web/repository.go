@@ -311,7 +311,7 @@ func (s *Server) HandleRepoDownloadRsync(w http.ResponseWriter, r *http.Request)
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "pipe failed")
 		return
 	}
 	stdin, err := sshStartWithSudo(session, node, password, fmt.Sprintf("cat %s", req.Path))
@@ -397,7 +397,7 @@ func (s *Server) HandleRepoDownloadRsyncZip(w http.ResponseWriter, r *http.Reque
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "pipe failed")
 		return
 	}
 
@@ -483,7 +483,7 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "pipe failed")
 		return
 	}
 
@@ -576,7 +576,7 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
-		http.Error(w, "pipe failed", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "pipe failed")
 		return
 	}
 	pathArgs := ""

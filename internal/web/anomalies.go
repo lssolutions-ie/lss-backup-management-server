@@ -2,7 +2,6 @@ package web
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,8 +44,7 @@ func (s *Server) HandleAnomalies(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.DB.ListEnrichedAnomalies(filter, retention, archive, limit)
 	if err != nil {
-		log.Printf("anomalies global: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	s.render(w, r, http.StatusOK, "anomalies_global.html", globalAnomaliesPageData{
@@ -70,8 +68,7 @@ func (s *Server) HandleNodeAnomalies(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.DB.ListJobAnomalies(node.ID, "", false, 200)
 	if err != nil {
-		log.Printf("anomalies: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	s.render(w, r, http.StatusOK, "anomalies.html", anomaliesPageData{
@@ -93,7 +90,7 @@ func (s *Server) HandleNodeAnomalyCounts(w http.ResponseWriter, r *http.Request)
 	}
 	counts, err := s.DB.CountUnackedAnomaliesByJob(node.ID)
 	if err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -180,13 +177,13 @@ func (s *Server) HandleAnomalyAck(w http.ResponseWriter, r *http.Request) {
 	switch parts[1] {
 	case "ack":
 		if err := s.DB.AcknowledgeAnomaly(id, user.ID); err != nil {
-			http.Error(w, "DB error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 			return
 		}
 		s.auditServer(r, "anomaly_acknowledged", "info", "ack", "anomaly", strconv.FormatUint(id, 10), "Acknowledged anomaly", nil)
 	case "unack":
 		if err := s.DB.UnacknowledgeAnomaly(id); err != nil {
-			http.Error(w, "DB error", http.StatusInternalServerError)
+			s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
 			return
 		}
 		s.auditServer(r, "anomaly_unacknowledged", "warn", "unack", "anomaly", strconv.FormatUint(id, 10), "Unacknowledged anomaly", nil)

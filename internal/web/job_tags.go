@@ -23,8 +23,7 @@ type jobTagEditPageData struct {
 func (s *Server) HandleJobTags(w http.ResponseWriter, r *http.Request) {
 	tags, err := s.DB.ListJobTags()
 	if err != nil {
-		log.Printf("job tags: list: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	s.render(w, r, http.StatusOK, "job_tags.html", jobTagsPageData{
@@ -74,7 +73,7 @@ func (s *Server) HandleJobTagEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	tags, err := s.DB.ListJobTags()
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
 	var tag *models.JobTag

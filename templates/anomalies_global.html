@@ -2,17 +2,17 @@
 {{$base := "/anomalies"}}{{if .Archive}}{{$base = "/anomalies/archive"}}{{end}}
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
-    <div class="col">
+    <div class="col pe-5">
       <h2 class="page-title"><i class="ti ti-shield-x me-1"></i> Security — Anomalies{{if .Archive}} <span class="badge text-bg-secondary ms-2">Archive</span>{{end}}</h2>
       <div class="text-muted">
         {{if .Archive}}Every anomaly ever recorded — kept forever for forensics.{{else}}Possible attacks against your backups: source-side wipes, repo-side tampering, mass deletions. Acknowledged rows older than <strong>{{.RetentionDays}} days</strong> are moved to the <a href="/anomalies/archive">archive</a>.{{end}}
       </div>
     </div>
-    <div class="col-auto">
+    <div class="col-auto ps-4">
       <div class="btn-group me-2" role="group">
         <a href="{{$base}}?filter=all" class="btn {{if eq .Filter "all"}}btn-primary{{else}}btn-outline-secondary{{end}}">Show All</a>
         <a href="{{$base}}?filter=ack" class="btn {{if eq .Filter "ack"}}btn-primary{{else}}btn-outline-secondary{{end}}">Acknowledged</a>
-        <a href="{{$base}}?filter=unack" class="btn {{if eq .Filter "unack"}}btn-primary{{else}}btn-outline-secondary{{end}}">Unacknowledged</a>
+        {{if not .Archive}}<a href="{{$base}}?filter=unack" class="btn {{if eq .Filter "unack"}}btn-primary{{else}}btn-outline-secondary{{end}}">Unacknowledged</a>{{end}}
       </div>
       {{if .Archive}}
         <a href="/anomalies" class="btn btn-outline-primary"><i class="ti ti-arrow-back"></i> Back to live</a>
@@ -33,7 +33,6 @@
       <option value="node_name">Node</option>
       <option value="job_label">Job</option>
       <option value="anomaly_type">What happened</option>
-      <option value="acknowledged">Status</option>
     </select>
 
     <div id="anom-filter-values-wrap" class="d-none position-relative" style="min-width: 240px;">
@@ -85,8 +84,8 @@
       <label class="text-muted small mb-0" for="anom-page-size">Rows per page</label>
       <select id="anom-page-size" class="form-select form-select-sm" style="width: 90px;">
         <option value="10">10</option>
-        <option value="15" selected>15</option>
-        <option value="25">25</option>
+        <option value="15">15</option>
+        <option value="25" selected>25</option>
         <option value="50">50</option>
         <option value="100">100</option>
         <option value="0">All</option>
@@ -115,7 +114,9 @@
   "curr_value": {{$a.CurrValue}},
   "delta": {{$a.DeltaValue}},
   "delta_pct": {{printf "%.2f" $a.DeltaPct}},
-  "acknowledged": {{if $a.Acknowledged}}1{{else}}0{{end}}
+  "acknowledged": {{if $a.Acknowledged}}1{{else}}0{{end}},
+  "acked_by": "{{$a.AckedByName}}",
+  "acked_at": "{{if $a.AcknowledgedAt}}{{$a.AcknowledgedAt.Format "02-01-2006 15:04:05"}}{{end}}"
 }{{end}}
 ]
 </script>
@@ -133,7 +134,7 @@
   var filters = {};
   var globalQ = '';
   var selected = {};
-  var pageSize = 15;
+  var pageSize = 25;
   var page = 1;
 
   // In-progress filter editor state
@@ -194,9 +195,11 @@
       '<div class="text-danger fw-bold">' + r.delta + ' (' + r.delta_pct + '%)</div>';
   }
   function statusCell(r) {
-    return r.acknowledged
-      ? '<span class="badge text-bg-secondary">Ack\'d</span>'
-      : '<span class="badge text-bg-danger">Unreviewed</span>';
+    if (!r.acknowledged) return '<span class="badge text-bg-danger">Unreviewed</span>';
+    var tip = 'Acknowledged';
+    if (r.acked_by) tip += ' by ' + r.acked_by;
+    if (r.acked_at) tip += ' at ' + r.acked_at;
+    return '<span class="badge text-bg-secondary" title="' + escapeHtml(tip) + '" style="cursor:help;">Ack\'d</span>';
   }
   function actionCell(r) {
     var label = r.acknowledged ? 'UNACK' : 'ACK';
@@ -386,6 +389,10 @@
   function bulkAct(action) {
     var ids = Object.keys(selected);
     if (ids.length === 0) return;
+    if (ids.length > 1) {
+      var verb = action === 'ack' ? 'acknowledge' : 'unacknowledge';
+      if (!confirm('You are about to ' + verb + ' ' + ids.length + ' anomalies. Continue?')) return;
+    }
     var fd = new FormData();
     fd.append('csrf_token', csrf);
     fd.append('ids', ids.join(','));

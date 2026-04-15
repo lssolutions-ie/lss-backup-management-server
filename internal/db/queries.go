@@ -1847,6 +1847,7 @@ type EnrichedAnomaly struct {
 	ClientName     string
 	JobName        string
 	JobProgram     string
+	AckedByName    string
 }
 
 // ListEnrichedAnomalies joins anomalies with node + client info for the global Security page.
@@ -1881,11 +1882,13 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 		SELECT a.id, a.node_id, a.job_id, a.detected_at, a.anomaly_type, a.prev_value, a.curr_value,
 		       a.delta_value, a.delta_pct, a.snapshot_id, a.acknowledged, a.acknowledged_by, a.acknowledged_at,
 		       n.name, n.uid, n.client_group_id, COALESCE(c.name, ''),
-		       COALESCE(j.job_name, ''), COALESCE(j.program, '')
+		       COALESCE(j.job_name, ''), COALESCE(j.program, ''),
+		       COALESCE(u.username, '')
 		FROM job_anomalies a
 		JOIN nodes n             ON n.id = a.node_id
 		LEFT JOIN client_groups c ON c.id = n.client_group_id
 		LEFT JOIN job_snapshots j ON j.node_id = a.node_id AND j.job_id = a.job_id
+		LEFT JOIN users u         ON u.id = a.acknowledged_by
 		`+where+`
 		ORDER BY a.detected_at DESC LIMIT ?`, limit)
 	if err != nil {
@@ -1904,7 +1907,7 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 			&ea.JobAnomaly.DeltaValue, &ea.JobAnomaly.DeltaPct, &ea.JobAnomaly.SnapshotID,
 			&acked, &ackedBy, &ackedAt,
 			&ea.NodeName, &ea.NodeUID, &ea.ClientID, &ea.ClientName,
-			&ea.JobName, &ea.JobProgram); err != nil {
+			&ea.JobName, &ea.JobProgram, &ea.AckedByName); err != nil {
 			return nil, err
 		}
 		ea.JobAnomaly.AnomalyType = models.AnomalyType(atype)

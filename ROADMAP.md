@@ -27,12 +27,21 @@ The current 3-detector engine catches obvious attacks (full repo wipes, ransomwa
 - **Cross-node correlation** — surface "5 anomalies across 3 nodes in 10 min" as a meta-alert (campaign view).
 - **Slow-drift detection** — current per-run delta thresholds miss attackers who delete a few files daily forever, never crossing the threshold. Need rolling-window absolute-count tracking.
 
-### Anomalies UI workflow (tomorrow)
+### Anomalies UI workflow
 
+- ✅ **Bulk acknowledge** — shipped v1.10.13.
+- ✅ **Auto-archive acked rows older than N days** — shipped v1.10.14 (`anomaly_ack_retention_days`, /anomalies/archive page).
 - **"Mute future fires" option when acknowledging** — checkbox in the ack flow that also creates a silence on the related (node, job) for a chosen duration so you're not re-alerted while investigating.
-- **Bulk acknowledge** — checkbox per row + "Acknowledge selected" button (mirrors the bulk delete UX on the tags pages).
 - **Resolution note field** — text input on the Acknowledge action; stored alongside `acknowledged_by` / `acknowledged_at`. Renders as a tooltip / detail row. Useful for forensics ("acked because dataset rotation, not an attack").
-- **Auto-archive acked rows older than N days** — moves to a separate `job_anomalies_archive` table (or just hides from the default view) with a configurable retention. Keeps the live page clean while preserving forensics indefinitely.
+
+### Audit + observability (mostly shipped)
+
+- ✅ **Server audit log** — unified `audit_log` table, /audit page, 33 hook points (v1.11.0–v1.11.3).
+- ✅ **Node audit** — CLI v2.3.0 ships `audit_events[]` on heartbeat v3, server ingests with self-healing ack.
+- ✅ **Terminal session recording** — asciinema v2 .cast files, in-browser replay, retention knob (v1.11.4).
+- ✅ **Structured JSON logging via slog** — request IDs, access log, s.Fail() helper (v1.11.6, v1.11.9).
+- **Host audit** — small worker polls journalctl for sshd / sudo / lss-management.service, parses, inserts into `audit_log` with `source='host'` (new enum value, migration 033). ~150 LOC + tiny migration.
+- **Off-server audit mirror** — once host audit lands, add a syslog emitter so `audit_log` rows also flow to syslog `LOG_AUTH`. One-line per emit site. Defends against compromised server `DELETE FROM audit_log`.
 
 ### Low
 

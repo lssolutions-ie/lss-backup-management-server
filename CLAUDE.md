@@ -11,7 +11,8 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.10.10
+**Version:** v1.11.11
+**Paired CLI:** v2.3.2
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -25,25 +26,36 @@ terminal access to nodes through reverse SSH tunnels over WebSocket.
 ├── cmd/server/main.go              Entry point, HTTP mux, version var
 ├── internal/
 │   ├── api/status.go               Node heartbeat/report endpoint (POST /api/v1/status)
-│   ├── config/config.go            TOML config loader
+│   ├── config/config.go            TOML config loader (incl. terminal.sessions_dir)
 │   ├── crypto/                     AES-256-GCM decrypt, PSK encrypt/decrypt
 │   ├── db/
 │   │   ├── db.go                   MySQL connection, migrations
-│   │   └── queries.go              All DB queries, tunnel authorized_keys writer
-│   ├── models/models.go            Node, User, Session, JobSnapshot, NodeStatus structs
-│   ├── notify/                     Notifier interface (NoOp for now)
+│   │   ├── queries.go              All DB queries, tunnel authorized_keys writer
+│   │   └── audit.go                audit_log queries + node-event ingest + ack reconcile
+│   ├── logx/logx.go                Structured logging (slog) — auto-init, request IDs, redaction
+│   ├── models/models.go            Node, User, Session, JobSnapshot, NodeStatus, AuditEvent…
+│   ├── notify/                     Notifier interface (NoOp; full stack DEFERRED to last)
+│   ├── recorder/recorder.go        Asciinema v2 .cast writer for terminal session recording
 │   ├── web/
 │   │   ├── auth.go                 Login/logout/setup handlers
 │   │   ├── dashboard.go            Main dashboard page
 │   │   ├── middleware.go           Session auth, RBAC, template rendering
-│   │   ├── nodes.go                Node CRUD, PSK regeneration
+│   │   ├── logging.go              Request-ID/access-log middleware + s.Fail() helper
+│   │   ├── audit.go                auditServer / auditServerFor helpers
+│   │   ├── audit_page.go           /audit + per-node /nodes/{id}/audit handlers
+│   │   ├── replay.go               /audit/session/{file} terminal replay handler
+│   │   ├── nodes.go                Node CRUD, PSK regeneration, anomaly counts endpoint
 │   │   ├── groups.go               Client group CRUD
 │   │   ├── users.go                User CRUD
-│   │   ├── settings.go             Password change
-│   │   ├── terminal.go             Dashboard terminal (WebSocket → SSH proxy)
+│   │   ├── settings.go             Password change, SMTP config
+│   │   ├── tuning.go               /settings/tuning page (all knobs)
+│   │   ├── anomalies.go            /anomalies + archive + ack/bulk-ack/anomaly-counts
+│   │   ├── terminal.go             Dashboard terminal (WebSocket → SSH proxy + recording tee)
 │   │   └── ssh_tunnel.go           Node reverse tunnel endpoint (WebSocket → sshd)
-│   └── worker/worker.go            Background offline-node checker
-├── migrations/                     SQL migration files (001-029)
+│   └── worker/
+│       ├── worker.go               Background offline-node checker
+│       └── retention.go            Hourly: prune reports, audit_log, .cast recordings
+├── migrations/                     SQL migration files (001-032)
 ├── templates/                      Go HTML templates (Tabler UI)
 ├── static/                         CSS/JS assets
 └── install/install.sh              Server installer (systemd, nginx, MySQL, sshd config)
@@ -61,10 +73,15 @@ CLI Node → HTTPS → HAProxy (OPNsense, SSL termination)
 
 | Path | Auth | Purpose |
 |------|------|---------|
-| `POST /api/v1/status` | PSK/AES-256-GCM encrypted payload | Node heartbeat and post-run reports |
+| `POST /api/v1/status` | PSK/AES-256-GCM encrypted payload | Node heartbeat + post-run reports + v3 audit_events ingest |
 | `GET /ws/ssh-tunnel` | HMAC-SHA256 in HTTP headers | Node reverse tunnel (WebSocket → sshd) |
-| `GET /ws/terminal` | Dashboard session cookie | Operator terminal (WebSocket → SSH) |
-| `GET /nodes/{id}/terminal` | Dashboard session cookie | Terminal page with credential form |
+| `GET /ws/terminal` | Dashboard session cookie | Operator terminal (WebSocket → SSH, recorded when enabled) |
+| `GET /nodes/{id}/terminal` | Dashboard session cookie | Terminal page with credential form + recording banner |
+| `GET /nodes/{id}/anomaly-counts` | Dashboard session cookie | JSON map of unack'd anomaly counts per job (used by node-detail shield refresh) |
+| `GET /audit` | Manager+ | Global audit log (server + node sources) |
+| `GET /nodes/{id}/audit` | Node-view permission | Per-node audit tab |
+| `GET /audit/session/{file}` | Superadmin | asciinema v2 replay viewer + raw .cast download |
+| `POST /anomalies/bulk-ack` | Dashboard session cookie | Bulk ack/unack with `ids=` and `action=ack\|unack` |
 
 ---
 
@@ -155,29 +172,30 @@ Configured in `/etc/ssh/sshd_config.d/lss-tunnel.conf`:
 
 ---
 
-## Logging
+## Logging (v1.11.6+)
 
-All log lines use the `lss-mgmt:` prefix. Key log points:
+Structured JSON via Go `log/slog`, written to stderr (captured by systemd journal). Every line is parseable by `jq`. Level controlled by `LSS_LOG_LEVEL=debug|info|warn|error` env var (default `info`).
 
-| Area | What's logged |
-|------|--------------|
-| **Startup** | `starting server version=X listen=X tunnel_authkeys=X` |
-| **Heartbeat** | `api: <type> from node=N uid=X jobs=N` |
-| **Tunnel open** | `ssh-tunnel: open node=N uid=X peer=X` |
-| **Tunnel close** | `ssh-tunnel: closed node=N uid=X` |
-| **Tunnel auth fail** | `ssh-tunnel: hmac mismatch node=N uid=X` |
-| **Tunnel key change** | `api: tunnel key changed for node=N; authorized_keys regenerated` |
-| **Terminal open** | `terminal: user=X opening ssh via-tunnel=X@X:N` |
-| **Terminal close** | `terminal: user=X closed ssh via-tunnel=X@X:N duration=Xs` |
-| **Login success** | `auth: login ok user="X" role=X ip=X` |
-| **Login failure** | `auth: login failed user="X" ip=X` |
-| **Node offline** | `worker: node "X" (uid=X) is offline, last seen: X` |
+Sample line:
+```json
+{"time":"2026-04-15T20:47:49.31Z","level":"INFO","msg":"open","service":"lss-mgmt","component":"tunnel","node_id":9,"uid":"lss-linux-vm-01","peer":"127.0.0.1:35158"}
+```
+
+### Conventions
+- **Component tag** on every line via `logx.Component("name")` — values: `api`, `auth`, `audit`, `db`, `db.audit`, `http`, `permissions`, `recorder`, `repo`, `silences`, `terminal`, `tunnel`, `web`, `worker`.
+- **Request IDs** flow through `r.Context()` — handlers use `logx.FromContext(r.Context())` so every line for one HTTP request shares `req_id`. Stitch a request with `jq 'select(.req_id=="abc123")'`.
+- **Access log middleware** (`web.RequestLog`) emits one line per mutating route (POST/PUT/DELETE/PATCH) with method, path, status, duration, user, remote IP. Skips `/api/v1/status` and `/ws/*` (high-volume + already detailed).
+- **`s.Fail(w, r, status, err, clientMsg)`** — log + http.Error in one call. Used everywhere a 500 might otherwise be silent.
+- **Heartbeat noise demoted to DEBUG** — per-heartbeat ingest line only fires at `LSS_LOG_LEVEL=debug`. Default INFO is signal-only.
+- **Redaction** — `logx.Redact(secret)` returns `***(N)`. Used for PSKs, passwords, raw cookies. Do NOT log secrets directly.
+- **logx auto-init** — package `init()` in `internal/logx` runs before any importer's var declarations so package-level `var lg = logx.Component("foo")` captures the JSON handler, not the pre-init default. Critical: without this, captures get double-wrapped after `log.SetOutput` redirect.
+- **Hijacker passthrough** — `statusCapturingWriter` (access-log wrapper) implements `http.Hijacker` and `http.Flusher`. Without those, gorilla/websocket's Upgrade fails on every `/ws/*` connection.
 
 ---
 
 ## Database
 
-MySQL with 18 migrations:
+MySQL with 32 migrations:
 
 | Migration | Purpose |
 |-----------|---------|
@@ -210,6 +228,9 @@ MySQL with 18 migrations:
 | 027 | job_silences (timed mute per node+job) |
 | 028 | job_tag_catalog + job_tag_links (priority labels) |
 | 029 | snapshot_count column + job_anomalies audit table + anomaly threshold settings |
+| 030 | server_tuning.anomaly_ack_retention_days (default 30) — moves old acked anomalies to /anomalies/archive |
+| 031 | audit_log table (UNIQUE source_node_id+source_seq), nodes.audit_ack_seq, server_tuning.audit_retention_days |
+| 032 | server_tuning.terminal_recording_enabled + terminal_recording_retention_days |
 
 ---
 
@@ -540,15 +561,80 @@ Server-side wiring:
 
 ---
 
+## Audit System (v1.11.0–v1.11.11, paired with CLI v2.3.0–v2.3.2)
+
+Unified `audit_log` table records both server-originated user actions AND node-originated events. Same UI for both, same forensics path.
+
+### Schema (migration 031)
+`audit_log (id, ts, source ENUM('server','node'), source_node_id, source_seq, user_id, username, ip, category, severity ENUM('info','warn','critical'), actor, action, entity_type, entity_id, message, details_json)`. UNIQUE on `(source_node_id, source_seq)` for dedup. Indexed on ts, source, category. Ack pointer per node lives on `nodes.audit_ack_seq`. Retention via `server_tuning.audit_retention_days` (0 = forever, default 0).
+
+### Server-side hook points (33 in v1.11.3)
+Every mutating handler calls `s.auditServer(r, category, severity, action, entityType, entityID, message, details)` after the successful DB mutation:
+auth (login/logout/2fa/setup), users/nodes/groups/tags/user-tags/job-tags/user-groups/permissions CRUD, PSK regen, node-tag edits, tuning save, settings password + SMTP save/test, silences, anomaly ack/unack/bulk, terminal open/close/replay, repo downloads. Helper is `internal/web/audit.go`.
+
+### Node-side ingest (CLI v2.3.0+ → /api/v1/status payload_version=3)
+`NodeStatus.AuditEvents []AuditEvent` arrives encrypted in the heartbeat. Each event: `{seq, ts, category, severity, actor, message, details}`. Server inserts via `db.InsertNodeAuditEvents(nodeID, prevAck, events)` with INSERT IGNORE on the UNIQUE constraint. Response carries `audit_ack_seq = highest contiguous seq stored`. CLI trims its local `audit.jsonl` to events past that ack.
+
+### Two-layer self-healing (v1.11.11)
+1. **Contiguous reconcile** — after every batch insert, `computeContiguousAck` walks `source_seq` ASC starting at `prevAck+1`, advances through whatever contiguous run exists in the DB. Handles in-order delivery + CLI-side reships from migrations + arbitrary ordering uniformly.
+2. **Stale-gap sweeper** — if reconcile didn't move the pointer but events past prevAck exist AND `MIN(detected_at) > 1 hour old`, the gap is presumed permanently lost (event dropped client-side). Server logs WARN and advances past the gap, then re-runs reconcile. Trade-off: lose forensic continuity on that gap, but a frozen pipeline forever is worse.
+
+### Pages
+- `/audit` (manager+) — sort/filter/multi-select/global-search/paginate, same UX as `/anomalies`. All-sources/Server/Nodes toggle.
+- `/nodes/{id}/audit` (node-view) — per-node scope.
+- Details column shows `<code>key=value</code>` pills, EXCEPT `terminal_opened` / `terminal_closed` rows where it shows just the **▶ Replay** button (see Terminal Recording).
+
+---
+
+## Terminal Session Recording (v1.11.4, asciinema v2)
+
+Every dashboard SSH session via `/ws/terminal` is teed into a `.cast` file when `server_tuning.terminal_recording_enabled = true` (default ON). Migration 032 added the toggle + `terminal_recording_retention_days` (default 30).
+
+### How
+- `internal/recorder/recorder.go` writes asciinema v2 format: header line + `[delta_seconds, "o"|"i"|"r", data]` frames per event.
+- Storage: `cfg.Terminal.SessionsDir` (default `/var/lib/lss-management/sessions/`), one `.cast` per session named `<unix_nano>-<username>-<node_id>.cast`.
+- The websocket pump in `terminal.go` calls `rec.WriteOutput(b)` on SSH→browser bytes, `rec.WriteInput(b)` on browser→SSH, and `rec.Resize(cols, rows)` on resize messages. Recorder is `nil` when disabled — calls are zero-cost no-ops.
+- Audit row `terminal_opened` carries `session_id` + `session_file` in details. Replay button on the audit page links to `/audit/session/{filename}`.
+- `/audit/session/{filename}` (superadmin only) renders an in-browser asciinema-player viewer (CDN). `/audit/session/{filename}.raw` serves the raw `.cast` for download. Loading the replay page itself emits a `session_replay` audit row (severity warn).
+- Red banner on the terminal page when recording is enabled — "anything typed or printed is captured".
+- Retention: `worker.RetentionWorker` runs `recorder.PruneOlderThan(dir, days)` hourly.
+
+---
+
+## Global Anomalies Page (v1.10.3 – v1.10.15)
+
+`/anomalies` aggregates every anomaly across every node into one forensic table.
+
+- Top nav link with shield-x icon; dashboard has a clickable "Anomalies" stat card (red when > 0).
+- **Filter button group** (top-right): Show All / Acknowledged / Unacknowledged — backed by `?filter=all|ack|unack`. On `/anomalies/archive` the Unacknowledged option is hidden (archive is acked-only).
+- **Filter dropdown + multi-select** (v1.10.14): pick a field (Client/Node/Job/What happened) → searchable multi-select of values → Apply / Reset. Active filters render as removable pills below the bar.
+- **Sortable columns**, **global search** across all fields + human labels + numeric values.
+- **Bulk select**: master checkbox (selects current page only), bulk ACK/UNACK buttons in card header. ≥2 selected prompts confirm().
+- Per-row **ACK / UNACK** button (short labels, full text in tooltip).
+- "Ack'd" badge tooltip shows `Acknowledged by <user> at <timestamp>`.
+- All in-place via fetch (no full reload). Dashboard shield + per-node shield refresh via `/nodes/{id}/anomaly-counts`.
+- Footer: pagination + "Showing X–Y of Z" + Rows-per-page selector (default 25).
+- **Archive** (`/anomalies/archive`) shows ONLY ack'd rows past the retention window (`server_tuning.anomaly_ack_retention_days`, default 30, settable in /settings/tuning under "Anomaly Tuning").
+
+### Anomaly dedup
+`db.InsertJobAnomaly` skips inserting when an unacknowledged row with the same `(node_id, job_id, anomaly_type)` was inserted in the last 24 hours. Stops spam when the CLI re-reports post-wipe state via heartbeats.
+
+### UPSERT "overwrite real zeros" fix (v1.10.2)
+`UpsertJobSnapshotWithCategory` used to preserve old `bytes_total` / `files_total` / `snapshot_count` when CLI sent 0 (via `IF(VALUES > 0, VALUES, prev)`). That masked legitimate wipes — prev never advanced, and every re-report re-fired the same anomaly. Now: always overwrite. Pair it with the 24h dedup above.
+
+---
+
 ## Roadmap
 
 Live list: `ROADMAP.md` at repo root. Top of backlog:
 
-1. **SMTP notifier wiring** (critical) — anomalies sit silently today.
-2. **"What was deleted" forensics** (high) — run `restic diff prev curr` over the repo-viewer tunnel, lazy-load deleted-file list in an expander on each anomaly row. Biggest client-satisfaction win. Discussed 2026-04-14.
-3. **Snapshot ID set tracking** (high) — count-only comparisons miss `restic forget` of one snapshot within retention; also feeds item 2 for snapshot-drop events.
-4. Anomalies UI workflow: mute-future-fires on ack, bulk acknowledge, resolution note field, auto-archive acked rows older than N days.
+1. **"What was deleted" forensics** (high) — run `restic diff prev curr` over the repo-viewer tunnel, lazy-load deleted-file list in an expander on each anomaly row. Biggest client-satisfaction win.
+2. **Snapshot ID set tracking** (high) — count-only comparisons miss `restic forget` of one snapshot within retention; also feeds item 1.
+3. **Host audit (SSH logins, sudo, service lifecycle)** — small worker polls journalctl for sshd/sudo/lss-management, parses, inserts into `audit_log` with `source='host'` (new enum value, migration 033).
+4. Anomalies UI polish: mute-future-fires on ack, resolution note field.
+5. Production deployment via install.sh.
+6. **(LAST)** Notification stack — SMTP, webhook, escalation. Deferred per user decision 2026-04-15 until everything else above is done.
 
 ---
 
-_Last updated: 2026-04-14 (v1.10.10)_
+_Last updated: 2026-04-15 (v1.11.11)_

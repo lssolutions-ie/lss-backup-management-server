@@ -3,14 +3,16 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 )
+
+var lg = logx.Component("db")
 
 // DB wraps *sql.DB and exposes all query helpers.
 type DB struct {
@@ -85,7 +87,7 @@ func (d *DB) RunMigrations(dir string) error {
 		if _, err := d.db.Exec("INSERT INTO schema_migrations (name) VALUES (?)", name); err != nil {
 			return fmt.Errorf("record migration %s: %w", name, err)
 		}
-		log.Printf("db: applied migration %s", name)
+		lg.Info("applied migration", "name", name)
 	}
 	return nil
 }

@@ -1,12 +1,14 @@
 package worker
 
 import (
-	"log"
 	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/notify"
 )
+
+var lg = logx.Component("worker")
 
 // OfflineChecker periodically queries for nodes that haven't checked in recently
 // and calls the notifier for each one.
@@ -40,7 +42,7 @@ func (c *OfflineChecker) run() {
 func (c *OfflineChecker) check() {
 	nodes, err := c.db.ListOfflineNodes()
 	if err != nil {
-		log.Printf("worker: list offline nodes: %v", err)
+		lg.Error("list offline nodes failed", "err", err.Error())
 		return
 	}
 	for _, node := range nodes {
@@ -48,9 +50,9 @@ func (c *OfflineChecker) check() {
 		if node.LastSeenAt != nil {
 			lastSeen = *node.LastSeenAt
 		}
-		log.Printf("worker: node %q (uid=%s) is offline, last seen: %v", node.Name, node.UID, lastSeen)
+		lg.Warn("node offline", "name", node.Name, "uid", node.UID, "last_seen", lastSeen)
 		if err := c.notifier.NotifyNodeOffline(*node, lastSeen); err != nil {
-			log.Printf("worker: notify offline %s: %v", node.UID, err)
+			lg.Error("notify offline failed", "uid", node.UID, "err", err.Error())
 		}
 	}
 }

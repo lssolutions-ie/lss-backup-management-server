@@ -1,10 +1,10 @@
 package web
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -56,7 +56,7 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 		t.TerminalRecordingEnabled = r.FormValue("terminal_recording_enabled") == "1"
 		t.TerminalRecordingRetentionDays = parse("terminal_recording_retention_days", t.TerminalRecordingRetentionDays)
 		if err := s.DB.UpdateServerTuning(t); err != nil {
-			log.Printf("tuning: save: %v", err)
+			logx.FromContext(r.Context()).Error("save tuning failed", "err", err.Error())
 			s.render(w, r, http.StatusInternalServerError, "tuning.html", tuningPageData{
 				PageData: s.newPageData(r), Tuning: t, Error: "Failed to save settings.",
 			})

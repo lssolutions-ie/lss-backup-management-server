@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -13,7 +12,10 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 )
+
+var tunnelLg = logx.Component("tunnel")
 
 // sshTunnelUpgrader is a separate upgrader from the dashboard terminal one so
 // we can tune buffer sizes for bulk SSH traffic without affecting the
@@ -60,7 +62,7 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().Unix()
 	if ts < now-sshTunnelMaxSkewSec || ts > now+sshTunnelMaxSkewSec {
-		log.Printf("ssh-tunnel: stale timestamp uid=%s skew=%ds", uid, now-ts)
+		tunnelLg.Warn("stale timestamp", "uid", uid, "skew_sec", now-ts)
 		http.Error(w, "stale timestamp", http.StatusUnauthorized)
 		return
 	}
@@ -68,18 +70,18 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	// Look up the node and decrypt the stored PSK.
 	node, err := s.DB.GetNodeByUID(uid)
 	if err != nil {
-		log.Printf("ssh-tunnel: lookup error uid=%s: %v", uid, err)
+		tunnelLg.Error("lookup failed", "uid", uid, "err", err.Error())
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if node == nil {
-		log.Printf("ssh-tunnel: unknown uid=%q", uid)
+		tunnelLg.Warn("unknown uid", "uid", uid)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	psk, err := crypto.DecryptPSK(node.PSKEncrypted, s.AppKey)
 	if err != nil {
-		log.Printf("ssh-tunnel: psk decrypt node=%d: %v", node.ID, err)
+		tunnelLg.Error("psk decrypt failed", "node_id", node.ID, "err", err.Error())
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -89,7 +91,7 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	// Drop psk reference asap; the HMAC has already been computed.
 	psk = "" //nolint:ineffassign
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(mac)) != 1 {
-		log.Printf("ssh-tunnel: hmac mismatch node=%d uid=%s", node.ID, uid)
+		tunnelLg.Warn("hmac mismatch", "node_id", node.ID, "uid", uid)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -97,7 +99,7 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	// Upgrade to WebSocket.
 	ws, err := sshTunnelUpgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ssh-tunnel: upgrade node=%d: %v", node.ID, err)
+		tunnelLg.Error("upgrade failed", "node_id", node.ID, "err", err.Error())
 		return
 	}
 	defer ws.Close() //nolint:errcheck
@@ -105,7 +107,7 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 	// Dial the local sshd. Short timeout so a misconfigured sshd fails fast.
 	tcp, err := net.DialTimeout("tcp", sshTunnelLocalAddr, 5*time.Second)
 	if err != nil {
-		log.Printf("ssh-tunnel: dial %s node=%d: %v", sshTunnelLocalAddr, node.ID, err)
+		tunnelLg.Error("dial sshd failed", "addr", sshTunnelLocalAddr, "node_id", node.ID, "err", err.Error())
 		_ = ws.WriteControl(
 			websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "sshd unreachable"),
@@ -117,19 +119,19 @@ func (s *Server) HandleSSHTunnelWS(w http.ResponseWriter, r *http.Request) {
 
 	// Mark tunnel as connected in the DB so the dashboard shows it as active.
 	if err := s.DB.SetTunnelConnected(node.ID, true); err != nil {
-		log.Printf("ssh-tunnel: set connected node=%d: %v", node.ID, err)
+		tunnelLg.Error("set connected failed", "node_id", node.ID, "err", err.Error())
 	}
 
-	log.Printf("ssh-tunnel: open node=%d uid=%s peer=%s", node.ID, uid, r.RemoteAddr)
+	tunnelLg.Info("open", "node_id", node.ID, "uid", uid, "peer", r.RemoteAddr)
 
 	// Proxy bytes until either side closes.
 	proxySSHTunnelBytes(ws, tcp)
 
 	if err := s.DB.SetTunnelConnected(node.ID, false); err != nil {
-		log.Printf("ssh-tunnel: set disconnected node=%d: %v", node.ID, err)
+		tunnelLg.Error("set disconnected failed", "node_id", node.ID, "err", err.Error())
 	}
 
-	log.Printf("ssh-tunnel: closed node=%d uid=%s", node.ID, uid)
+	tunnelLg.Info("closed", "node_id", node.ID, "uid", uid)
 }
 
 // computeTunnelHMAC returns HMAC-SHA256(psk, "ssh-tunnel:<uid>:<ts>") as lowercase hex.

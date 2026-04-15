@@ -1,11 +1,11 @@
 package web
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -51,7 +51,7 @@ func (s *Server) HandleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		ids, err := s.DB.GetUserClientGroupIDs(u.ID)
 		if err != nil {
-			log.Printf("users: get group ids: %v", err)
+			logx.FromContext(r.Context()).Error("get group ids failed", "err", err.Error())
 			continue
 		}
 		for _, id := range ids {
@@ -122,7 +122,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := s.DB.CreateUserWithEmail(username, email, string(hash), role)
 	if err != nil {
-		log.Printf("user new: create: %v", err)
+		logx.FromContext(r.Context()).Error("create user failed", "err", err.Error())
 		s.render(w, r, http.StatusUnprocessableEntity, "user_form.html", userFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
@@ -135,7 +135,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	if role == "user" || role == "guest" {
 		groupIDs := parseGroupIDs(r)
 		if err := s.DB.SetUserClientGroupAccess(userID, groupIDs); err != nil {
-			log.Printf("user new: set access: %v", err)
+			logx.FromContext(r.Context()).Error("set user access failed", "err", err.Error())
 		}
 	}
 
@@ -143,7 +143,7 @@ func (s *Server) HandleUserNew(w http.ResponseWriter, r *http.Request) {
 	tagIDs := parseTagIDs(r)
 	if len(tagIDs) > 0 {
 		if err := s.DB.SetUserTagsForUser(userID, tagIDs); err != nil {
-			log.Printf("user new: set tags: %v", err)
+			logx.FromContext(r.Context()).Error("set user tags failed", "err", err.Error())
 		}
 	}
 
@@ -210,7 +210,7 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.UpdateUserEmail(target.ID, email); err != nil {
-		log.Printf("user edit: update email: %v", err)
+		logx.FromContext(r.Context()).Error("update user email failed", "err", err.Error())
 	}
 
 	if password != "" {
@@ -236,13 +236,13 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.UpdateUser(target.ID, role); err != nil {
-		log.Printf("user edit: update role: %v", err)
+		logx.FromContext(r.Context()).Error("update user role failed", "err", err.Error())
 	}
 
 	groupIDs := parseGroupIDs(r)
 	if role == "user" || role == "guest" {
 		if err := s.DB.SetUserClientGroupAccess(target.ID, groupIDs); err != nil {
-			log.Printf("user edit: set access: %v", err)
+			logx.FromContext(r.Context()).Error("set user access failed", "err", err.Error())
 		}
 	} else {
 		// superadmin/manager: clear explicit access (they see everything)
@@ -252,7 +252,7 @@ func (s *Server) HandleUserEdit(w http.ResponseWriter, r *http.Request) {
 	// Save user tags.
 	tagIDs := parseTagIDs(r)
 	if err := s.DB.SetUserTagsForUser(target.ID, tagIDs); err != nil {
-		log.Printf("user edit: set tags: %v", err)
+		logx.FromContext(r.Context()).Error("set user tags failed", "err", err.Error())
 	}
 
 	details := map[string]string{"username": target.Username, "email": email, "role": role}
@@ -291,7 +291,7 @@ func (s *Server) HandleUserDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.DeleteUser(target.ID); err != nil {
-		log.Printf("user delete: %v", err)
+		logx.FromContext(r.Context()).Error("delete user failed", "err", err.Error())
 		setFlash(w, "Could not delete user.")
 		http.Redirect(w, r, "/users", http.StatusSeeOther)
 		return

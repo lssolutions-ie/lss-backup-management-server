@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -13,6 +12,8 @@ import (
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"github.com/lssolutions-ie/lss-management-server/internal/notify"
 )
+
+var lg = logx.Component("api")
 
 type Handler struct {
 	DB                    *db.DB
@@ -33,6 +34,8 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rlg := logx.FromContext(r.Context())
+
 	var req statusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apiError(w, http.StatusBadRequest)
@@ -42,12 +45,12 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// 1. Look up node by UID
 	node, err := h.DB.GetNodeByUID(req.UID)
 	if err != nil {
-		log.Printf("api: get node uid=%s: %v", req.UID, err)
+		rlg.Error("get node failed", "uid", req.UID, "err", err.Error())
 		apiError(w, http.StatusInternalServerError)
 		return
 	}
 	if node == nil {
-		log.Printf("api: unknown uid %q (request rejected)", req.UID)
+		rlg.Warn("unknown uid rejected", "uid", req.UID)
 		apiError(w, http.StatusNotFound)
 		return
 	}
@@ -55,7 +58,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// 2. Decrypt stored PSK
 	psk, err := crypto.DecryptPSK(node.PSKEncrypted, h.AppKey)
 	if err != nil {
-		log.Printf("api: decrypt psk node=%d: %v", node.ID, err)
+		rlg.Error("decrypt psk failed", "node_id", node.ID, "err", err.Error())
 		apiError(w, http.StatusInternalServerError)
 		return
 	}
@@ -63,7 +66,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// 3. Decrypt payload
 	plaintext, err := crypto.DecryptNodePayload(req.Data, psk)
 	if err != nil {
-		log.Printf("api: decrypt payload node=%d: %v", node.ID, err)
+		rlg.Warn("decrypt payload failed", "node_id", node.ID, "err", err.Error())
 		apiError(w, http.StatusBadRequest)
 		return
 	}
@@ -71,13 +74,13 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// 4. Parse inner payload
 	var status models.NodeStatus
 	if err := json.Unmarshal(plaintext, &status); err != nil {
-		log.Printf("api: parse payload node=%d: %v", node.ID, err)
+		rlg.Warn("parse payload failed", "node_id", node.ID, "err", err.Error())
 		apiError(w, http.StatusBadRequest)
 		return
 	}
 	// Accept v1 (original), v2 (v2.2.0+ CLIs with JobResult), v3 (v2.3.0+ with audit_events).
 	if status.PayloadVersion != "1" && status.PayloadVersion != "2" && status.PayloadVersion != "3" {
-		log.Printf("api: unknown payload_version %q from node=%d", status.PayloadVersion, node.ID)
+		rlg.Warn("unknown payload_version", "payload_version", status.PayloadVersion, "node_id", node.ID)
 		apiError(w, http.StatusBadRequest)
 		return
 	}
@@ -90,14 +93,16 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	age := now.Sub(status.ReportedAt)
 	if age > maxAge {
-		log.Printf("api: stale report rejected node=%d uid=%s reported_at=%s age=%s",
-			node.ID, node.UID, status.ReportedAt.Format(time.RFC3339), age)
+		rlg.Warn("stale report rejected",
+			"node_id", node.ID, "uid", node.UID,
+			"reported_at", status.ReportedAt.Format(time.RFC3339), "age", age.String())
 		apiError(w, http.StatusBadRequest)
 		return
 	}
 	if age < -maxFuture {
-		log.Printf("api: future-dated report rejected node=%d uid=%s reported_at=%s skew=%s",
-			node.ID, node.UID, status.ReportedAt.Format(time.RFC3339), -age)
+		rlg.Warn("future-dated report rejected",
+			"node_id", node.ID, "uid", node.UID,
+			"reported_at", status.ReportedAt.Format(time.RFC3339), "skew", (-age).String())
 		apiError(w, http.StatusBadRequest)
 		return
 	}
@@ -111,9 +116,8 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Routine per-heartbeat line demoted to DEBUG so it doesn't drown the journal.
 	// Override via LSS_LOG_LEVEL=debug when you actually need to see every ping.
-	logx.Component("api").Debug("status report",
+	rlg.Debug("status report",
 		"type", reportType, "node_id", node.ID, "uid", node.UID, "jobs", len(status.Jobs))
-	_ = log.Default // keep import used by other sites below
 
 	// 5. Upsert job snapshots, detect anomalies, and remove stale jobs.
 	tuning, _ := h.DB.GetServerTuning()
@@ -125,7 +129,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		prev, _ := h.DB.GetJobSnapshotPrev(node.ID, job.ID)
 
 		if err := h.DB.UpsertJobSnapshotWithCategory(node.ID, job, cat); err != nil {
-			log.Printf("api: upsert job %s node=%d: %v", job.ID, node.ID, err)
+			rlg.Error("upsert job failed", "job_id", job.ID, "node_id", node.ID, "err", err.Error())
 		}
 		reportedJobIDs = append(reportedJobIDs, job.ID)
 
@@ -136,19 +140,19 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if deleted, err := h.DB.DeleteStaleJobSnapshots(node.ID, reportedJobIDs); err != nil {
-		log.Printf("api: delete stale jobs node=%d: %v", node.ID, err)
+		rlg.Error("delete stale jobs failed", "node_id", node.ID, "err", err.Error())
 	} else if deleted > 0 {
-		log.Printf("api: removed %d stale jobs from node=%d", deleted, node.ID)
+		rlg.Info("removed stale jobs", "count", deleted, "node_id", node.ID)
 	}
 
 	// 6. Insert node report
 	if err := h.DB.InsertNodeReport(node.ID, status.ReportedAt, reportType, string(plaintext)); err != nil {
-		log.Printf("api: insert report node=%d: %v", node.ID, err)
+		rlg.Error("insert report failed", "node_id", node.ID, "err", err.Error())
 	}
 
 	// 7. Update last_seen_at (and first_seen_at if first check-in)
 	if err := h.DB.UpdateNodeSeen(node.ID, now, node.FirstSeenAt == nil); err != nil {
-		log.Printf("api: update seen node=%d: %v", node.ID, err)
+		rlg.Error("update seen failed", "node_id", node.ID, "err", err.Error())
 	}
 
 	// 7b. If the node reported tunnel info, persist it. On a public key change,
@@ -156,12 +160,12 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if status.Tunnel != nil {
 		changed, err := h.DB.UpdateNodeTunnel(node.ID, status.Tunnel.Port, status.Tunnel.PublicKey, status.Tunnel.Connected)
 		if err != nil {
-			log.Printf("api: update tunnel node=%d: %v", node.ID, err)
+			rlg.Error("update tunnel failed", "node_id", node.ID, "err", err.Error())
 		} else if changed && h.TunnelAuthorizedKeysFile != "" {
 			if err := h.DB.WriteTunnelAuthorizedKeys(h.TunnelAuthorizedKeysFile); err != nil {
-				log.Printf("api: rewrite tunnel authorized_keys: %v", err)
+				rlg.Error("rewrite tunnel authorized_keys failed", "err", err.Error())
 			} else {
-				log.Printf("api: tunnel key changed for node=%d; authorized_keys regenerated", node.ID)
+				rlg.Info("tunnel key changed; authorized_keys regenerated", "node_id", node.ID)
 			}
 		}
 	}
@@ -169,7 +173,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	// 7c. If the node reported hardware info, persist it.
 	if status.Hardware != nil {
 		if err := h.DB.UpdateNodeHardware(node.ID, status.Hardware); err != nil {
-			log.Printf("api: update hardware node=%d: %v", node.ID, err)
+			rlg.Error("update hardware failed", "node_id", node.ID, "err", err.Error())
 		}
 	}
 
@@ -190,7 +194,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 				ScheduleDescription:    job.ScheduleDescription,
 			}
 			if err := h.Notifier.NotifyJobFailure(*node, snap); err != nil {
-				log.Printf("api: notify failure job=%s node=%d: %v", job.ID, node.ID, err)
+				rlg.Error("notify failure failed", "job_id", job.ID, "node_id", node.ID, "err", err.Error())
 			}
 		}
 	}
@@ -208,7 +212,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		prevAck, _ := h.DB.GetNodeAuditAckSeq(node.ID)
 		newAck, err := h.DB.InsertNodeAuditEvents(node.ID, prevAck, status.AuditEvents)
 		if err != nil {
-			log.Printf("api: audit ingest node=%d: %v", node.ID, err)
+			rlg.Error("audit ingest failed", "node_id", node.ID, "err", err.Error())
 		}
 		resp["audit_ack_seq"] = newAck
 	} else {
@@ -254,10 +258,11 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 				SnapshotID:  job.Result.SnapshotID,
 			}
 			if err := db.InsertJobAnomaly(a); err != nil {
-				log.Printf("anomaly: insert snapshot_drop: %v", err)
+				lg.Error("insert snapshot_drop anomaly failed", "err", err.Error())
 			} else {
-				log.Printf("anomaly: SNAPSHOT_DROP node=%d job=%s prev=%d curr=%d (delta=-%d)",
-					nodeID, job.ID, prev.SnapshotCount, job.Result.SnapshotCount, uint32Diff)
+				lg.Warn("anomaly snapshot_drop",
+					"node_id", nodeID, "job_id", job.ID,
+					"prev", prev.SnapshotCount, "curr", job.Result.SnapshotCount, "delta", -uint32Diff)
 			}
 		}
 	}
@@ -279,10 +284,12 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 					SnapshotID:  job.Result.SnapshotID,
 				}
 				if err := db.InsertJobAnomaly(a); err != nil {
-					log.Printf("anomaly: insert files_drop: %v", err)
+					lg.Error("insert files_drop anomaly failed", "err", err.Error())
 				} else {
-					log.Printf("anomaly: FILES_DROP node=%d job=%s prev=%d curr=%d (delta=-%d, %.1f%%)",
-						nodeID, job.ID, prev.FilesTotal, job.Result.FilesTotal, filesDiff, pctDrop)
+					lg.Warn("anomaly files_drop",
+						"node_id", nodeID, "job_id", job.ID,
+						"prev", prev.FilesTotal, "curr", job.Result.FilesTotal,
+						"delta", -filesDiff, "pct", pctDrop)
 				}
 			}
 		}
@@ -305,10 +312,12 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 					SnapshotID:  job.Result.SnapshotID,
 				}
 				if err := db.InsertJobAnomaly(a); err != nil {
-					log.Printf("anomaly: insert bytes_drop: %v", err)
+					lg.Error("insert bytes_drop anomaly failed", "err", err.Error())
 				} else {
-					log.Printf("anomaly: BYTES_DROP node=%d job=%s prev=%d curr=%d (delta=-%d, %.1f%%)",
-						nodeID, job.ID, prev.BytesTotal, job.Result.BytesTotal, bytesDiff, pctDrop)
+					lg.Warn("anomaly bytes_drop",
+						"node_id", nodeID, "job_id", job.ID,
+						"prev", prev.BytesTotal, "curr", job.Result.BytesTotal,
+						"delta", -bytesDiff, "pct", pctDrop)
 				}
 			}
 		}

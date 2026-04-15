@@ -2,11 +2,11 @@ package web
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -72,7 +72,7 @@ func (s *Server) HandleUserTagCreate(w http.ResponseWriter, r *http.Request) {
 	textColor := r.FormValue("text_color")
 	id, err := s.DB.CreateUserTag(name, color, textColor)
 	if err != nil {
-		log.Printf("user tag create: %v", err)
+		logx.FromContext(r.Context()).Error("create user tag failed", "err", err.Error())
 		setFlash(w, "Could not create user tag (name may already exist).")
 	} else {
 		s.auditServer(r, "user_tag_created", "info", "create", "user_tag",
@@ -123,7 +123,7 @@ func (s *Server) HandleUserTagEdit(w http.ResponseWriter, r *http.Request) {
 	color := r.FormValue("color")
 	textColor := r.FormValue("text_color")
 	if err := s.DB.UpdateUserTag(id, name, color, textColor); err != nil {
-		log.Printf("user tag edit: %v", err)
+		logx.FromContext(r.Context()).Error("edit user tag failed", "err", err.Error())
 	}
 	s.auditServer(r, "user_tag_updated", "info", "update", "user_tag",
 		strconv.FormatUint(id, 10),
@@ -214,7 +214,7 @@ func (s *Server) HandleUserTagBulkDelete(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 		if err := s.DB.DeleteUserTag(id); err != nil {
-			log.Printf("user tag bulk delete: %v", err)
+			logx.FromContext(r.Context()).Error("user tag bulk delete failed", "err", err.Error())
 			continue
 		}
 		count++
@@ -244,7 +244,7 @@ func (s *Server) HandleUserTagDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.DB.DeleteUserTag(id); err != nil {
-		log.Printf("user tag delete: %v", err)
+		logx.FromContext(r.Context()).Error("delete user tag failed", "err", err.Error())
 	}
 	s.auditServer(r, "user_tag_deleted", "warn", "delete", "user_tag",
 		strconv.FormatUint(id, 10), "Deleted user tag", nil)

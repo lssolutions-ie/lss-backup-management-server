@@ -1,7 +1,6 @@
 package web
 
 import (
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,7 +47,6 @@ func (s *Server) HandleSessionReplay(w http.ResponseWriter, r *http.Request) {
 		PageData: s.newPageData(r),
 		Filename: name,
 	})
-	_ = log.Default
 }
 
 type replayPageData struct {

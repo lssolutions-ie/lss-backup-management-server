@@ -1,11 +1,11 @@
 package web
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -106,7 +106,7 @@ func (s *Server) HandleUserGroupNew(w http.ResponseWriter, r *http.Request) {
 	}
 	gid, err := s.DB.CreateUserGroup(name, clientID)
 	if err != nil {
-		log.Printf("user-group new: %v", err)
+		logx.FromContext(r.Context()).Error("create user group failed", "err", err.Error())
 		s.render(w, r, http.StatusUnprocessableEntity, "user_group_form.html", userGroupFormPageData{
 			PageData:    s.newPageData(r),
 			Clients:     clients,
@@ -195,7 +195,7 @@ func (s *Server) HandleUserGroupEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	clientID, _ := strconv.ParseUint(clientIDStr, 10, 64)
 	if err := s.DB.UpdateUserGroup(id, name, clientID); err != nil {
-		log.Printf("user-group edit: %v", err)
+		logx.FromContext(r.Context()).Error("update user group failed", "err", err.Error())
 	}
 	applyMembersAndTags(s, r, id)
 	s.auditServer(r, "user_group_updated", "info", "update", "user_group",
@@ -224,7 +224,7 @@ func (s *Server) HandleUserGroupDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.DB.DeleteUserGroup(id); err != nil {
-		log.Printf("user-group delete: %v", err)
+		logx.FromContext(r.Context()).Error("delete user group failed", "err", err.Error())
 	}
 	s.auditServer(r, "user_group_deleted", "warn", "delete", "user_group",
 		strconv.FormatUint(id, 10), "Deleted user group", nil)

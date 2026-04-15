@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"log"
 	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
@@ -37,37 +36,37 @@ func (w *RetentionWorker) run() {
 func (w *RetentionWorker) tick() {
 	tuning, err := w.db.GetServerTuning()
 	if err != nil {
-		log.Printf("retention: get tuning: %v", err)
+		lg.Error("get tuning failed", "err", err.Error())
 		return
 	}
 	// Step 1: aggregate anything older than retention_raw_days into daily stats.
 	if n, err := w.db.AggregateDailyStats(tuning.RetentionRawDays); err != nil {
-		log.Printf("retention: aggregate: %v", err)
+		lg.Error("aggregate failed", "err", err.Error())
 	} else if n > 0 {
-		log.Printf("retention: aggregated %d job-day rows beyond %d days", n, tuning.RetentionRawDays)
+		lg.Info("aggregated job-day rows", "count", n, "beyond_days", tuning.RetentionRawDays)
 	}
 	// Step 2: prune heartbeats older than raw cutoff.
 	if n, err := w.db.PruneHeartbeatReports(tuning.RetentionRawDays); err != nil {
-		log.Printf("retention: prune heartbeats: %v", err)
+		lg.Error("prune heartbeats failed", "err", err.Error())
 	} else if n > 0 {
-		log.Printf("retention: pruned %d heartbeat reports older than %d days", n, tuning.RetentionRawDays)
+		lg.Info("pruned heartbeat reports", "count", n, "older_than_days", tuning.RetentionRawDays)
 	}
 	// Step 3: prune everything older than post_run cutoff.
 	if n, err := w.db.PruneAllReports(tuning.RetentionPostRunDays); err != nil {
-		log.Printf("retention: prune all: %v", err)
+		lg.Error("prune all reports failed", "err", err.Error())
 	} else if n > 0 {
-		log.Printf("retention: pruned %d reports older than %d days", n, tuning.RetentionPostRunDays)
+		lg.Info("pruned reports", "count", n, "older_than_days", tuning.RetentionPostRunDays)
 	}
 	// Step 4: prune audit_log rows older than configured retention (0 = forever).
 	if n, err := w.db.PruneAuditLog(tuning.AuditRetentionDays); err != nil {
-		log.Printf("retention: prune audit: %v", err)
+		lg.Error("prune audit failed", "err", err.Error())
 	} else if n > 0 {
-		log.Printf("retention: pruned %d audit rows older than %d days", n, tuning.AuditRetentionDays)
+		lg.Info("pruned audit rows", "count", n, "older_than_days", tuning.AuditRetentionDays)
 	}
 	// Step 5: prune terminal session .cast recordings.
 	if n, err := recorder.PruneOlderThan(w.sessionsDir, tuning.TerminalRecordingRetentionDays); err != nil {
-		log.Printf("retention: prune recordings: %v", err)
+		lg.Error("prune recordings failed", "err", err.Error())
 	} else if n > 0 {
-		log.Printf("retention: pruned %d session recordings older than %d days", n, tuning.TerminalRecordingRetentionDays)
+		lg.Info("pruned session recordings", "count", n, "older_than_days", tuning.TerminalRecordingRetentionDays)
 	}
 }

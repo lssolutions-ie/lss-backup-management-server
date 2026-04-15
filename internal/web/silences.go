@@ -2,12 +2,12 @@ package web
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -51,7 +51,7 @@ func (s *Server) HandleJobSilence(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "unmute":
 		if err := s.DB.DeleteJobSilence(nodeID, jobID); err != nil {
-			log.Printf("silence: delete: %v", err)
+			logx.FromContext(r.Context()).Error("delete silence failed", "err", err.Error())
 		}
 		s.auditServer(r, "silence_cleared", "info", "delete", "silence",
 			fmt.Sprintf("%d:%s", nodeID, jobID),
@@ -66,7 +66,7 @@ func (s *Server) HandleJobSilence(w http.ResponseWriter, r *http.Request) {
 		} // else: forever
 		reason := r.FormValue("reason")
 		if err := s.DB.SetJobSilence(nodeID, jobID, until, reason, user.ID); err != nil {
-			log.Printf("silence: set: %v", err)
+			logx.FromContext(r.Context()).Error("set silence failed", "err", err.Error())
 		}
 		details := map[string]string{
 			"node_id":          strconv.FormatUint(nodeID, 10),

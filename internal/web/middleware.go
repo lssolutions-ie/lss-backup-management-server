@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -23,9 +22,12 @@ import (
 
 	"github.com/lssolutions-ie/lss-management-server/internal/config"
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var webLg = logx.Component("web")
 
 type contextKey int
 
@@ -216,7 +218,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 	}
 	w.WriteHeader(status)
 	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
-		log.Printf("template execute %s: %v", name, err)
+		logx.FromContext(r.Context()).Error("template execute failed", "name", name, "err", err.Error())
 	}
 }
 
@@ -224,13 +226,13 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 func (s *Server) renderStandalone(w http.ResponseWriter, status int, name string, data interface{}) {
 	tmpl, err := template.ParseFiles("templates/" + name)
 	if err != nil {
-		log.Printf("template parse %s: %v", name, err)
+		webLg.Error("template parse failed", "name", name, "err", err.Error())
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(status)
 	if err := tmpl.Execute(w, data); err != nil {
-		log.Printf("template execute %s: %v", name, err)
+		webLg.Error("template execute failed", "name", name, "err", err.Error())
 	}
 }
 
@@ -246,7 +248,7 @@ func (s *Server) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		sess, err := s.DB.GetSessionByToken(token)
 		if err != nil {
-			log.Printf("auth: get session: %v", err)
+			logx.FromContext(r.Context()).Warn("get session failed", "err", err.Error())
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -471,7 +473,7 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 func (s *Server) setPSKFlash(w http.ResponseWriter, psk string) {
 	encrypted, err := sealValue([]byte(psk), s.AppKey)
 	if err != nil {
-		log.Printf("set psk flash: %v", err)
+		webLg.Error("set psk flash failed", "err", err.Error())
 		return
 	}
 	http.SetCookie(w, &http.Cookie{

@@ -2,12 +2,12 @@ package web
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -162,7 +162,9 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("job history: node=%d job=%s returned %d entries (status=%q from=%q to=%q limit=%d)", nodeID, jobID, len(out), status, from, to, limit)
+	logx.FromContext(r.Context()).Debug("job history query",
+		"node_id", nodeID, "job_id", jobID, "entries", len(out),
+		"status", status, "from", from, "to", to, "limit", limit)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"entries": out})
 }

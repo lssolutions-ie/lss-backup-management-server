@@ -1,11 +1,11 @@
 package web
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -57,7 +57,7 @@ func (s *Server) HandleGroupNew(w http.ResponseWriter, r *http.Request) {
 	rank := r.FormValue("rank")
 	gid, err := s.DB.CreateClientGroup(name, rank)
 	if err != nil {
-		log.Printf("group new: %v", err)
+		logx.FromContext(r.Context()).Error("create group failed", "err", err.Error())
 		s.render(w, r, http.StatusUnprocessableEntity, "group_form.html", groupFormPageData{
 			PageData: s.newPageData(r),
 			Error:    "Could not create group (name may already be taken).",
@@ -105,7 +105,7 @@ func (s *Server) HandleGroupEdit(w http.ResponseWriter, r *http.Request) {
 
 	rank := r.FormValue("rank")
 	if err := s.DB.UpdateClientGroup(group.ID, name, rank); err != nil {
-		log.Printf("group edit: %v", err)
+		logx.FromContext(r.Context()).Error("update group failed", "err", err.Error())
 		s.render(w, r, http.StatusInternalServerError, "group_form.html", groupFormPageData{
 			PageData: s.newPageData(r),
 			Group:    group,
@@ -151,7 +151,7 @@ func (s *Server) HandleGroupDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.DeleteClientGroup(group.ID); err != nil {
-		log.Printf("group delete: %v", err)
+		logx.FromContext(r.Context()).Error("delete group failed", "err", err.Error())
 		setFlash(w, "Could not delete group.")
 		http.Redirect(w, r, "/groups", http.StatusSeeOther)
 		return

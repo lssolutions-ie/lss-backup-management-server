@@ -2,12 +2,12 @@ package web
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -215,7 +215,7 @@ func (s *Server) HandleNodeNew(w http.ResponseWriter, r *http.Request) {
 
 	nodeID, err := s.DB.CreateNode(uid, name, groupID, encrypted)
 	if err != nil {
-		log.Printf("node new: create: %v", err)
+		logx.FromContext(r.Context()).Error("create node failed", "err", err.Error())
 		s.render(w, r, http.StatusUnprocessableEntity, "node_new.html", nodeFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
@@ -347,7 +347,7 @@ func (s *Server) HandleNodeEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.UpdateNode(node.ID, name, groupID); err != nil {
-		log.Printf("node edit: update: %v", err)
+		logx.FromContext(r.Context()).Error("update node failed", "err", err.Error())
 		s.render(w, r, http.StatusInternalServerError, "node_edit.html", nodeFormPageData{
 			PageData: s.newPageData(r),
 			Groups:   groups,
@@ -390,7 +390,7 @@ func (s *Server) HandleNodeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.DeleteNode(node.ID); err != nil {
-		log.Printf("node delete: %v", err)
+		logx.FromContext(r.Context()).Error("delete node failed", "err", err.Error())
 		setFlash(w, "Could not delete node.")
 		http.Redirect(w, r, fmt.Sprintf("/nodes/%d", node.ID), http.StatusSeeOther)
 		return
@@ -486,7 +486,7 @@ func (s *Server) HandleNodeTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.SetNodeTags(node.ID, tagIDs); err != nil {
-		log.Printf("node tags: %v", err)
+		logx.FromContext(r.Context()).Error("set node tags failed", "err", err.Error())
 	}
 
 	s.auditServer(r, "node_tags_updated", "info", "update", "node",

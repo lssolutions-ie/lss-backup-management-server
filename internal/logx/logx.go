@@ -27,10 +27,21 @@ const (
 	ctxReqID
 )
 
+// init runs at package init time — BEFORE any importing package's var
+// declarations evaluate. This is critical: package-level capture sites like
+// `var lg = logx.Component("foo")` would otherwise grab the pre-init default
+// slog handler (which delegates to log.Default's output) and produce
+// double-wrapped log lines after we redirect log.Output.
+func init() {
+	Init()
+}
+
 // Init configures the global slog default logger as JSON to stderr.
 // Level comes from LSS_LOG_LEVEL (debug|info|warn|error), default info.
 // The legacy `log` package is also redirected so existing log.Printf calls
 // keep flowing out the same stream (as plain messages, not structured).
+//
+// Safe to call again — re-applies env-driven level.
 func Init() {
 	var level slog.Level
 	switch strings.ToLower(os.Getenv("LSS_LOG_LEVEL")) {

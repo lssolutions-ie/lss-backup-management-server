@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"golang.org/x/crypto/ssh"
 )
@@ -115,7 +115,7 @@ func (s *Server) HandleRepoJobs(w http.ResponseWriter, r *http.Request) {
 
 	output, err := sshExecOnNodeSudo(node, username, password, cliPath(node.HwOS)+" repo-info --json --summary")
 	if err != nil {
-		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
+		logx.FromContext(r.Context()).Error("ssh exec failed", "node_id", node.ID, "err", err.Error())
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -157,7 +157,7 @@ func (s *Server) HandleRepoSnapshots(w http.ResponseWriter, r *http.Request) {
 	cmd := fmt.Sprintf("%s repo-info --json --job %s", cliPath(node.HwOS), req.JobID)
 	output, err := sshExecOnNodeSudo(node, username, password, cmd)
 	if err != nil {
-		log.Printf("repo: ssh exec node=%d: %v", node.ID, err)
+		logx.FromContext(r.Context()).Error("ssh exec failed", "node_id", node.ID, "err", err.Error())
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -204,7 +204,7 @@ func (s *Server) HandleRepoBrowseRsync(w http.ResponseWriter, r *http.Request) {
 
 	output, err := sshExecOnNodeSudo(node, username, password, cmd)
 	if err != nil {
-		log.Printf("repo: rsync browse node=%d: %v", node.ID, err)
+		logx.FromContext(r.Context()).Error("rsync browse failed", "node_id", node.ID, "err", err.Error())
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -252,7 +252,7 @@ func (s *Server) HandleRepoBrowse(w http.ResponseWriter, r *http.Request) {
 
 	output, err := sshExecOnNodeSudo(node, username, password, cmd)
 	if err != nil {
-		log.Printf("repo: ssh browse node=%d: %v", node.ID, err)
+		logx.FromContext(r.Context()).Error("ssh browse failed", "node_id", node.ID, "err", err.Error())
 		jsonError(w, "ssh command failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -344,7 +344,7 @@ func (s *Server) HandleRepoDownloadRsync(w http.ResponseWriter, r *http.Request)
 	copyWithSessionKeepAlive(w, stdout, sessionToken, s.DB)
 	session.Wait()
 
-	log.Printf("repo: rsync download node=%d file=%s", node.ID, req.Path)
+	logx.FromContext(r.Context()).Info("rsync download", "node_id", node.ID, "file", req.Path)
 }
 
 // HandleRepoDownloadRsyncZip streams multiple files/dirs from rsync destination as zip.
@@ -429,7 +429,7 @@ func (s *Server) HandleRepoDownloadRsyncZip(w http.ResponseWriter, r *http.Reque
 	copyWithSessionKeepAlive(w, stdout, sessionToken, s.DB)
 	session.Wait()
 
-	log.Printf("repo: rsync zip download node=%d paths=%d", node.ID, len(req.Paths))
+	logx.FromContext(r.Context()).Info("rsync zip download", "node_id", node.ID, "paths", len(req.Paths))
 }
 
 // HandleRepoDownload streams a single file from a restic snapshot via SSH.
@@ -522,7 +522,7 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 	copyWithSessionKeepAlive(w, stdout, sessionToken, s.DB)
 	session.Wait()
 
-	log.Printf("repo: download node=%d file=%s", node.ID, req.Path)
+	logx.FromContext(r.Context()).Info("download", "node_id", node.ID, "file", req.Path)
 }
 
 // HandleRepoDownloadZip streams multiple files/dirs from a restic snapshot as a zip.
@@ -586,7 +586,7 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	cmd := fmt.Sprintf("%s repo-dump-zip --json %s %s%s", cliPath(node.HwOS),
 		req.JobID, req.SnapshotID, pathArgs)
 
-	log.Printf("repo: zip cmd=%s", cmd)
+	logx.FromContext(r.Context()).Debug("zip command", "cmd", cmd)
 
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
@@ -622,9 +622,9 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 	session.Wait()
 
 	if stderr.Len() > 0 {
-		log.Printf("repo: zip stderr node=%d: %s", node.ID, stderr.String())
+		logx.FromContext(r.Context()).Warn("zip stderr", "node_id", node.ID, "stderr", stderr.String())
 	}
-	log.Printf("repo: zip download node=%d paths=%d bytes=%d", node.ID, len(req.Paths), n)
+	logx.FromContext(r.Context()).Info("zip download", "node_id", node.ID, "paths", len(req.Paths), "bytes", n)
 }
 
 // cliPath returns the full path to lss-backup-cli for the given OS.

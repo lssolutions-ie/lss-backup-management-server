@@ -1,11 +1,11 @@
 package web
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -51,7 +51,7 @@ func (s *Server) HandleJobTagCreate(w http.ResponseWriter, r *http.Request) {
 	prio, _ := strconv.ParseUint(r.FormValue("priority"), 10, 8)
 	id, err := s.DB.CreateJobTag(name, color, textColor, uint8(prio))
 	if err != nil {
-		log.Printf("job tag create: %v", err)
+		logx.FromContext(r.Context()).Error("create job tag failed", "err", err.Error())
 		setFlash(w, "Could not create tag (name may already exist).")
 	} else {
 		s.auditServer(r, "job_tag_created", "info", "create", "job_tag",
@@ -103,7 +103,7 @@ func (s *Server) HandleJobTagEdit(w http.ResponseWriter, r *http.Request) {
 	textColor := r.FormValue("text_color")
 	prio, _ := strconv.ParseUint(r.FormValue("priority"), 10, 8)
 	if err := s.DB.UpdateJobTag(id, name, color, textColor, uint8(prio)); err != nil {
-		log.Printf("job tag edit: %v", err)
+		logx.FromContext(r.Context()).Error("edit job tag failed", "err", err.Error())
 	}
 	s.auditServer(r, "job_tag_updated", "info", "update", "job_tag",
 		strconv.FormatUint(id, 10),
@@ -130,7 +130,7 @@ func (s *Server) HandleJobTagDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.DB.DeleteJobTag(id); err != nil {
-		log.Printf("job tag delete: %v", err)
+		logx.FromContext(r.Context()).Error("delete job tag failed", "err", err.Error())
 	}
 	s.auditServer(r, "job_tag_deleted", "warn", "delete", "job_tag",
 		strconv.FormatUint(id, 10), "Deleted job tag", nil)

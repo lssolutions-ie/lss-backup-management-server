@@ -7,13 +7,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/smtp"
 	"strconv"
 	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -171,7 +171,7 @@ func (s *Server) HandleForcePassword(w http.ResponseWriter, r *http.Request) {
 		"Forced password change for "+user.Username,
 		map[string]string{"username": user.Username, "forced": "true"})
 
-	log.Printf("auth: forced password change user=%q", user.Username)
+	logx.FromContext(r.Context()).Info("forced password change", "user", user.Username)
 	// Next request will hit RequireAuth which will redirect to 2FA setup.
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -245,7 +245,7 @@ func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.SaveSMTPConfig(cfg); err != nil {
-		log.Printf("smtp settings: save: %v", err)
+		logx.FromContext(r.Context()).Error("save smtp config failed", "err", err.Error())
 		s.render(w, r, http.StatusInternalServerError, "smtp_settings.html", smtpPageData{
 			PageData: s.newPageData(r),
 			SMTP:     cfg,
@@ -265,7 +265,7 @@ func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 			"enabled":      fmt.Sprintf("%t", cfg.Enabled),
 		})
 
-	log.Printf("smtp: config updated by user")
+	logx.FromContext(r.Context()).Info("smtp config updated")
 	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
 		PageData: s.newPageData(r),
 		SMTP:     cfg,
@@ -355,7 +355,7 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 	cfg.PasswordEnc = password
 
 	if sendErr != nil {
-		log.Printf("smtp test: failed: %v", sendErr)
+		logx.FromContext(r.Context()).Warn("smtp test failed", "err", sendErr.Error())
 		s.auditServer(r, "smtp_test", "warn", "test", "smtp_config", "",
 			"SMTP test email failed",
 			map[string]string{"to": to, "error": sendErr.Error()})
@@ -371,7 +371,7 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 		"SMTP test email sent to "+to,
 		map[string]string{"to": to})
 
-	log.Printf("smtp test: sent to %s", to)
+	logx.FromContext(r.Context()).Info("smtp test sent", "to", to)
 	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
 		PageData: s.newPageData(r),
 		SMTP:     cfg,

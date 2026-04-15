@@ -2,11 +2,11 @@ package web
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -101,7 +101,7 @@ func (s *Server) HandleTagEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.UpdateTag(id, name, color, textColor); err != nil {
-		log.Printf("tag edit: update: %v", err)
+		logx.FromContext(r.Context()).Error("update tag failed", "err", err.Error())
 	}
 
 	s.auditServer(r, "tag_updated", "info", "update", "tag",
@@ -141,7 +141,7 @@ func (s *Server) HandleTagCreate(w http.ResponseWriter, r *http.Request) {
 	newID, err := s.DB.CreateTagWithTextColor(name, color, textColor)
 	wantsJSON := strings.Contains(r.Header.Get("Accept"), "application/json")
 	if err != nil {
-		log.Printf("tag create: %v", err)
+		logx.FromContext(r.Context()).Error("create tag failed", "err", err.Error())
 		if wantsJSON {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnprocessableEntity)
@@ -231,7 +231,7 @@ func (s *Server) HandleTagBulkDelete(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if err := s.DB.DeleteTag(id); err != nil {
-			log.Printf("tag bulk delete: %v", err)
+			logx.FromContext(r.Context()).Error("tag bulk delete failed", "err", err.Error())
 			continue
 		}
 		count++
@@ -263,7 +263,7 @@ func (s *Server) HandleTagDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.DeleteTag(id); err != nil {
-		log.Printf("tag delete: %v", err)
+		logx.FromContext(r.Context()).Error("delete tag failed", "err", err.Error())
 	}
 	s.auditServer(r, "tag_deleted", "warn", "delete", "tag",
 		strconv.FormatUint(id, 10), "Deleted tag", nil)

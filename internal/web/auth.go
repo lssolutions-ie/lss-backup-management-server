@@ -5,12 +5,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image/png"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
@@ -86,7 +86,7 @@ func (s *Server) HandleSetup(w http.ResponseWriter, r *http.Request) {
 
 	uid, err := s.DB.CreateUser(username, string(hash), "superadmin")
 	if err != nil {
-		log.Printf("setup: create user: %v", err)
+		logx.FromContext(r.Context()).Error("setup create user failed", "err", err.Error())
 		s.renderStandalone(w, http.StatusUnprocessableEntity, "setup.html",
 			setupPageData{Error: "Could not create user: " + err.Error()})
 		return
@@ -124,7 +124,7 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.DB.GetUserByLogin(username)
 	if err != nil {
-		log.Printf("login: get user: %v", err)
+		logx.FromContext(r.Context()).Error("get user failed", "err", err.Error())
 		s.renderStandalone(w, http.StatusInternalServerError, "login.html",
 			loginPageData{Error: "An error occurred. Please try again."})
 		return
@@ -132,7 +132,7 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if user == nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
 		recordLoginFailure(r.RemoteAddr)
-		log.Printf("auth: login failed user=%q ip=%s", username, r.RemoteAddr)
+		logx.FromContext(r.Context()).Warn("login failed", "user", username, "ip", r.RemoteAddr)
 		s.auditServerFor(r, nil, "auth_login_failed", "warn", "login_failed", "user", "",
 			"Failed login attempt for "+username,
 			map[string]string{"username": username})
@@ -212,7 +212,7 @@ func (s *Server) HandleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 	code := r.FormValue("code")
 	if !totp.Validate(code, user.TOTPSecret) {
 		recordLoginFailure(r.RemoteAddr)
-		log.Printf("auth: 2fa failed user=%q ip=%s", user.Username, r.RemoteAddr)
+		logx.FromContext(r.Context()).Warn("2fa failed", "user", user.Username, "ip", r.RemoteAddr)
 		s.auditServerFor(r, user, "auth_2fa_failed", "warn", "2fa_failed", "user",
 			strconv.FormatUint(user.ID, 10),
 			"Failed 2FA verification for "+user.Username, nil)
@@ -244,7 +244,7 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, user *mod
 		return
 	}
 
-	log.Printf("auth: login ok user=%q role=%s ip=%s 2fa=%v", user.Username, user.Role, r.RemoteAddr, user.TOTPEnabled)
+	logx.FromContext(r.Context()).Info("login ok", "user", user.Username, "role", user.Role, "ip", r.RemoteAddr, "twofa", user.TOTPEnabled)
 	s.auditServerFor(r, user, "auth_login", "info", "login", "user",
 		strconv.FormatUint(user.ID, 10),
 		"Logged in as "+user.Username,
@@ -339,7 +339,7 @@ func (s *Server) HandleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("auth: 2fa enabled user=%q", user.Username)
+	logx.FromContext(r.Context()).Info("2fa enabled", "user", user.Username)
 	s.auditServerFor(r, user, "auth_2fa_enabled", "info", "2fa_enable", "user",
 		strconv.FormatUint(user.ID, 10), "2FA enabled for "+user.Username, nil)
 	setFlash(w, "Two-factor authentication has been enabled.")
@@ -364,7 +364,7 @@ func (s *Server) HandleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("auth: 2fa disabled user=%q", user.Username)
+	logx.FromContext(r.Context()).Info("2fa disabled", "user", user.Username)
 	s.auditServerFor(r, user, "auth_2fa_disabled", "warn", "2fa_disable", "user",
 		strconv.FormatUint(user.ID, 10), "2FA disabled for "+user.Username, nil)
 	setFlash(w, "Two-factor authentication has been disabled.")
@@ -382,7 +382,7 @@ func (s *Server) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(s.Config.Session.CookieName); err == nil {
 		ClearSessionSSHCreds(cookie.Value)
 		if err := s.DB.DeleteSession(cookie.Value); err != nil {
-			log.Printf("logout: delete session: %v", err)
+			logx.FromContext(r.Context()).Warn("logout delete session failed", "err", err.Error())
 		}
 	}
 	if u != nil {

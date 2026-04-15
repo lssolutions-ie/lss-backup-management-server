@@ -5,17 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 	"github.com/lssolutions-ie/lss-management-server/internal/recorder"
 	"golang.org/x/crypto/ssh"
 )
+
+var termLg = logx.Component("terminal")
 
 // terminalPageData is used by templates/terminal.html.
 type terminalPageData struct {
@@ -93,7 +95,7 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("terminal: upgrade failed: %v", err)
+		logx.FromContext(r.Context()).Error("upgrade failed", "err", err.Error())
 		return
 	}
 	defer ws.Close()
@@ -154,8 +156,9 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 
 	// NB: never log the password. Log enough to audit who connected where.
 	mode := map[bool]string{true: "via-tunnel", false: "direct"}[viaTunnel]
-	log.Printf("terminal: user=%s opening ssh %s=%s@%s:%d",
-		user.Username, mode, auth.Username, dialHost, dialPort)
+	logx.FromContext(r.Context()).Info("opening ssh",
+		"user", user.Username, "mode", mode,
+		"ssh_user", auth.Username, "host", dialHost, "port", dialPort)
 
 	// Session recording — one .cast file per connection when enabled in tuning.
 	var rec *recorder.Recorder
@@ -165,7 +168,7 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		title := fmt.Sprintf("%s → %s@%s:%d (%s)", user.Username, auth.Username, dialHost, dialPort, mode)
 		r2, p, err := recorder.New(s.Config.Terminal.SessionsDir, sessionID, title, auth.Cols, auth.Rows)
 		if err != nil {
-			log.Printf("terminal: recorder init failed: %v", err)
+			logx.FromContext(r.Context()).Error("recorder init failed", "err", err.Error())
 		} else {
 			rec = r2
 			castPath = p
@@ -195,8 +198,10 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		if rec != nil {
 			_ = rec.Close()
 		}
-		log.Printf("terminal: user=%s closed ssh %s=%s@%s:%d duration=%s",
-			user.Username, mode, auth.Username, dialHost, dialPort, dur)
+		logx.FromContext(r.Context()).Info("closed ssh",
+			"user", user.Username, "mode", mode,
+			"ssh_user", auth.Username, "host", dialHost, "port", dialPort,
+			"duration", dur.String())
 		closeDetails := map[string]string{
 			"mode":       mode,
 			"ssh_user":   auth.Username,
@@ -368,13 +373,13 @@ func (s *Server) tofuHostKeyCallback(host string) ssh.HostKeyCallback {
 			if err := s.DB.SaveSSHHostKey(host, keyType, keyData); err != nil {
 				return fmt.Errorf("host key store: %w", err)
 			}
-			log.Printf("terminal: TOFU stored host key for %s (%s)", host, keyType)
+			termLg.Info("TOFU stored host key", "host", host, "key_type", keyType)
 			return nil
 		}
 
 		// Subsequent connection — verify.
 		if storedType != keyType || storedData != keyData {
-			log.Printf("terminal: HOST KEY MISMATCH for %s (stored=%s, got=%s)", host, storedType, keyType)
+			termLg.Error("HOST KEY MISMATCH", "host", host, "stored_type", storedType, "got_type", keyType)
 			return fmt.Errorf("host key mismatch for %s — possible MITM attack. Delete the stored key in the database to re-trust.", host)
 		}
 
@@ -384,7 +389,7 @@ func (s *Server) tofuHostKeyCallback(host string) ssh.HostKeyCallback {
 
 // wsSendError sends an error message and closes the connection.
 func wsSendError(ws *websocket.Conn, msg string) {
-	log.Printf("terminal: %s", msg)
+	termLg.Warn("ws error sent", "msg", msg)
 	b, _ := json.Marshal(terminalServerMsg{Type: "error", Data: msg})
 	_ = ws.WriteMessage(websocket.TextMessage, b)
 }

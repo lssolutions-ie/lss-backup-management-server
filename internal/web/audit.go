@@ -1,11 +1,13 @@
 package web
 
 import (
-	"log"
 	"net/http"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
+
+var auditLg = logx.Component("audit")
 
 // auditServer records a user-originated action, pulling user from request context.
 // Silent on error — audit must never block the main flow.
@@ -30,6 +32,6 @@ func (s *Server) auditServerFor(r *http.Request, u *models.User, category, sever
 		}
 	}
 	if err := s.DB.InsertServerAuditLog(userID, username, ip, category, severity, action, entityType, entityID, message, details); err != nil {
-		log.Printf("audit: server insert: %v", err)
+		auditLg.Error("server insert failed", "err", err.Error())
 	}
 }

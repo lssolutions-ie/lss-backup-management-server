@@ -1,7 +1,10 @@
 package web
 
 import (
+	"bufio"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +32,23 @@ func (w *statusCapturingWriter) Write(b []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(b)
 	w.bytes += n
 	return n, err
+}
+
+// Hijack passes through to the underlying ResponseWriter — needed for WebSocket
+// upgrades. Without this, gorilla/websocket's Upgrade fails with "response does
+// not implement http.Hijacker" and every /ws/ connection breaks.
+func (w *statusCapturingWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, errors.New("underlying ResponseWriter does not support hijacking")
+}
+
+// Flush passes through to the underlying ResponseWriter when supported.
+func (w *statusCapturingWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // RequestLog attaches a request ID + per-request logger to every request and

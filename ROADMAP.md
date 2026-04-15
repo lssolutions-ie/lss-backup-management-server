@@ -8,9 +8,9 @@ Items committed for future work but not blocking today's release. Ordered by pri
 
 The current 3-detector engine catches obvious attacks (full repo wipes, ransomware, mass deletions). To make it production-grade against sophisticated threats, the following are queued:
 
-### Critical
+### Deferred — do LAST (user decision 2026-04-15)
 
-- **SMTP notifier wired to anomalies + failures.** Right now anomalies sit silently in the UI — an attack at 03:00 emails nobody. SMTP is configured but the notifier is still NoOp. Highest-impact remaining work.
+- **All notification work is deferred to the very end of the project.** This includes SMTP wiring to anomalies/failures, webhook notifier (Slack/PagerDuty/JSON POST), and mandatory-ack-escalation. Do not start on any of these until everything else on this roadmap is done. The UI + detection + forensics stack must be complete first.
 
 ### High
 
@@ -24,7 +24,6 @@ The current 3-detector engine catches obvious attacks (full repo wipes, ransomwa
 ### Medium
 
 - **Append-only / off-server anomaly log** (syslog, file mirror, or external write-once store) so a compromised management server can't `DELETE FROM job_anomalies` to erase forensics.
-- **Webhook notifier** alongside SMTP — Slack, PagerDuty, generic JSON POST.
 - **Cross-node correlation** — surface "5 anomalies across 3 nodes in 10 min" as a meta-alert (campaign view).
 - **Slow-drift detection** — current per-run delta thresholds miss attackers who delete a few files daily forever, never crossing the threshold. Need rolling-window absolute-count tracking.
 
@@ -38,7 +37,6 @@ The current 3-detector engine catches obvious attacks (full repo wipes, ransomwa
 ### Low
 
 - **Per-job auto-baseline / FP reduction** — learn typical churn per job to tune sensitivity automatically.
-- **Mandatory ack within N hours, else escalate** to higher-priority alert channel.
 - **Silence policy controls** — max silence duration, audit log of who muted what (stop fatigued admins from over-silencing).
 - **First-run baseline gap** — attacker who hits a brand-new node before any backup ever ran has no `prev` to compare against. Need a "first observation" floor or admin-set initial baseline.
 - **Pointer types in `JobResult`** — currently CLI omitempty + Go zero-value collide on real-zero wipes. Use `*uint64` so server can distinguish "absent" from "true zero". Server has workarounds today; pointer fix is the proper protocol.

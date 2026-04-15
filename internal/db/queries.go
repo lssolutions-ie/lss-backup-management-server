@@ -1627,14 +1627,16 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       offline_threshold_minutes, offline_check_interval_minutes,
 		       default_silence_seconds,
 		       anomaly_snapshot_drop_threshold, anomaly_files_drop_pct, anomaly_files_drop_min,
-		       anomaly_bytes_drop_pct, anomaly_bytes_drop_min_mb
+		       anomaly_bytes_drop_pct, anomaly_bytes_drop_min_mb,
+		       anomaly_ack_retention_days
 		FROM server_tuning WHERE id = 1`).
 		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
 			&t.RetentionRawDays, &t.RetentionPostRunDays,
 			&t.OfflineThresholdMinutes, &t.OfflineCheckIntervalMinutes,
 			&t.DefaultSilenceSeconds,
 			&t.AnomalySnapshotDropThreshold, &t.AnomalyFilesDropPct, &t.AnomalyFilesDropMin,
-			&t.AnomalyBytesDropPct, &t.AnomalyBytesDropMinMB)
+			&t.AnomalyBytesDropPct, &t.AnomalyBytesDropMinMB,
+			&t.AnomalyAckRetentionDays)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &models.ServerTuning{
 			RepoStatsIntervalSeconds:     86400,
@@ -1649,6 +1651,7 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			AnomalyFilesDropMin:          10,
 			AnomalyBytesDropPct:          10,
 			AnomalyBytesDropMinMB:        100,
+			AnomalyAckRetentionDays:      30,
 		}, nil
 	}
 	return t, err
@@ -1668,14 +1671,16 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		  anomaly_files_drop_pct         = ?,
 		  anomaly_files_drop_min         = ?,
 		  anomaly_bytes_drop_pct         = ?,
-		  anomaly_bytes_drop_min_mb      = ?
+		  anomaly_bytes_drop_min_mb      = ?,
+		  anomaly_ack_retention_days     = ?
 		WHERE id = 1`,
 		t.RepoStatsIntervalSeconds, t.RepoStatsTimeoutSeconds,
 		t.RetentionRawDays, t.RetentionPostRunDays,
 		t.OfflineThresholdMinutes, t.OfflineCheckIntervalMinutes,
 		t.DefaultSilenceSeconds,
 		t.AnomalySnapshotDropThreshold, t.AnomalyFilesDropPct, t.AnomalyFilesDropMin,
-		t.AnomalyBytesDropPct, t.AnomalyBytesDropMinMB)
+		t.AnomalyBytesDropPct, t.AnomalyBytesDropMinMB,
+		t.AnomalyAckRetentionDays)
 	return err
 }
 
@@ -1846,16 +1851,31 @@ type EnrichedAnomaly struct {
 
 // ListEnrichedAnomalies joins anomalies with node + client info for the global Security page.
 // filter: "" or "all" → all, "ack" → only acknowledged, "unack" → only unacknowledged.
-func (d *DB) ListEnrichedAnomalies(filter string, limit int) ([]*EnrichedAnomaly, error) {
+// mode:
+//   - "live" (archiveDays > 0): excludes acked rows older than N days (those live on the archive page).
+//   - "archive" (archiveDays > 0): ONLY returns acked rows older than N days.
+//   - "all" (archiveDays = 0): returns everything regardless of age.
+func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnly bool, limit int) ([]*EnrichedAnomaly, error) {
 	if limit <= 0 {
 		limit = 200
 	}
-	where := ""
+	var conds []string
 	switch filter {
 	case "ack":
-		where = "WHERE a.acknowledged = 1"
+		conds = append(conds, "a.acknowledged = 1")
 	case "unack":
-		where = "WHERE a.acknowledged = 0"
+		conds = append(conds, "a.acknowledged = 0")
+	}
+	if archiveDays > 0 {
+		if archiveOnly {
+			conds = append(conds, fmt.Sprintf("a.acknowledged = 1 AND a.acknowledged_at IS NOT NULL AND a.acknowledged_at < NOW() - INTERVAL %d DAY", archiveDays))
+		} else {
+			conds = append(conds, fmt.Sprintf("(a.acknowledged = 0 OR a.acknowledged_at IS NULL OR a.acknowledged_at >= NOW() - INTERVAL %d DAY)", archiveDays))
+		}
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
 	}
 	rows, err := d.db.Query(`
 		SELECT a.id, a.node_id, a.job_id, a.detected_at, a.anomaly_type, a.prev_value, a.curr_value,

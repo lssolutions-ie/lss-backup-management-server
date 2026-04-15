@@ -79,7 +79,23 @@
 
     <div class="col-md-12">
       <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Security — Anomaly thresholds</h3></div>
+        <div class="card-header"><h3 class="card-title">Anomaly Tuning</h3></div>
+        <div class="card-body">
+          <p class="text-muted small">Controls the global Security &mdash; Anomalies page: thresholds for what fires, plus how long acknowledged rows stay on the live view before moving to the archive.</p>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Keep acknowledged anomalies on live page (days)</label>
+              <input type="number" name="anomaly_ack_retention_days" class="form-control" min="1" value="{{.Tuning.AnomalyAckRetentionDays}}">
+              <small class="form-hint">After this many days, acknowledged anomalies disappear from <code>/anomalies</code> but remain forever on <code>/anomalies/archive</code>. Default <strong>30</strong>.</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-12">
+      <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title">Anomaly Thresholds</h3></div>
         <div class="card-body">
           <p class="text-muted small">Triggers when a backup run shows unexpected drops vs. the previous run — possible signs of source deletion, ransomware, or repo tampering. Each anomaly is logged for forensics.</p>
           <div class="row">

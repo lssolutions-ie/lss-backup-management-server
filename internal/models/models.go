@@ -389,6 +389,7 @@ type ServerTuning struct {
 	AnomalyFilesDropMin          uint32
 	AnomalyBytesDropPct          uint32
 	AnomalyBytesDropMinMB        uint32
+	AnomalyAckRetentionDays      uint32
 }
 
 // SMTPConfig holds email server configuration.

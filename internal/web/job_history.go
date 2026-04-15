@@ -23,7 +23,14 @@ type jobHistoryEntry struct {
 	BytesLost              uint64   `json:"bytes_lost,omitempty"` // populated when this run triggered a bytes_drop anomaly
 	FilesLost              uint64   `json:"files_lost,omitempty"` // populated when this run triggered a files_drop anomaly
 	SnapshotID             string   `json:"snapshot_id,omitempty"`
-	Anomalies              []string `json:"anomalies,omitempty"` // anomaly types that fired for this run
+	Anomalies              []string `json:"anomalies,omitempty"` // anomaly types that fired for this run (for back-compat badges)
+	AnomalyRows            []historyAnomaly `json:"anomaly_rows,omitempty"` // ids + ack state, for clickable ack buttons
+}
+
+type historyAnomaly struct {
+	ID           uint64 `json:"id"`
+	Type         string `json:"type"`
+	Acknowledged bool   `json:"acknowledged"`
 }
 
 // HandleJobHistory returns the last N post-run states for a specific job.
@@ -130,6 +137,11 @@ func (s *Server) HandleJobHistory(w http.ResponseWriter, r *http.Request) {
 				if anoms, ok := anomaliesBySnap[j.Result.SnapshotID]; ok {
 					for _, a := range anoms {
 						entry.Anomalies = append(entry.Anomalies, string(a.AnomalyType))
+						entry.AnomalyRows = append(entry.AnomalyRows, historyAnomaly{
+							ID:           a.ID,
+							Type:         string(a.AnomalyType),
+							Acknowledged: a.Acknowledged,
+						})
 						switch a.AnomalyType {
 						case models.AnomalyBytesDrop:
 							if a.DeltaValue < 0 {

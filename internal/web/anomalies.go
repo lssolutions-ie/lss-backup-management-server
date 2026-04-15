@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -18,27 +19,42 @@ type anomaliesPageData struct {
 
 type globalAnomaliesPageData struct {
 	PageData
-	Anomalies []*db.EnrichedAnomaly
-	Filter    string // "all" | "ack" | "unack"
+	Anomalies     []*db.EnrichedAnomaly
+	Filter        string // "all" | "ack" | "unack"
+	Archive       bool   // true on /anomalies/archive
+	RetentionDays uint32 // server tuning value, for the banner label
 }
 
 // HandleAnomalies renders the global Security page across all nodes.
-// GET /anomalies?filter=all|ack|unack
+// GET /anomalies?filter=all|ack|unack          → live view (ack'd older than N days hidden)
+// GET /anomalies/archive?filter=all|ack|unack  → full history
 func (s *Server) HandleAnomalies(w http.ResponseWriter, r *http.Request) {
+	archive := strings.HasPrefix(r.URL.Path, "/anomalies/archive")
 	filter := r.URL.Query().Get("filter")
 	if filter == "" {
 		filter = "all"
 	}
-	list, err := s.DB.ListEnrichedAnomalies(filter, 500)
+	tuning, _ := s.DB.GetServerTuning()
+	var retention uint32
+	if tuning != nil {
+		retention = tuning.AnomalyAckRetentionDays
+	}
+	limit := 500
+	if archive {
+		limit = 5000
+	}
+	list, err := s.DB.ListEnrichedAnomalies(filter, retention, archive, limit)
 	if err != nil {
 		log.Printf("anomalies global: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	s.render(w, r, http.StatusOK, "anomalies_global.html", globalAnomaliesPageData{
-		PageData:  s.newPageData(r),
-		Anomalies: list,
-		Filter:    filter,
+		PageData:      s.newPageData(r),
+		Anomalies:     list,
+		Filter:        filter,
+		Archive:       archive,
+		RetentionDays: retention,
 	})
 }
 
@@ -63,6 +79,66 @@ func (s *Server) HandleNodeAnomalies(w http.ResponseWriter, r *http.Request) {
 		Node:      node,
 		Anomalies: list,
 	})
+}
+
+// HandleNodeAnomalyCounts returns {counts: {jobID: n}} of unacked anomalies per job for a node.
+// GET /nodes/{id}/anomaly-counts
+func (s *Server) HandleNodeAnomalyCounts(w http.ResponseWriter, r *http.Request) {
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+	if !s.EnforceNodeView(w, r, node.ID) {
+		return
+	}
+	counts, err := s.DB.CountUnackedAnomaliesByJob(node.ID)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"counts": counts})
+}
+
+// HandleAnomalyBulkAck POST /anomalies/bulk-ack  body: ids=1,2,3&action=ack|unack
+func (s *Server) HandleAnomalyBulkAck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	user := r.Context().Value(ctxUser).(*models.User)
+	action := r.FormValue("action")
+	raw := r.FormValue("ids")
+	if raw == "" || (action != "ack" && action != "unack") {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	var done int
+	for _, part := range strings.Split(raw, ",") {
+		id, err := strconv.ParseUint(strings.TrimSpace(part), 10, 64)
+		if err != nil {
+			continue
+		}
+		if action == "ack" {
+			if err := s.DB.AcknowledgeAnomaly(id, user.ID); err == nil {
+				done++
+			}
+		} else {
+			if err := s.DB.UnacknowledgeAnomaly(id); err == nil {
+				done++
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true,"updated":` + strconv.Itoa(done) + `}`))
 }
 
 // HandleAnomalyAck POST /anomalies/{id}/ack | /anomalies/{id}/unack

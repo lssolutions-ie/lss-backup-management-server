@@ -52,6 +52,7 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 		t.AnomalyFilesDropMin = parse("anomaly_files_drop_min", t.AnomalyFilesDropMin)
 		t.AnomalyBytesDropPct = parse("anomaly_bytes_drop_pct", t.AnomalyBytesDropPct)
 		t.AnomalyBytesDropMinMB = parse("anomaly_bytes_drop_min_mb", t.AnomalyBytesDropMinMB)
+		t.AnomalyAckRetentionDays = parse("anomaly_ack_retention_days", t.AnomalyAckRetentionDays)
 		if err := s.DB.UpdateServerTuning(t); err != nil {
 			log.Printf("tuning: save: %v", err)
 			s.render(w, r, http.StatusInternalServerError, "tuning.html", tuningPageData{

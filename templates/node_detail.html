@@ -227,11 +227,13 @@
           <td>
             {{$anom := index $anomalyCounts .JobID}}
             <div class="d-flex align-items-center gap-2">
-              {{if $anom}}
-                <a href="/anomalies?node={{$nodeID}}" class="text-danger text-decoration-none" title="{{$anom}} unacknowledged anomalies" style="font-size: 1.4rem; line-height: 1;"><i class="ti ti-shield-x"></i></a>
-              {{else}}
-                <span class="text-success" title="No anomalies" style="font-size: 1.4rem; line-height: 1;"><i class="ti ti-shield-check"></i></span>
-              {{end}}
+              <span class="job-shield" data-job-id="{{.JobID}}" data-count="{{$anom}}" style="font-size: 1.4rem; line-height: 1;">
+                {{if $anom}}
+                  <a href="/anomalies?node={{$nodeID}}" class="text-danger text-decoration-none" title="{{$anom}} unacknowledged anomalies"><i class="ti ti-shield-x"></i></a>
+                {{else}}
+                  <span class="text-success" title="No anomalies"><i class="ti ti-shield-check"></i></span>
+                {{end}}
+              </span>
               <div>
                 <div><strong>{{.JobName}}</strong>
                   {{if not .Enabled}}<span class="badge text-bg-light ms-1">disabled</span>{{end}}
@@ -393,6 +395,7 @@
 
 <script>
 var __nodeID = {{.Node.ID}};
+var __csrf = '{{.CSRFToken}}';
 function openMute(jobID, jobName) {
   var f = document.getElementById('mute-form');
   f.action = '/nodes/' + __nodeID + '/jobs/' + encodeURIComponent(jobID) + '/silence';
@@ -417,7 +420,7 @@ function toggleJobHistory(jobID) {
   }
 }
 
-function loadJobHistory(row, jobID) {
+function loadJobHistory(row, jobID, silent) {
   const status = row.querySelector('.jh-status').value;
   const from = row.querySelector('.jh-from').value;
   const to = row.querySelector('.jh-to').value;
@@ -428,7 +431,7 @@ function loadJobHistory(row, jobID) {
   if (to) params.set('to', to);
   params.set('limit', limit);
   const results = row.querySelector('.jh-results');
-  results.innerHTML = '<div class="text-muted small">Loading…</div>';
+  if (!silent) results.innerHTML = '<div class="text-muted small">Loading…</div>';
   fetch('/nodes/' + __nodeID + '/jobs/' + encodeURIComponent(jobID) + '/history?' + params.toString(),
         { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
     .then(function(res){ if(!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
@@ -527,7 +530,15 @@ function renderJobHistory(row) {
     }
     if (!errCell) errCell = '—';
     var anomCell = '—';
-    if (e.anomalies && e.anomalies.length > 0) {
+    if (e.anomaly_rows && e.anomaly_rows.length > 0) {
+      anomCell = e.anomaly_rows.map(function(ar){
+        var label = ar.type === 'snapshot_drop' ? 'Snapshots' : ar.type === 'files_drop' ? 'Files' : ar.type === 'bytes_drop' ? 'Bytes' : ar.type;
+        var cls = ar.acknowledged ? 'text-bg-secondary' : 'text-bg-danger';
+        var ttl = ar.acknowledged ? 'Acknowledged — click to unacknowledge' : 'Click to acknowledge';
+        var icon = ar.acknowledged ? 'ti-shield-check' : 'ti-shield-x';
+        return '<a href="#" class="jh-anom-toggle badge ' + cls + ' me-1 text-decoration-none" data-id="' + ar.id + '" data-acked="' + (ar.acknowledged ? '1' : '0') + '" title="' + ttl + '"><i class="ti ' + icon + '"></i> ' + label + '</a>';
+      }).join('');
+    } else if (e.anomalies && e.anomalies.length > 0) {
       anomCell = e.anomalies.map(function(a){
         var label = a === 'snapshot_drop' ? 'Snapshots' : a === 'files_drop' ? 'Files' : a === 'bytes_drop' ? 'Bytes' : a;
         return '<span class="badge text-bg-danger me-1" title="' + escapeHtml(a) + '"><i class="ti ti-shield-x"></i> ' + label + '</span>';
@@ -539,6 +550,24 @@ function renderJobHistory(row) {
   });
   html += '</tbody></table>';
   results.innerHTML = html;
+
+  // Wire up ack/unack on anomaly badges — update in place, no full reload.
+  results.querySelectorAll('.jh-anom-toggle').forEach(function(a){
+    a.addEventListener('click', function(ev){
+      ev.preventDefault();
+      var id = a.getAttribute('data-id');
+      var acked = a.getAttribute('data-acked') === '1';
+      var url = '/anomalies/' + id + (acked ? '/unack' : '/ack');
+      var fd = new FormData();
+      fd.append('csrf_token', __csrf);
+      fetch(url, { method: 'POST', body: fd, credentials: 'same-origin', redirect: 'manual' })
+        .then(function(){
+          loadJobHistory(row, row.getAttribute('data-job-id'), true);
+          refreshShieldsForNode();
+        })
+        .catch(function(err){ console.error('ack failed', err); });
+    });
+  });
 
   // Wire up sort handlers on the freshly rendered headers.
   results.querySelectorAll('.jh-sort').forEach(function(th){
@@ -553,6 +582,25 @@ function renderJobHistory(row) {
       renderJobHistory(row);
     });
   });
+}
+
+function refreshShieldsForNode() {
+  fetch('/nodes/' + __nodeID + '/anomaly-counts', { credentials: 'same-origin' })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(data){
+      if (!data || !data.counts) return;
+      document.querySelectorAll('.job-shield').forEach(function(sh){
+        var jid = sh.getAttribute('data-job-id');
+        var n = data.counts[jid] || 0;
+        if (n > 0) {
+          sh.innerHTML = '<a href="/anomalies?node=' + __nodeID + '" class="text-danger text-decoration-none" title="' + n + ' unacknowledged anomalies"><i class="ti ti-shield-x"></i></a>';
+        } else {
+          sh.innerHTML = '<span class="text-success" title="No anomalies"><i class="ti ti-shield-check"></i></span>';
+        }
+        sh.setAttribute('data-count', n);
+      });
+    })
+    .catch(function(err){ console.error('shield refresh failed', err); });
 }
 
 function formatBytes(b) {

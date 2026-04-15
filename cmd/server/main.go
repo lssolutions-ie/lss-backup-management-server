@@ -159,9 +159,19 @@ func main() {
 	mux.HandleFunc("/users/new", webServer.RequireManagerOrAbove(webServer.HandleUserNew))
 	mux.HandleFunc("/users/", webServer.RequireManagerOrAbove(userRouter(webServer)))
 
-	// Anomalies global page + per-row ack
+	// Anomalies global page + archive + per-row ack
 	mux.HandleFunc("/anomalies", webServer.RequireAuth(webServer.HandleAnomalies))
-	mux.HandleFunc("/anomalies/", webServer.RequireAuth(webServer.HandleAnomalyAck))
+	mux.HandleFunc("/anomalies/", webServer.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/anomalies/archive") {
+			webServer.HandleAnomalies(w, r)
+			return
+		}
+		if r.URL.Path == "/anomalies/bulk-ack" {
+			webServer.HandleAnomalyBulkAck(w, r)
+			return
+		}
+		webServer.HandleAnomalyAck(w, r)
+	}))
 
 	// Permissions (manager+ can edit unlocked rules; superadmin can lock)
 	mux.HandleFunc("/permissions", webServer.RequireManagerOrAbove(webServer.HandlePermissions))
@@ -256,6 +266,10 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 		// Anomalies (Security tab) for the node.
 		if parts[1] == "anomalies" {
 			s.HandleNodeAnomalies(w, r)
+			return
+		}
+		if parts[1] == "anomaly-counts" {
+			s.HandleNodeAnomalyCounts(w, r)
 			return
 		}
 		switch parts[1] {

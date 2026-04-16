@@ -201,6 +201,17 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 8b. DR status from CLI
+	if status.DRStatus != nil {
+		if err := h.DB.UpdateNodeDRStatus(node.ID, status.DRStatus); err != nil {
+			rlg.Error("update DR status failed", "node_id", node.ID, "err", err.Error())
+		}
+		// Clear force_run flag after the CLI has reported a result.
+		if node.DRForceRun && status.DRStatus.Status != "" {
+			_ = h.DB.ClearNodeDRForceRun(node.ID)
+		}
+	}
+
 	resp := map[string]any{"ok": true}
 
 	// If the node reported a tunnel public key, confirm it's registered so the
@@ -272,9 +283,40 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// DR config push — include when DR is enabled for this node and either
+	// the node hasn't acknowledged the current config version, or force_run is set.
+	if node.DREnabled {
+		drCfg, drErr := h.DB.GetDRConfig(h.AppKey)
+		if drErr == nil && drCfg != nil && drCfg.S3Endpoint != "" {
+			if node.DRConfigVersion < drCfg.ConfigVersion || node.DRForceRun {
+				resp["dr_config"] = map[string]any{
+					"version":         drCfg.ConfigVersion,
+					"enabled":         true,
+					"s3_endpoint":     drCfg.S3Endpoint,
+					"s3_bucket":       drCfg.S3Bucket,
+					"s3_region":       drCfg.S3Region,
+					"s3_access_key":   drCfg.S3AccessKey,
+					"s3_secret_key":   drCfg.S3SecretKey,
+					"restic_password": drCfg.ResticPassword,
+					"node_folder":     node.UID,
+					"interval_hours":  effectiveDRInterval(node, drCfg),
+					"force_run":       node.DRForceRun,
+				}
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+}
+
+// effectiveDRInterval returns the per-node DR interval if set, otherwise the global default.
+func effectiveDRInterval(node *models.Node, cfg *models.DRConfig) uint32 {
+	if node.DRIntervalHours > 0 {
+		return node.DRIntervalHours
+	}
+	return cfg.DefaultIntervalHours
 }
 
 // detectAnomalies compares the incoming job state against the previous job_snapshots

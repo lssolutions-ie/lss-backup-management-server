@@ -131,6 +131,16 @@ type Node struct {
 	HwPublicIP string
 	HwStorageJSON string // JSON array of StorageInfo
 	Tags          []Tag  // populated separately, not from the main query
+
+	// Disaster Recovery (DR) state — per-node, updated via heartbeat
+	DREnabled       bool
+	DRIntervalHours uint32
+	DRLastBackupAt  *time.Time
+	DRLastStatus    string
+	DRLastError     string
+	DRSnapshotCount uint32
+	DRForceRun      bool
+	DRConfigVersion uint32
 }
 
 // TunnelReady returns true if the server can dial 127.0.0.1:TunnelPort and expect to reach the node.
@@ -276,6 +286,29 @@ type NodeStatus struct {
 	Tunnel         *TunnelInfo   `json:"tunnel,omitempty"`
 	Hardware       *HardwareInfo `json:"hardware,omitempty"`
 	AuditEvents    []AuditEvent  `json:"audit_events,omitempty"` // v3+
+	DRStatus       *DRStatus     `json:"dr_status,omitempty"`
+}
+
+// DRConfig is the single-row global DR configuration.
+type DRConfig struct {
+	S3Endpoint           string
+	S3Bucket             string
+	S3Region             string
+	S3AccessKey          string // decrypted
+	S3SecretKey          string // decrypted
+	ResticPassword       string // decrypted
+	DefaultIntervalHours uint32
+	ConfigVersion        uint32
+}
+
+// DRStatus is what the CLI reports in each heartbeat.
+type DRStatus struct {
+	Configured    bool   `json:"configured"`
+	ConfigVersion uint32 `json:"config_version"`
+	LastBackupAt  string `json:"last_backup_at,omitempty"` // ISO8601
+	Status        string `json:"status"`                   // "success" | "failure" | ""
+	Error         string `json:"error,omitempty"`
+	SnapshotCount uint32 `json:"snapshot_count"`
 }
 
 // HardwareInfo is collected on heartbeats (not post_run).

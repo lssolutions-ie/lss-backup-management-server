@@ -200,6 +200,7 @@ func main() {
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
 	mux.HandleFunc("/settings/tuning", webServer.RequireSuperAdmin(webServer.HandleServerTuning))
+	mux.HandleFunc("/settings/node-disaster-recovery", webServer.RequireSuperAdmin(webServer.HandleDRSettings))
 	mux.HandleFunc("/settings/backup", webServer.RequireSuperAdmin(webServer.HandleBackupPage))
 	mux.HandleFunc("/settings/backup/download", webServer.RequireSuperAdmin(webServer.HandleBackupDownload))
 	mux.HandleFunc("/settings/backup/restore", webServer.RequireSuperAdmin(webServer.HandleRestore))
@@ -297,6 +298,21 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 		}
 		if parts[1] == "reset-audit-chain" {
 			s.HandleResetAuditChain(w, r)
+			return
+		}
+		// DR actions: /nodes/{id}/dr/{action}
+		if strings.HasPrefix(parts[1], "dr/") {
+			action := strings.TrimPrefix(parts[1], "dr/")
+			switch action {
+			case "enable":
+				s.HandleDRNodeAction(w, r, true)
+			case "disable":
+				s.HandleDRNodeAction(w, r, false)
+			case "run-now":
+				s.HandleDRRunNow(w, r)
+			default:
+				http.NotFound(w, r)
+			}
 			return
 		}
 		switch parts[1] {

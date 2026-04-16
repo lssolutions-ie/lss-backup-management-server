@@ -20,6 +20,15 @@
     {{if eq (printf "%s" .NodeAccess) "manage"}}
     <div class="col-auto">
       <div class="btn-list flex-nowrap">
+        {{if .User.IsSuperAdmin}}
+        <span class="btn btn-ghost-secondary pe-none" title="DR: {{if not .Node.DREnabled}}disabled{{else if eq .Node.DRLastStatus "success"}}last backup OK{{else if eq .Node.DRLastStatus "failure"}}last backup failed{{else}}enabled, no backup yet{{end}}">
+          {{if not .Node.DREnabled}}<i class="ti ti-shield-off text-muted"></i>
+          {{else if eq .Node.DRLastStatus "success"}}<i class="ti ti-shield-check text-success"></i>
+          {{else if eq .Node.DRLastStatus "failure"}}<i class="ti ti-shield-x text-danger"></i>
+          {{else}}<i class="ti ti-shield-check text-muted"></i>
+          {{end}} DR
+        </span>
+        {{end}}
         <a href="/nodes/{{.Node.ID}}/anomalies" class="btn btn-outline-danger" title="Security anomalies"><i class="ti ti-shield"></i> Security</a>
         <a href="/nodes/{{.Node.ID}}/audit" class="btn btn-outline-secondary" title="Audit log"><i class="ti ti-history"></i> Audit</a>
         {{if .User.CanTerminal}}<a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>{{end}}
@@ -33,6 +42,24 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <button type="submit" class="btn btn-danger">Delete</button>
         </form>
+        {{if .User.IsSuperAdmin}}
+        <span class="vr mx-1"></span>
+        {{if .Node.DREnabled}}
+        <form action="/nodes/{{.Node.ID}}/dr/run-now" method="POST" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-outline-primary btn-sm" title="Trigger a DR backup on the next heartbeat"><i class="ti ti-player-play me-1"></i>DR Now</button>
+        </form>
+        <form action="/nodes/{{.Node.ID}}/dr/disable" method="POST" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-outline-warning btn-sm">Disable DR</button>
+        </form>
+        {{else}}
+        <form action="/nodes/{{.Node.ID}}/dr/enable" method="POST" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-outline-success btn-sm">Enable DR</button>
+        </form>
+        {{end}}
+        {{end}}
       </div>
     </div>
     {{end}}

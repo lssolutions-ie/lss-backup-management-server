@@ -1,0 +1,93 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">Node Disaster Recovery</h2>
+    </div>
+    <div class="col-auto">
+      <a href="/settings" class="btn">Back to Settings</a>
+    </div>
+  </div>
+</div>
+
+{{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+{{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
+{{if .Flash}}<div class="alert alert-success">{{.Flash}}</div>{{end}}
+
+<div class="row">
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">S3 Repository Configuration</h3>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-4">Configure the S3-compatible storage backend used for node configuration backups via restic. Nodes with DR enabled will receive these credentials via the heartbeat response.</p>
+        <form action="/settings/node-disaster-recovery" method="POST" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+          <div class="mb-3">
+            <label class="form-label required">S3 Endpoint URL</label>
+            <input type="text" name="s3_endpoint" class="form-control" value="{{.Config.S3Endpoint}}" placeholder="https://s3.amazonaws.com">
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label required">S3 Bucket Name</label>
+              <input type="text" name="s3_bucket" class="form-control" value="{{.Config.S3Bucket}}" placeholder="my-dr-bucket">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">S3 Region</label>
+              <input type="text" name="s3_region" class="form-control" value="{{.Config.S3Region}}" placeholder="us-east-1">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label required">AWS Access Key ID</label>
+            <input type="text" name="s3_access_key" class="form-control" value="" placeholder="{{if .Config.S3AccessKey}}Leave blank to keep current key{{else}}AKIAIOSFODNN7EXAMPLE{{end}}">
+            {{if .Config.S3AccessKey}}<small class="form-hint">Currently set. Leave blank to keep the existing key.</small>{{end}}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label required">AWS Secret Access Key</label>
+            <input type="password" name="s3_secret_key" class="form-control" value="" placeholder="{{if .SecretKeyMask}}Leave blank to keep current key{{else}}Enter secret key{{end}}">
+            {{if .SecretKeyMask}}<small class="form-hint">Currently set ({{.SecretKeyMask}}). Leave blank to keep the existing key.</small>{{end}}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label required">Restic Password</label>
+            <input type="password" name="restic_password" class="form-control" value="" placeholder="{{if eq .ResticPWStatus "configured"}}Leave blank to keep current password{{else}}Enter restic repository password{{end}}">
+            <small class="form-hint">Status: <strong>{{.ResticPWStatus}}</strong>. Leave blank to keep the existing password.</small>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Default Backup Interval (hours)</label>
+            <input type="number" name="default_interval_hours" class="form-control" value="{{.Config.DefaultIntervalHours}}" min="1" max="720" style="max-width:200px">
+            <small class="form-hint">How often each node should run its DR backup. Can be overridden per-node.</small>
+          </div>
+
+          <div class="form-footer">
+            <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i> Save Configuration</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">How it works</h3>
+      </div>
+      <div class="card-body">
+        <ol class="text-muted" style="padding-left: 1.2rem; margin-bottom: 0;">
+          <li class="mb-2">Configure the S3 repository here.</li>
+          <li class="mb-2">Enable DR on individual nodes from their detail page.</li>
+          <li class="mb-2">The server pushes credentials to enabled nodes via heartbeat responses.</li>
+          <li class="mb-2">Nodes back up their configuration to the S3 repo on the configured interval.</li>
+          <li>The DR shield on each node shows the current backup status.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

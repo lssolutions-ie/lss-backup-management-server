@@ -329,7 +329,10 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
 		       n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
 		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
-		       n.created_at
+		       n.created_at,
+		       n.dr_enabled, n.dr_interval_hours, n.dr_last_backup_at,
+		       n.dr_last_status, n.dr_last_error, n.dr_snapshot_count,
+		       n.dr_force_run, n.dr_config_version
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.uid = ?`, uid).
@@ -338,7 +341,10 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 			&tPort, &n.TunnelConnected, &tKey,
 			&n.HwOS, &n.HwArch, &n.HwCPUs, &n.HwHostname,
 			&n.HwRAMBytes, &n.HwLANIP, &n.HwPublicIP, &n.HwStorageJSON,
-			&n.CreatedAt)
+			&n.CreatedAt,
+			&n.DREnabled, &n.DRIntervalHours, &n.DRLastBackupAt,
+			&n.DRLastStatus, &n.DRLastError, &n.DRSnapshotCount,
+			&n.DRForceRun, &n.DRConfigVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -356,7 +362,10 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 		       n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
 		       n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
 		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
-		       n.created_at
+		       n.created_at,
+		       n.dr_enabled, n.dr_interval_hours, n.dr_last_backup_at,
+		       n.dr_last_status, n.dr_last_error, n.dr_snapshot_count,
+		       n.dr_force_run, n.dr_config_version
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.id = ?`, id).
@@ -365,7 +374,10 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 			&tPort, &n.TunnelConnected, &tKey,
 			&n.HwOS, &n.HwArch, &n.HwCPUs, &n.HwHostname,
 			&n.HwRAMBytes, &n.HwLANIP, &n.HwPublicIP, &n.HwStorageJSON,
-			&n.CreatedAt)
+			&n.CreatedAt,
+			&n.DREnabled, &n.DRIntervalHours, &n.DRLastBackupAt,
+			&n.DRLastStatus, &n.DRLastError, &n.DRSnapshotCount,
+			&n.DRForceRun, &n.DRConfigVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

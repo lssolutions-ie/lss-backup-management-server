@@ -64,6 +64,12 @@ Pair this file with `README.md` (convention) and `CLAUDE.md` § Database (the ta
 | 034 | `034_anomaly_resolution_note.sql` | `resolution_note` on `job_anomalies`. Captured at ack time, surfaced as a tooltip on the Ack'd badge — closes the "why was this acked?" forensics question. Free text up to 500 chars. |
 | 035 | `035_host_audit.sql` | Extends `audit_log.source` ENUM with `'host'` and adds `host_audit_state` for the journalctl cursor. Powers the host-audit worker that captures sshd logins, sudo invocations, and lss-management.service lifecycle into the unified audit feed. |
 
+## v1.15.x — disaster recovery
+
+| # | File | Why |
+|---|------|-----|
+| 038 | `038_disaster_recovery.sql` | Server-controlled node config backup to S3. `dr_config` single-row table holds S3 endpoint, bucket, region, access key, secret key, restic password (secrets encrypted with AppKey) + default interval + config version. 8 new columns on `nodes` for per-node DR state (enabled, interval, last_backup_at, last_status, last_error, snapshot_count, force_run, config_version). Server pushes credentials to CLI via heartbeat response; CLI backs up, reports status via heartbeat payload. |
+
 ## Maintaining this file
 
 - Add a row when you write a new `NNN_x.sql` migration. Keep it to one line.

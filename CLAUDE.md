@@ -11,8 +11,8 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.14.5
-**Paired CLI:** v2.5.0
+**Version:** v1.15.0
+**Paired CLI:** v2.7.1
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -195,7 +195,7 @@ Sample line:
 
 ## Database
 
-MySQL with 37 migrations:
+MySQL with 38 migrations:
 
 | Migration | Purpose |
 |-----------|---------|
@@ -236,6 +236,7 @@ MySQL with 37 migrations:
 | 035 | audit_log.source ENUM extended with 'host' + host_audit_state table for journalctl cursor |
 | 036 | job_snapshots.snapshot_ids JSON + job_anomalies.prev_snapshot_id/curr_snapshot_id — forensics |
 | 037 | nodes.audit_chain_head — HMAC chain verification for audit tamper evidence |
+| 038 | dr_config table (S3 creds encrypted at rest) + 8 DR columns on nodes — server-controlled disaster recovery |
 
 ---
 
@@ -649,14 +650,44 @@ Per-event `hmac = HMAC-SHA256(psk, prev_hmac_hex_string || canonical_json(event_
 
 ---
 
+## Disaster Recovery (v1.15.0, paired with CLI v2.7.1)
+
+Server-controlled node config backup to S3 via restic. Every node's CLI configuration is automatically backed up at a configurable interval.
+
+### Architecture
+- **One S3 repo per deployment**, bucket per client. Nodes get folders: `s3://{bucket}/{node-uid}/`.
+- **Per-client restic password** (not per-node). Stored encrypted at rest in `dr_config` table using AppKey.
+- **Server pushes config** via heartbeat response (`dr_config` object with S3 creds + restic password + interval + force_run). CLI caches encrypted locally, runs restic backup on schedule.
+- **CLI reports status** via heartbeat payload (`dr_status` object). Server updates per-node DR columns.
+
+### Settings page
+`/settings/node-disaster-recovery` (superadmin) — S3 endpoint, bucket, region, access key, secret key, restic password, default interval (hours). Secrets encrypted before DB storage.
+
+### Shield states (on node detail + node list)
+- **Grey** `ti-shield-off` — DR not enabled. Click to enable (requires global S3 config first).
+- **Green** `ti-shield-check` — last backup within interval AND status=success.
+- **Red** `ti-shield-x` — enabled but failed / overdue / never ran.
+
+### Actions (superadmin)
+- **Enable DR** — `POST /nodes/{id}/dr/enable`
+- **Disable DR** — `POST /nodes/{id}/dr/disable`
+- **Run Now** — `POST /nodes/{id}/dr/run-now` (sets `force_run=true` in next heartbeat response)
+
+### Wire format (additive, no payload_version bump)
+- Response: `dr_config {version, enabled, s3_*, restic_password, node_folder, interval_hours, force_run}`
+- Payload: `dr_status {configured, config_version, last_backup_at, status, error, snapshot_count}`
+
+---
+
 ## Roadmap
 
-**All 16 of 17 agreed plan items are shipped.** Only remaining:
+**All 16 of 17 agreed plan items are shipped + DR feature added.** Only remaining:
 
 1. **(LAST EVER)** Notification stack — SMTP, webhook, escalation.
 2. Run `install.sh` on a fresh Ubuntu 24.04 VM (code-reviewed, never executed).
 3. Off-server audit mirror (syslog emitter) — low priority with HMAC chain in place.
+4. Fix host audit journalctl worker — SSH unit name varies by Ubuntu version, currently spamming errors.
 
 ---
 
-_Last updated: 2026-04-16 (v1.14.5)_
+_Last updated: 2026-04-16 (v1.15.0)_

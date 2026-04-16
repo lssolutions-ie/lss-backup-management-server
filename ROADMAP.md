@@ -31,8 +31,8 @@ The current 3-detector engine catches obvious attacks (full repo wipes, ransomwa
 
 - ✅ **Bulk acknowledge** — shipped v1.10.13.
 - ✅ **Auto-archive acked rows older than N days** — shipped v1.10.14 (`anomaly_ack_retention_days`, /anomalies/archive page).
-- **"Mute future fires" option when acknowledging** — checkbox in the ack flow that also creates a silence on the related (node, job) for a chosen duration so you're not re-alerted while investigating.
-- **Resolution note field** — text input on the Acknowledge action; stored alongside `acknowledged_by` / `acknowledged_at`. Renders as a tooltip / detail row. Useful for forensics ("acked because dataset rotation, not an attack").
+- ✅ **Mute future fires on ack** — shipped v1.12.0 (modal with duration picker, creates job_silences row).
+- ✅ **Resolution note field** — shipped v1.12.0 (migration 034, tooltip on Ack'd badge).
 
 ### Audit + observability (mostly shipped)
 
@@ -40,8 +40,20 @@ The current 3-detector engine catches obvious attacks (full repo wipes, ransomwa
 - ✅ **Node audit** — CLI v2.3.0 ships `audit_events[]` on heartbeat v3, server ingests with self-healing ack.
 - ✅ **Terminal session recording** — asciinema v2 .cast files, in-browser replay, retention knob (v1.11.4).
 - ✅ **Structured JSON logging via slog** — request IDs, access log, s.Fail() helper (v1.11.6, v1.11.9).
-- **Host audit** — small worker polls journalctl for sshd / sudo / lss-management.service, parses, inserts into `audit_log` with `source='host'` (new enum value, migration 033). ~150 LOC + tiny migration.
-- **Off-server audit mirror** — once host audit lands, add a syslog emitter so `audit_log` rows also flow to syslog `LOG_AUTH`. One-line per emit site. Defends against compromised server `DELETE FROM audit_log`.
+- ✅ **Host audit** — shipped v1.12.0 (migration 035, journalctl polling for sshd/sudo/lss-management.service). Known issue: SSH unit name varies by Ubuntu version, causing "exit status 1" spam on some installs.
+- **Off-server audit mirror** — syslog emitter so `audit_log` rows also flow to syslog. Low priority now that HMAC chain provides tamper evidence.
+
+### Shipped since original roadmap
+
+- ✅ **HMAC chain for audit** — shipped v1.14.0–v1.14.4 + CLI v2.5.0. Tamper evidence on every audit event. See `docs/HMAC_CHAIN_SPEC.md`.
+- ✅ **"What was deleted" forensics** — shipped v1.14.5. `restic diff` over SSH tunnel, renders inline on anomaly rows.
+- ✅ **Snapshot ID set tracking** — shipped v1.13.0 (migration 036). Server diffs prev vs curr set, fires specific disappeared IDs.
+- ✅ **Backup & Restore** — shipped v1.13.1. Full server backup/restore from `/settings/backup`.
+- ✅ **Disaster Recovery** — shipped v1.15.0 + CLI v2.7.1. Server-controlled node config backup to S3 via restic. Three-state shield (grey/green/red), per-client encryption, "Run Now" button.
+- ✅ **Tunnel rate-limiting** — shipped v1.12.0. Per-UID exponential backoff.
+- ✅ **Silent-node alarm** — shipped v1.12.0 (migration 033). Fires within 7min of missed heartbeat.
+- ✅ **GitHub Actions CI** — shipped v1.12.0. Build + vet + test on push.
+- ✅ **Structured JSON logging** — shipped v1.11.6–v1.11.9. slog with request IDs, access log, s.Fail().
 
 ### Low
 

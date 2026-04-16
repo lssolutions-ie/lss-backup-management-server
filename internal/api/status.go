@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/classify"
@@ -244,18 +245,23 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 		return
 	}
 
+	prevSnapID := prev.SnapshotID
+	currSnapID := job.Result.SnapshotID
+
 	// Snapshot count drop. Only check if previous was non-zero (rsync stays at 0 forever).
 	if prev.SnapshotCount > 0 {
 		if uint32Diff := int64(prev.SnapshotCount) - int64(job.Result.SnapshotCount); uint32Diff > 0 && uint32Diff > int64(tuning.AnomalySnapshotDropThreshold) {
 			a := &models.JobAnomaly{
-				NodeID:      nodeID,
-				JobID:       job.ID,
-				AnomalyType: models.AnomalySnapshotDrop,
-				PrevValue:   int64(prev.SnapshotCount),
-				CurrValue:   int64(job.Result.SnapshotCount),
-				DeltaValue:  -uint32Diff,
-				DeltaPct:    pct(uint32Diff, int64(prev.SnapshotCount)),
-				SnapshotID:  job.Result.SnapshotID,
+				NodeID:         nodeID,
+				JobID:          job.ID,
+				AnomalyType:    models.AnomalySnapshotDrop,
+				PrevValue:      int64(prev.SnapshotCount),
+				CurrValue:      int64(job.Result.SnapshotCount),
+				DeltaValue:     -uint32Diff,
+				DeltaPct:       pct(uint32Diff, int64(prev.SnapshotCount)),
+				SnapshotID:     currSnapID,
+				PrevSnapshotID: prevSnapID,
+				CurrSnapshotID: currSnapID,
 			}
 			if err := db.InsertJobAnomaly(a); err != nil {
 				lg.Error("insert snapshot_drop anomaly failed", "err", err.Error())
@@ -267,6 +273,37 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 		}
 	}
 
+	// Snapshot ID set diff — catches single-snapshot `restic forget` inside
+	// retention that the count-based detector misses (count stays at N when
+	// one is deleted and the next backup creates one). Only runs when CLI
+	// ships SnapshotIDs (v2.5.0+); until then both sets are nil → no-op.
+	if len(prev.SnapshotIDs) > 0 && len(job.Result.SnapshotIDs) > 0 {
+		disappeared := snapshotSetDiff(prev.SnapshotIDs, job.Result.SnapshotIDs)
+		if len(disappeared) > 0 {
+			a := &models.JobAnomaly{
+				NodeID:         nodeID,
+				JobID:          job.ID,
+				AnomalyType:    models.AnomalySnapshotDrop,
+				PrevValue:      int64(len(prev.SnapshotIDs)),
+				CurrValue:      int64(len(job.Result.SnapshotIDs)),
+				DeltaValue:     -int64(len(disappeared)),
+				DeltaPct:       pct(int64(len(disappeared)), int64(len(prev.SnapshotIDs))),
+				SnapshotID:     strings.Join(disappeared, ","),
+				PrevSnapshotID: prevSnapID,
+				CurrSnapshotID: currSnapID,
+			}
+			if err := db.InsertJobAnomaly(a); err != nil {
+				lg.Error("insert snapshot_id_drop anomaly failed", "err", err.Error())
+			} else {
+				lg.Warn("anomaly snapshot_id_drop",
+					"node_id", nodeID, "job_id", job.ID,
+					"disappeared", strings.Join(disappeared, ","),
+					"prev_set_size", len(prev.SnapshotIDs),
+					"curr_set_size", len(job.Result.SnapshotIDs))
+			}
+		}
+	}
+
 	// Files total drop. Don't gate on curr > 0 — a true wipe legitimately
 	// reports zero (CLI omits the field via omitempty when value is 0).
 	if prev.FilesTotal > 0 {
@@ -274,14 +311,16 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 			pctDrop := pct(filesDiff, int64(prev.FilesTotal))
 			if filesDiff >= int64(tuning.AnomalyFilesDropMin) && pctDrop >= float64(tuning.AnomalyFilesDropPct) {
 				a := &models.JobAnomaly{
-					NodeID:      nodeID,
-					JobID:       job.ID,
-					AnomalyType: models.AnomalyFilesDrop,
-					PrevValue:   int64(prev.FilesTotal),
-					CurrValue:   int64(job.Result.FilesTotal),
-					DeltaValue:  -filesDiff,
-					DeltaPct:    pctDrop,
-					SnapshotID:  job.Result.SnapshotID,
+					NodeID:         nodeID,
+					JobID:          job.ID,
+					AnomalyType:    models.AnomalyFilesDrop,
+					PrevValue:      int64(prev.FilesTotal),
+					CurrValue:      int64(job.Result.FilesTotal),
+					DeltaValue:     -filesDiff,
+					DeltaPct:       pctDrop,
+					SnapshotID:     currSnapID,
+					PrevSnapshotID: prevSnapID,
+					CurrSnapshotID: currSnapID,
 				}
 				if err := db.InsertJobAnomaly(a); err != nil {
 					lg.Error("insert files_drop anomaly failed", "err", err.Error())
@@ -302,14 +341,16 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 			minBytes := int64(tuning.AnomalyBytesDropMinMB) * 1024 * 1024
 			if bytesDiff >= minBytes && pctDrop >= float64(tuning.AnomalyBytesDropPct) {
 				a := &models.JobAnomaly{
-					NodeID:      nodeID,
-					JobID:       job.ID,
-					AnomalyType: models.AnomalyBytesDrop,
-					PrevValue:   int64(prev.BytesTotal),
-					CurrValue:   int64(job.Result.BytesTotal),
-					DeltaValue:  -bytesDiff,
-					DeltaPct:    pctDrop,
-					SnapshotID:  job.Result.SnapshotID,
+					NodeID:         nodeID,
+					JobID:          job.ID,
+					AnomalyType:    models.AnomalyBytesDrop,
+					PrevValue:      int64(prev.BytesTotal),
+					CurrValue:      int64(job.Result.BytesTotal),
+					DeltaValue:     -bytesDiff,
+					DeltaPct:       pctDrop,
+					SnapshotID:     currSnapID,
+					PrevSnapshotID: prevSnapID,
+					CurrSnapshotID: currSnapID,
 				}
 				if err := db.InsertJobAnomaly(a); err != nil {
 					lg.Error("insert bytes_drop anomaly failed", "err", err.Error())
@@ -322,6 +363,21 @@ func detectAnomalies(db *db.DB, nodeID uint64, job models.JobStatus, prev *model
 			}
 		}
 	}
+}
+
+// snapshotSetDiff returns IDs present in prev but absent from curr.
+func snapshotSetDiff(prev, curr []string) []string {
+	currSet := make(map[string]struct{}, len(curr))
+	for _, id := range curr {
+		currSet[id] = struct{}{}
+	}
+	var disappeared []string
+	for _, id := range prev {
+		if _, ok := currSet[id]; !ok {
+			disappeared = append(disappeared, id)
+		}
+	}
+	return disappeared
 }
 
 func pct(part, whole int64) float64 {

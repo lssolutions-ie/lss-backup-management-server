@@ -1062,6 +1062,7 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 	var bytesTotal, bytesNew, filesTotal, filesNew uint64
 	var snapshotID string
 	var snapshotCount uint32
+	var snapshotIDsArg interface{} // JSON or NULL
 	if job.Result != nil {
 		bytesTotal = job.Result.BytesTotal
 		bytesNew = job.Result.BytesNew
@@ -1069,6 +1070,11 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 		filesNew = job.Result.FilesNew
 		snapshotID = job.Result.SnapshotID
 		snapshotCount = job.Result.SnapshotCount
+		if len(job.Result.SnapshotIDs) > 0 {
+			if b, err := json.Marshal(job.Result.SnapshotIDs); err == nil {
+				snapshotIDsArg = string(b)
+			}
+		}
 	}
 
 	// If the CLI sent an authoritative repo size, mark it observed NOW and reset the estimate to match.
@@ -1086,11 +1092,11 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 		   schedule_description, config_json,
 		   bytes_total, bytes_new, files_total, files_new, snapshot_id,
 		   repo_size_observed, repo_size_estimated, repo_size_observed_at,
-		   error_category, snapshot_count)
+		   error_category, snapshot_count, snapshot_ids)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		        ?, ?, ?, ?, ?,
 		        COALESCE(?, 0), COALESCE(?, 0), ?,
-		        ?, ?)
+		        ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 		  job_name                  = VALUES(job_name),
 		  program                   = VALUES(program),
@@ -1112,13 +1118,14 @@ func (d *DB) UpsertJobSnapshotWithCategory(nodeID uint64, job models.JobStatus, 
 		  repo_size_estimated       = IF(? IS NOT NULL, VALUES(repo_size_observed), repo_size_estimated + VALUES(bytes_new)),
 		  error_category            = VALUES(error_category),
 		  snapshot_count            = VALUES(snapshot_count),
+		  snapshot_ids              = COALESCE(VALUES(snapshot_ids), snapshot_ids),
 		  updated_at                = CURRENT_TIMESTAMP`,
 		nodeID, job.ID, job.Name, job.Program, job.Enabled, job.LastStatus,
 		job.LastRunAt, job.LastRunDurationSeconds, job.LastError, job.NextRunAt,
 		job.ScheduleDescription, configArg,
 		bytesTotal, bytesNew, filesTotal, filesNew, snapshotID,
 		repoSizeObservedArg, repoSizeObservedArg, repoSizeObservedAtArg,
-		errorCategory, snapshotCount,
+		errorCategory, snapshotCount, snapshotIDsArg,
 		// args for the three IF(? IS NOT NULL, ...) checks in ON DUPLICATE KEY UPDATE:
 		repoSizeObservedArg, repoSizeObservedAtArg, repoSizeObservedArg,
 	)
@@ -1709,7 +1716,8 @@ func (d *DB) GetJobSnapshotPrev(nodeID uint64, jobID string) (*models.JobSnapsho
 		       last_error, next_run_at, schedule_description, config_json, updated_at,
 		       bytes_total, bytes_new, files_total, files_new, snapshot_id,
 		       repo_size_observed, repo_size_estimated, repo_size_observed_at,
-		       error_category, repo_stats_interval_seconds, snapshot_count
+		       error_category, repo_stats_interval_seconds, snapshot_count,
+		       snapshot_ids
 		FROM job_snapshots WHERE node_id = ? AND job_id = ? LIMIT 1`, nodeID, jobID)
 	if err != nil {
 		return nil, err
@@ -1720,6 +1728,7 @@ func (d *DB) GetJobSnapshotPrev(nodeID uint64, jobID string) (*models.JobSnapsho
 	}
 	j := &models.JobSnapshot{}
 	var config sql.NullString
+	var sids sql.NullString
 	if err := rows.Scan(
 		&j.ID, &j.NodeID, &j.JobID, &j.JobName, &j.Program, &j.Enabled,
 		&j.LastStatus, &j.LastRunAt, &j.LastRunDurationSeconds,
@@ -1727,11 +1736,15 @@ func (d *DB) GetJobSnapshotPrev(nodeID uint64, jobID string) (*models.JobSnapsho
 		&j.BytesTotal, &j.BytesNew, &j.FilesTotal, &j.FilesNew, &j.SnapshotID,
 		&j.RepoSizeObserved, &j.RepoSizeEstimated, &j.RepoSizeObservedAt,
 		&j.ErrorCategory, &j.RepoStatsIntervalSec, &j.SnapshotCount,
+		&sids,
 	); err != nil {
 		return nil, err
 	}
 	if config.Valid {
 		j.ConfigJSON = config.String
+	}
+	if sids.Valid && sids.String != "" {
+		_ = json.Unmarshal([]byte(sids.String), &j.SnapshotIDs)
 	}
 	return j, nil
 }
@@ -1754,9 +1767,12 @@ func (d *DB) InsertJobAnomaly(a *models.JobAnomaly) error {
 		return nil // dedup — already an open alert
 	}
 	_, err = d.db.Exec(`
-		INSERT INTO job_anomalies (node_id, job_id, anomaly_type, prev_value, curr_value, delta_value, delta_pct, snapshot_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.NodeID, a.JobID, string(a.AnomalyType), a.PrevValue, a.CurrValue, a.DeltaValue, a.DeltaPct, a.SnapshotID)
+		INSERT INTO job_anomalies
+		  (node_id, job_id, anomaly_type, prev_value, curr_value, delta_value, delta_pct,
+		   snapshot_id, prev_snapshot_id, curr_snapshot_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.NodeID, a.JobID, string(a.AnomalyType), a.PrevValue, a.CurrValue, a.DeltaValue, a.DeltaPct,
+		a.SnapshotID, a.PrevSnapshotID, a.CurrSnapshotID)
 	return err
 }
 
@@ -1782,7 +1798,8 @@ func (d *DB) ListJobAnomalies(nodeID uint64, jobID string, onlyUnacked bool, lim
 	rows, err := d.db.Query(`
 		SELECT id, node_id, job_id, detected_at, anomaly_type, prev_value, curr_value,
 		       delta_value, delta_pct, snapshot_id, acknowledged, acknowledged_by, acknowledged_at,
-		       COALESCE(resolution_note, '')
+		       COALESCE(resolution_note, ''),
+		       COALESCE(prev_snapshot_id, ''), COALESCE(curr_snapshot_id, '')
 		FROM job_anomalies `+where+`
 		ORDER BY detected_at DESC LIMIT ?`, args...)
 	if err != nil {
@@ -1797,7 +1814,8 @@ func (d *DB) ListJobAnomalies(nodeID uint64, jobID string, onlyUnacked bool, lim
 		var ackedAt sql.NullTime
 		var acked int
 		if err := rows.Scan(&a.ID, &a.NodeID, &a.JobID, &a.DetectedAt, &atype, &a.PrevValue, &a.CurrValue,
-			&a.DeltaValue, &a.DeltaPct, &a.SnapshotID, &acked, &ackedBy, &ackedAt, &a.ResolutionNote); err != nil {
+			&a.DeltaValue, &a.DeltaPct, &a.SnapshotID, &acked, &ackedBy, &ackedAt, &a.ResolutionNote,
+			&a.PrevSnapshotID, &a.CurrSnapshotID); err != nil {
 			return nil, err
 		}
 		a.AnomalyType = models.AnomalyType(atype)
@@ -1912,6 +1930,7 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 		SELECT a.id, a.node_id, a.job_id, a.detected_at, a.anomaly_type, a.prev_value, a.curr_value,
 		       a.delta_value, a.delta_pct, a.snapshot_id, a.acknowledged, a.acknowledged_by, a.acknowledged_at,
 		       COALESCE(a.resolution_note, ''),
+		       COALESCE(a.prev_snapshot_id, ''), COALESCE(a.curr_snapshot_id, ''),
 		       n.name, n.uid, n.client_group_id, COALESCE(c.name, ''),
 		       COALESCE(j.job_name, ''), COALESCE(j.program, ''),
 		       COALESCE(u.username, '')
@@ -1937,6 +1956,7 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 			&atype, &ea.JobAnomaly.PrevValue, &ea.JobAnomaly.CurrValue,
 			&ea.JobAnomaly.DeltaValue, &ea.JobAnomaly.DeltaPct, &ea.JobAnomaly.SnapshotID,
 			&acked, &ackedBy, &ackedAt, &ea.JobAnomaly.ResolutionNote,
+			&ea.JobAnomaly.PrevSnapshotID, &ea.JobAnomaly.CurrSnapshotID,
 			&ea.NodeName, &ea.NodeUID, &ea.ClientID, &ea.ClientName,
 			&ea.JobName, &ea.JobProgram, &ea.AckedByName); err != nil {
 			return nil, err

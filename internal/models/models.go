@@ -209,6 +209,7 @@ type JobSnapshot struct {
 	FilesTotal           uint64
 	FilesNew             uint64
 	SnapshotID           string
+	SnapshotIDs          []string   // restic snapshot ID set, persisted as JSON. Diffed across runs to catch single-snapshot forget.
 	RepoSizeObserved     uint64     // authoritative from `restic stats`
 	RepoSizeEstimated    uint64     // running: observed + sum of bytes_new since
 	RepoSizeObservedAt   *time.Time // when we last got an authoritative reading
@@ -238,6 +239,8 @@ type JobAnomaly struct {
 	DeltaValue     int64
 	DeltaPct       float64
 	SnapshotID     string
+	PrevSnapshotID string // for forensics — the snapshot we were comparing against
+	CurrSnapshotID string // the snapshot the run produced (same as SnapshotID for files/bytes drops)
 	Acknowledged   bool
 	AcknowledgedBy *uint64
 	AcknowledgedAt *time.Time
@@ -322,12 +325,13 @@ type JobStatus struct {
 
 // JobResult is the per-run summary reported after a backup completes.
 type JobResult struct {
-	BytesTotal    uint64 `json:"bytes_total,omitempty"`
-	BytesNew      uint64 `json:"bytes_new,omitempty"`
-	FilesTotal    uint64 `json:"files_total,omitempty"`
-	FilesNew      uint64 `json:"files_new,omitempty"`
-	SnapshotID    string `json:"snapshot_id,omitempty"`
-	SnapshotCount uint32 `json:"snapshot_count,omitempty"` // restic-only; total snapshots in repo
+	BytesTotal    uint64   `json:"bytes_total,omitempty"`
+	BytesNew      uint64   `json:"bytes_new,omitempty"`
+	FilesTotal    uint64   `json:"files_total,omitempty"`
+	FilesNew      uint64   `json:"files_new,omitempty"`
+	SnapshotID    string   `json:"snapshot_id,omitempty"`
+	SnapshotCount uint32   `json:"snapshot_count,omitempty"` // restic-only; total snapshots in repo
+	SnapshotIDs   []string `json:"snapshot_ids,omitempty"`   // restic-only; full set of snapshot IDs post-prune. Server diffs prev vs curr to flag specific disappearances. Cap 1000 client-side.
 }
 
 // JobDailyStats is an aggregate row for one (node, job, day).

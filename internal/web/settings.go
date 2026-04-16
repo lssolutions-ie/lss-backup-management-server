@@ -312,7 +312,7 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 		to = cfg.FromAddress
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
 	auth := smtp.PlainAuth("", cfg.Username, password, cfg.Host)
 
 	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: LSS Backup — Test Email\r\n\r\nThis is a test email from LSS Backup Management Server.\r\nSent at: %s\r\n",

@@ -36,6 +36,18 @@ func (d *DB) Close() error {
 	return d.db.Close()
 }
 
+// RawQuery executes a raw SQL query and returns the rows.
+// Caller must close the returned *sql.Rows.
+func (d *DB) RawQuery(query string, args ...interface{}) (*sql.Rows, error) {
+	return d.db.Query(query, args...)
+}
+
+// RawExec executes a raw SQL statement (INSERT, UPDATE, DELETE, etc.).
+func (d *DB) RawExec(query string, args ...interface{}) error {
+	_, err := d.db.Exec(query, args...)
+	return err
+}
+
 // RunMigrations reads *.sql files from dir in lexicographic order, executes any
 // not yet recorded in the schema_migrations table, and records them.
 func (d *DB) RunMigrations(dir string) error {

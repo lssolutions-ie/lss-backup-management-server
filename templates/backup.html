@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row align-items-center">
+    <div class="col-auto">
+      <h2 class="page-title">Backup & Restore</h2>
+      <div class="text-muted mt-1">Download a complete server backup or restore from a previous one.</div>
+    </div>
+  </div>
+</div>
+
+{{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+{{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
+
+<div class="row row-cards">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-download me-2"></i>Download Backup</h3>
+      </div>
+      <div class="card-body">
+        <p>Downloads a zip containing the full MySQL database, secret key, config, and session recordings. Everything needed to recreate this server on a new machine.</p>
+        <a href="/settings/backup/download" class="btn btn-success w-100 btn-lg">
+          <i class="ti ti-database-export me-2"></i>Download Backup Now
+        </a>
+        <div class="alert alert-warning mt-3 mb-0">
+          <i class="ti ti-alert-triangle me-1"></i>
+          The backup contains your secret key and all credentials. Store it securely.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-upload me-2"></i>Restore from Backup</h3>
+      </div>
+      <div class="card-body">
+        <p>Upload a previously downloaded backup to restore the system to that exact state.</p>
+        <form action="/settings/backup/restore" method="POST" enctype="multipart/form-data" id="restore-form">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="mb-3">
+            <label class="form-label">Backup file</label>
+            <input type="file" name="backup_file" class="form-control" accept=".zip" required>
+          </div>
+          <button type="submit" class="btn btn-danger w-100 btn-lg" id="restore-btn">
+            <i class="ti ti-database-import me-2"></i>Restore
+          </button>
+        </form>
+        <div class="alert alert-danger mt-3 mb-0">
+          <i class="ti ti-alert-triangle me-1"></i>
+          <strong>WARNING:</strong> All current data will be replaced. All users will be logged out. You will need to set a new superadmin password.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('restore-form').addEventListener('submit', function(e) {
+  if (!confirm('This will replace ALL current data and log everyone out. This cannot be undone. Continue?')) {
+    e.preventDefault();
+  }
+});
+</script>
+{{end}}

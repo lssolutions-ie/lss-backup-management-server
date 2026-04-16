@@ -75,9 +75,10 @@ func main() {
 
 	// Wire HTTP handlers
 	webServer := &web.Server{
-		DB:     database,
-		Config: cfg,
-		AppKey: appKey,
+		DB:         database,
+		Config:     cfg,
+		AppKey:     appKey,
+		ConfigPath: configPath,
 	}
 
 	// Path to the authorized_keys file consumed by sshd's AuthorizedKeysCommand
@@ -195,6 +196,9 @@ func main() {
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
 	mux.HandleFunc("/settings/tuning", webServer.RequireSuperAdmin(webServer.HandleServerTuning))
+	mux.HandleFunc("/settings/backup", webServer.RequireSuperAdmin(webServer.HandleBackupPage))
+	mux.HandleFunc("/settings/backup/download", webServer.RequireSuperAdmin(webServer.HandleBackupDownload))
+	mux.HandleFunc("/settings/backup/restore", webServer.RequireSuperAdmin(webServer.HandleRestore))
 
 	// Wrap mux with request-id/access-log, then security headers.
 	handler := securityHeaders(webServer.RequestLog(mux))

@@ -38,9 +38,10 @@ const (
 
 // Server holds all shared dependencies for web handlers.
 type Server struct {
-	DB     *db.DB
-	Config *config.Config
-	AppKey []byte
+	DB         *db.DB
+	Config     *config.Config
+	AppKey     []byte
+	ConfigPath string // path to the config file (for backup)
 }
 
 // PageData is passed to every authenticated template.

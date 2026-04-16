@@ -11,6 +11,9 @@ import (
 
 const ZeroHMAC = "0000000000000000000000000000000000000000000000000000000000000000"
 
+// CanonicalJSON exposes the canonicalized form for debug logging.
+func CanonicalJSON(raw []byte) []byte { return canonicalJSON(raw) }
+
 // ComputeEventHMAC computes the expected HMAC for an audit event using the
 // node's PSK and the previous event's HMAC (chain linkage).
 //
@@ -20,12 +23,10 @@ const ZeroHMAC = "00000000000000000000000000000000000000000000000000000000000000
 // be circular. Pass the event struct with HMAC cleared/empty.
 func ComputeEventHMAC(psk string, prevHMAC string, eventJSON []byte) string {
 	canonical := canonicalJSON(eventJSON)
-	prevBytes, _ := hex.DecodeString(prevHMAC)
-	if len(prevBytes) == 0 {
-		prevBytes, _ = hex.DecodeString(ZeroHMAC)
-	}
+	// prev_hmac is used as raw hex string bytes, NOT hex-decoded.
+	// CLI concatenates the hex string directly into the HMAC input.
 	mac := hmac.New(sha256.New, []byte(psk))
-	mac.Write(prevBytes)
+	mac.Write([]byte(prevHMAC))
 	mac.Write(canonical)
 	return hex.EncodeToString(mac.Sum(nil))
 }

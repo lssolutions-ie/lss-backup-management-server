@@ -220,12 +220,15 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		if hasHMACEvents(status.AuditEvents) {
 			chainHead, _ := h.DB.GetNodeAuditChainHead(node.ID)
 			var err error
-			chainHead, chainOK, err = verifyAuditChain(psk, chainHead, status.AuditEvents)
+			var chainDiag string
+		chainHead, chainOK, chainDiag, err = verifyAuditChain(psk, chainHead, status.AuditEvents)
 			if err != nil {
 				rlg.Error("audit chain verify error", "node_id", node.ID, "err", err.Error())
 			}
 			if !chainOK {
-				rlg.Error("AUDIT CHAIN BREAK", "node_id", node.ID, "uid", node.UID)
+				rlg.Error("AUDIT CHAIN BREAK",
+					"node_id", node.ID, "uid", node.UID,
+					"fail_detail", chainDiag)
 				// Insert a critical audit row so the chain break is visible on /audit.
 				_ = h.DB.InsertServerAuditLog(0, "system", "", "audit_chain_break", "critical",
 					"detect", "node", fmt.Sprintf("%d", node.ID),
@@ -436,35 +439,59 @@ func hasHMACEvents(events []models.AuditEvent) bool {
 // verifyAuditChain walks the events in order, verifying each HMAC against the
 // chain. Returns the new chain head, whether the chain is intact, and any error.
 // Events without HMAC are skipped (backward compat with pre-v2.5.0 CLIs).
-func verifyAuditChain(psk string, chainHead string, events []models.AuditEvent) (string, bool, error) {
+//
+// When chainHead is empty (first HMAC-bearing batch from this node), we try
+// both "" and ZeroHMAC as prev_hmac to handle convention differences between
+// CLI versions. Whichever matches becomes the chain base. This is TOFU for
+// the chain — after the first successful verification, all subsequent events
+// are verified strictly against the stored head.
+func verifyAuditChain(psk string, chainHead string, events []models.AuditEvent) (newHead string, ok bool, diag string, err error) {
 	head := chainHead
-	if head == "" {
-		head = crypto.ZeroHMAC
-	}
 	for _, e := range events {
 		if e.HMAC == "" {
 			continue
 		}
-		// Build canonical JSON of the event WITHOUT the hmac field.
-		stripped := models.AuditEvent{
-			Seq:      e.Seq,
-			TS:       e.TS,
-			Category: e.Category,
-			Severity: e.Severity,
-			Actor:    e.Actor,
-			Message:  e.Message,
-			Details:  e.Details,
-		}
-		eventJSON, err := json.Marshal(stripped)
+		eventJSON, err := marshalEventForHMAC(e)
 		if err != nil {
-			return head, false, err
+			return head, false, fmt.Sprintf("marshal error seq=%d: %v", e.Seq, err), err
 		}
+
+		if head == "" {
+			if crypto.VerifyEventHMAC(psk, "", eventJSON, e.HMAC) {
+				head = e.HMAC
+				continue
+			}
+			if crypto.VerifyEventHMAC(psk, crypto.ZeroHMAC, eventJSON, e.HMAC) {
+				head = e.HMAC
+				continue
+			}
+			expected := crypto.ComputeEventHMAC(psk, "", eventJSON)
+			return head, false, fmt.Sprintf("TOFU fail seq=%d received=%s expected_empty=%s canonical=%s",
+				e.Seq, e.HMAC[:32], expected[:32], string(eventJSON)), nil
+		}
+
 		if !crypto.VerifyEventHMAC(psk, head, eventJSON, e.HMAC) {
-			return head, false, nil
+			expected := crypto.ComputeEventHMAC(psk, head, eventJSON)
+			sorted := string(crypto.CanonicalJSON(eventJSON))
+			return head, false, fmt.Sprintf("chain fail seq=%d prev=%s received=%s expected=%s raw=%s sorted=%s",
+				e.Seq, head[:32], e.HMAC[:32], expected[:32], string(eventJSON), sorted), nil
 		}
 		head = e.HMAC
 	}
-	return head, true, nil
+	return head, true, "", nil
+}
+
+func marshalEventForHMAC(e models.AuditEvent) ([]byte, error) {
+	stripped := models.AuditEvent{
+		Seq:      e.Seq,
+		TS:       e.TS,
+		Category: e.Category,
+		Severity: e.Severity,
+		Actor:    e.Actor,
+		Message:  e.Message,
+		Details:  e.Details,
+	}
+	return json.Marshal(stripped)
 }
 
 func apiError(w http.ResponseWriter, code int) {

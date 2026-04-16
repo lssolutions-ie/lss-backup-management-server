@@ -64,14 +64,29 @@ func TestComputeEventHMAC_ChainLinkage(t *testing.T) {
 	}
 }
 
-func TestVerifyEventHMAC_ZeroPrevForFirstEvent(t *testing.T) {
+func TestComputeEventHMAC_EmptyVsZeroPrevDiffer(t *testing.T) {
 	psk := "my-psk"
 	event := map[string]interface{}{"seq": 1, "ts": 1, "category": "test"}
 	eb, _ := json.Marshal(event)
 
-	h := ComputeEventHMAC(psk, "", eb)
+	hEmpty := ComputeEventHMAC(psk, "", eb)
 	hZero := ComputeEventHMAC(psk, ZeroHMAC, eb)
-	if h != hZero {
-		t.Fatal("empty prev and ZeroHMAC should produce the same result")
+	// Now that we use raw string bytes (not hex-decoded), ZeroHMAC is 64 ASCII
+	// '0' characters = different from "" (0 bytes). They MUST differ.
+	if hEmpty == hZero {
+		t.Fatal("empty prev and ZeroHMAC should produce different results")
+	}
+}
+
+func TestComputeEventHMAC_CLITestVector(t *testing.T) {
+	// Test vector from CLI session — validates both sides agree on the HMAC
+	// computation using raw hex string bytes for prev (not hex-decoded).
+	key := "test-key-abc"
+	prev := "deadbeef"
+	canonical := []byte(`{"seq":1,"ts":1000}`)
+	got := ComputeEventHMAC(key, prev, canonical)
+	want := "21e52fc9418c371eb07e047e323509d5944426cc379a83444afeb8b4212307fd"
+	if got != want {
+		t.Fatalf("CLI test vector mismatch: got %s, want %s", got, want)
 	}
 }

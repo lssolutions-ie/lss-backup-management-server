@@ -180,6 +180,10 @@ func main() {
 			webServer.HandleAnomalyBulkAck(w, r)
 			return
 		}
+		if strings.HasSuffix(r.URL.Path, "/diff") {
+			webServer.HandleAnomalyDiff(w, r)
+			return
+		}
 		webServer.HandleAnomalyAck(w, r)
 	}))
 

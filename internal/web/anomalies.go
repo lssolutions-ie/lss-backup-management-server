@@ -2,12 +2,15 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -168,6 +171,79 @@ func (s *Server) HandleAnomalyBulkAck(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true,"updated":` + strconv.Itoa(done) + `}`))
+}
+
+// HandleAnomalyDiff POST /anomalies/{id}/diff — SSHes to the node and runs
+// lss-backup-cli repo-diff to show exactly which files changed between the
+// two snapshots that triggered this anomaly. Requires SSH creds (cached or
+// provided in the request body).
+func (s *Server) HandleAnomalyDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/anomalies/")
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 || parts[1] != "diff" {
+		http.NotFound(w, r)
+		return
+	}
+	anomalyID, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	nodeID, jobID, anomErr := s.DB.GetAnomalyTarget(anomalyID)
+	if anomErr != nil {
+		jsonError(w, "anomaly not found", http.StatusNotFound)
+		return
+	}
+
+	// Get prev/curr snapshot IDs from the anomaly row.
+	anomalies, _ := s.DB.ListJobAnomalies(nodeID, jobID, false, 500)
+	var prevSnap, currSnap string
+	for _, a := range anomalies {
+		if a.ID == anomalyID {
+			prevSnap = a.PrevSnapshotID
+			currSnap = a.CurrSnapshotID
+			break
+		}
+	}
+	if prevSnap == "" || currSnap == "" {
+		jsonError(w, "anomaly has no snapshot pair for diff", http.StatusUnprocessableEntity)
+		return
+	}
+
+	node, err := s.DB.GetNodeByID(nodeID)
+	if err != nil || node == nil {
+		jsonError(w, "node not found", http.StatusNotFound)
+		return
+	}
+	if !node.TunnelReady() {
+		jsonError(w, "node has no active tunnel — cannot run diff", http.StatusBadGateway)
+		return
+	}
+
+	body, _ := io.ReadAll(r.Body)
+	username, password := s.getRepoSSHCreds(r, node.ID, body)
+	if username == "" {
+		jsonError(w, "ssh_creds_required", http.StatusUnauthorized)
+		return
+	}
+
+	cmd := fmt.Sprintf("%s repo-diff --json %s %s %s",
+		cliPath(node.HwOS), jobID, prevSnap, currSnap)
+	output, err := sshExecOnNodeSudo(node, username, password, cmd)
+	if err != nil {
+		logx.FromContext(r.Context()).Error("repo-diff failed",
+			"node_id", node.ID, "job_id", jobID, "err", err.Error())
+		jsonError(w, "diff failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(output)
 }
 
 // HandleResetAuditChain POST /nodes/{id}/reset-audit-chain (superadmin only)

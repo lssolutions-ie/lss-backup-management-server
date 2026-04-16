@@ -226,9 +226,9 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 				rlg.Error("audit chain verify error", "node_id", node.ID, "err", err.Error())
 			}
 			if !chainOK {
-				rlg.Error("AUDIT CHAIN BREAK",
+				rlg.Error("audit chain break",
 					"node_id", node.ID, "uid", node.UID,
-					"fail_detail", chainDiag)
+					"detail", chainDiag)
 				// Insert a critical audit row so the chain break is visible on /audit.
 				_ = h.DB.InsertServerAuditLog(0, "system", "", "audit_chain_break", "critical",
 					"detect", "node", fmt.Sprintf("%d", node.ID),

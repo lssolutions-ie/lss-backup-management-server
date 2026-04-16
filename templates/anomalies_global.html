@@ -128,6 +128,32 @@
   </div>
 </div>
 
+<div class="modal modal-blur fade" id="anom-ssh-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-lock me-1"></i> SSH Credentials Required</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">Enter SSH credentials for the node to run <code>restic diff</code> and show which files were deleted.</p>
+        <div class="mb-3">
+          <label class="form-label">SSH Username</label>
+          <input type="text" id="anom-ssh-user" class="form-control" placeholder="root">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">SSH Password</label>
+          <input type="password" id="anom-ssh-pass" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="anom-ssh-confirm" class="btn btn-primary"><i class="ti ti-file-diff"></i> Run Diff</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script id="anom-data" type="application/json">
 [
 {{range $i, $a := .Anomalies}}{{if $i}},{{end}}{
@@ -151,7 +177,9 @@
   "acknowledged": {{if $a.Acknowledged}}1{{else}}0{{end}},
   "acked_by": "{{$a.AckedByName}}",
   "acked_at": "{{if $a.AcknowledgedAt}}{{$a.AcknowledgedAt.Format "02-01-2006 15:04:05"}}{{end}}",
-  "resolution_note": {{jsonStr $a.JobAnomaly.ResolutionNote}}
+  "resolution_note": {{jsonStr $a.JobAnomaly.ResolutionNote}},
+  "prev_snapshot_id": "{{$a.JobAnomaly.PrevSnapshotID}}",
+  "curr_snapshot_id": "{{$a.JobAnomaly.CurrSnapshotID}}"
 }{{end}}
 ]
 </script>
@@ -221,13 +249,21 @@
     return escapeHtml(t);
   }
   function changeCell(r) {
+    var base = '';
     if (r.anomaly_type === 'bytes_drop') {
-      return fmtBytes(r.prev_value) + ' → ' + fmtBytes(r.curr_value) +
+      base = fmtBytes(r.prev_value) + ' → ' + fmtBytes(r.curr_value) +
         '<div class="text-danger fw-bold">' + fmtBytes(r.delta) + ' (' + r.delta_pct + '%)</div>';
+    } else {
+      var unit = r.anomaly_type === 'snapshot_drop' ? ' snapshots' : r.anomaly_type === 'files_drop' ? ' files' : '';
+      base = r.prev_value + ' → ' + r.curr_value + unit +
+        '<div class="text-danger fw-bold">' + r.delta + ' (' + r.delta_pct + '%)</div>';
     }
-    var unit = r.anomaly_type === 'snapshot_drop' ? ' snapshots' : r.anomaly_type === 'files_drop' ? ' files' : '';
-    return r.prev_value + ' → ' + r.curr_value + unit +
-      '<div class="text-danger fw-bold">' + r.delta + ' (' + r.delta_pct + '%)</div>';
+    if (r.prev_snapshot_id && r.curr_snapshot_id &&
+        (r.anomaly_type === 'files_drop' || r.anomaly_type === 'bytes_drop')) {
+      base += '<button type="button" class="btn btn-sm btn-outline-danger mt-1 anom-diff-btn" data-id="' + r.id + '" data-node="' + r.node_id + '"><i class="ti ti-file-diff"></i> Show deleted</button>';
+      base += '<div id="anom-diff-' + r.id + '" class="small mt-1" style="display:none;"></div>';
+    }
+    return base;
   }
   function statusCell(r) {
     if (!r.acknowledged) return '<span class="badge text-bg-danger">Unreviewed</span>';
@@ -389,7 +425,10 @@
       tbody.querySelectorAll('.anom-ack-btn').forEach(function(btn){
         btn.addEventListener('click', function(){ toggleAck(parseInt(btn.getAttribute('data-id'), 10)); });
       });
-      tbody.querySelectorAll('.anom-row-check').forEach(function(cb){
+      tbody.querySelectorAll('.anom-diff-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){ showDiff(parseInt(btn.getAttribute('data-id'), 10), parseInt(btn.getAttribute('data-node'), 10)); });
+    });
+    tbody.querySelectorAll('.anom-row-check').forEach(function(cb){
         cb.addEventListener('change', function(){
           var id = parseInt(cb.getAttribute('data-id'), 10);
           if (cb.checked) selected[id] = true; else delete selected[id];
@@ -509,6 +548,78 @@
         render();
       })
       .catch(function(err){ console.error('bulk ack failed', err); });
+  }
+
+  // ── Diff (Show deleted files) ──
+  var sshCreds = {}; // nodeID → {username, password}
+  function showDiff(anomalyID, nodeID) {
+    var container = document.getElementById('anom-diff-' + anomalyID);
+    if (!container) return;
+    if (container.style.display !== 'none') { container.style.display = 'none'; return; }
+    container.style.display = 'block';
+    container.innerHTML = '<span class="text-muted">Loading diff…</span>';
+    var creds = sshCreds[nodeID];
+    if (!creds) {
+      openSSHModal(function(u, p){
+        sshCreds[nodeID] = {username: u, password: p};
+        fetchDiff(anomalyID, nodeID, u, p, container);
+      });
+      return;
+    }
+    fetchDiff(anomalyID, nodeID, creds.username, creds.password, container);
+  }
+  function fetchDiff(anomalyID, nodeID, user, pass, container) {
+    fetch('/anomalies/' + anomalyID + '/diff', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: user, password: pass})
+    }).then(function(res){
+      if (res.status === 401) { delete sshCreds[nodeID]; container.innerHTML = '<span class="text-danger">SSH credentials rejected. Click again to retry.</span>'; return; }
+      if (!res.ok) return res.json().then(function(d){ container.innerHTML = '<span class="text-danger">' + escapeHtml(d.error || 'Diff failed') + '</span>'; });
+      return res.json().then(function(d){ renderDiff(d, container); });
+    }).catch(function(err){ container.innerHTML = '<span class="text-danger">Error: ' + escapeHtml(err.message) + '</span>'; });
+  }
+  function renderDiff(d, container) {
+    if (!d) { container.innerHTML = '<span class="text-muted">No data.</span>'; return; }
+    var html = '';
+    if (d.removed && d.removed.length > 0) {
+      html += '<div class="fw-bold text-danger mb-1">Removed (' + d.removed.length + ')</div><table class="table table-sm mb-2"><thead><tr><th>Path</th><th>Size</th></tr></thead><tbody>';
+      d.removed.forEach(function(f){ html += '<tr><td><code>' + escapeHtml(f.path) + '</code></td><td class="text-nowrap">' + (f.size ? fmtBytes(f.size) : '—') + '</td></tr>'; });
+      html += '</tbody></table>';
+    }
+    if (d.added && d.added.length > 0) {
+      html += '<div class="fw-bold text-success mb-1">Added (' + d.added.length + ')</div><table class="table table-sm mb-2"><thead><tr><th>Path</th><th>Size</th></tr></thead><tbody>';
+      d.added.forEach(function(f){ html += '<tr><td><code>' + escapeHtml(f.path) + '</code></td><td class="text-nowrap">' + (f.size ? fmtBytes(f.size) : '—') + '</td></tr>'; });
+      html += '</tbody></table>';
+    }
+    if (d.changed && d.changed.length > 0) {
+      html += '<div class="fw-bold text-warning mb-1">Changed (' + d.changed.length + ')</div><table class="table table-sm mb-2"><thead><tr><th>Path</th></tr></thead><tbody>';
+      d.changed.forEach(function(f){ html += '<tr><td><code>' + escapeHtml(f.path) + '</code></td></tr>'; });
+      html += '</tbody></table>';
+    }
+    if (!html) html = '<span class="text-muted">No differences found between the two snapshots.</span>';
+    if (d.snapshot_a_exists === false) html = '<span class="text-danger">Previous snapshot no longer exists — cannot diff.</span>';
+    if (d.snapshot_b_exists === false) html = '<span class="text-danger">Current snapshot no longer exists — cannot diff.</span>';
+    container.innerHTML = html;
+  }
+  function openSSHModal(onConfirm) {
+    document.getElementById('anom-ssh-user').value = '';
+    document.getElementById('anom-ssh-pass').value = '';
+    var modalEl = document.getElementById('anom-ssh-modal');
+    var btn = document.getElementById('anom-ssh-confirm');
+    var newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+    var modal = window.bootstrap && window.bootstrap.Modal
+      ? new window.bootstrap.Modal(modalEl) : null;
+    newBtn.addEventListener('click', function(){
+      var u = document.getElementById('anom-ssh-user').value.trim();
+      var p = document.getElementById('anom-ssh-pass').value;
+      if (!u) return;
+      if (modal) modal.hide();
+      onConfirm(u, p);
+    });
+    if (modal) modal.show();
+    else { modalEl.classList.add('show'); modalEl.style.display = 'block'; }
   }
 
   // ── Filter editor ──

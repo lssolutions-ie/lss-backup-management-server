@@ -348,7 +348,7 @@ for asset in templates migrations static; do
 done
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 7 — Write config file
+# STEP 8 — Write config file
 # ═════════════════════════════════════════════════════════════════════════════
 step 8 "Writing config file"
 
@@ -378,7 +378,7 @@ else
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 8 — Install systemd unit
+# STEP 9 — Install systemd unit
 # ═════════════════════════════════════════════════════════════════════════════
 step 9 "Installing systemd unit"
 
@@ -391,7 +391,7 @@ systemctl enable lss-management --quiet
 info "systemd unit installed and enabled"
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 9 — Configure nginx
+# STEP 10 — Configure nginx
 # ═════════════════════════════════════════════════════════════════════════════
 step 10 "Configuring nginx"
 
@@ -401,7 +401,7 @@ if [[ ! -f "$NGINX_AVAILABLE" ]]; then
         die "Domain name cannot be empty."
     fi
 
-    sed "s/<DOMAIN>/${DOMAIN}/g" \
+    sed "s|<DOMAIN>|${DOMAIN}|g" \
         "$REPO_ROOT/install/nginx-example.conf" > "$NGINX_AVAILABLE"
     chown root:root "$NGINX_AVAILABLE"
     chmod 644 "$NGINX_AVAILABLE"
@@ -423,7 +423,7 @@ else
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 10 — Start/restart the service
+# STEP 11 — Start/restart the service
 # ═════════════════════════════════════════════════════════════════════════════
 step 11 "Starting lss-management service"
 

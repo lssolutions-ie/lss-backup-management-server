@@ -11,8 +11,8 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.11.11
-**Paired CLI:** v2.3.2
+**Version:** v1.14.5
+**Paired CLI:** v2.5.0
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -195,7 +195,7 @@ Sample line:
 
 ## Database
 
-MySQL with 32 migrations:
+MySQL with 37 migrations:
 
 | Migration | Purpose |
 |-----------|---------|
@@ -231,6 +231,11 @@ MySQL with 32 migrations:
 | 030 | server_tuning.anomaly_ack_retention_days (default 30) — moves old acked anomalies to /anomalies/archive |
 | 031 | audit_log table (UNIQUE source_node_id+source_seq), nodes.audit_ack_seq, server_tuning.audit_retention_days |
 | 032 | server_tuning.terminal_recording_enabled + terminal_recording_retention_days |
+| 033 | server_tuning.silent_alert_threshold_minutes (default 7) — aggressive missed-heartbeat alarm |
+| 034 | job_anomalies.resolution_note — free-text note captured at ack time |
+| 035 | audit_log.source ENUM extended with 'host' + host_audit_state table for journalctl cursor |
+| 036 | job_snapshots.snapshot_ids JSON + job_anomalies.prev_snapshot_id/curr_snapshot_id — forensics |
+| 037 | nodes.audit_chain_head — HMAC chain verification for audit tamper evidence |
 
 ---
 
@@ -624,17 +629,34 @@ Every dashboard SSH session via `/ws/terminal` is teed into a `.cast` file when 
 
 ---
 
-## Roadmap
+## Backup & Restore (v1.13.1)
 
-Live list: `ROADMAP.md` at repo root. Top of backlog:
-
-1. **"What was deleted" forensics** (high) — run `restic diff prev curr` over the repo-viewer tunnel, lazy-load deleted-file list in an expander on each anomaly row. Biggest client-satisfaction win.
-2. **Snapshot ID set tracking** (high) — count-only comparisons miss `restic forget` of one snapshot within retention; also feeds item 1.
-3. **Host audit (SSH logins, sudo, service lifecycle)** — small worker polls journalctl for sshd/sudo/lss-management, parses, inserts into `audit_log` with `source='host'` (new enum value, migration 033).
-4. Anomalies UI polish: mute-future-fires on ack, resolution note field.
-5. Production deployment via install.sh.
-6. **(LAST)** Notification stack — SMTP, webhook, escalation. Deferred per user decision 2026-04-15 until everything else above is done.
+`/settings/backup` (superadmin only):
+- **Download Backup Now** — streams a zip: `dump.sql` (full mysqldump), `secret.key`, `config.toml`, `metadata.json`, all `.cast` session recordings.
+- **Restore** — upload zip, reimport SQL, restore secret key + recordings, wipe sessions, force superadmin password + 2FA reset. Audited as `system_restored/critical`.
 
 ---
 
-_Last updated: 2026-04-15 (v1.11.11)_
+## HMAC Chain for Audit (v1.14.0–v1.14.4, paired with CLI v2.5.0)
+
+Per-event `hmac = HMAC-SHA256(psk, prev_hmac_hex_string || canonical_json(event_minus_hmac))`. RFC 8785 JCS canonical JSON. Chain-break → CRITICAL audit row + ack frozen. TOFU on first event, prev as raw hex string bytes. Reset via `POST /nodes/{id}/reset-audit-chain` (superadmin).
+
+---
+
+## "What Was Deleted" Forensics (v1.14.5)
+
+`files_drop`/`bytes_drop` anomaly rows with snapshot IDs show **"Show deleted"** button. Prompts for SSH creds, runs `lss-backup-cli repo-diff --json` over the tunnel, renders removed/added/changed files inline.
+
+---
+
+## Roadmap
+
+**All 16 of 17 agreed plan items are shipped.** Only remaining:
+
+1. **(LAST EVER)** Notification stack — SMTP, webhook, escalation.
+2. Run `install.sh` on a fresh Ubuntu 24.04 VM (code-reviewed, never executed).
+3. Off-server audit mirror (syslog emitter) — low priority with HMAC chain in place.
+
+---
+
+_Last updated: 2026-04-16 (v1.14.5)_

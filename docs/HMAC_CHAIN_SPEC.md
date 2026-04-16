@@ -1,8 +1,8 @@
 # HMAC Chain for Audit Events — Contract Proposal
 
-**Status:** Draft — awaiting CLI session agreement before either side codes.  
-**Participants:** Server (v1.12.x+) · CLI (v2.5.x+)  
-**Blocks on:** Host audit (#6) stable in production for 24-48h ✅
+**Status:** SHIPPED — Server v1.14.4 + CLI v2.5.0. Verified on all 3 nodes, zero chain breaks.  
+**Participants:** Server (v1.14.0+) · CLI (v2.5.0+)  
+**Key fix:** v1.14.4 — prev_hmac uses raw hex string bytes, not hex-decoded (confirmed via CLI test vector).
 
 ---
 

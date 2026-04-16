@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -209,13 +210,48 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ingest audit events (v3+ CLI). Dedup via UNIQUE (source_node_id, seq).
+	// HMAC chain verification runs inline when events carry the `hmac` field.
 	if len(status.AuditEvents) > 0 {
 		prevAck, _ := h.DB.GetNodeAuditAckSeq(node.ID)
-		newAck, err := h.DB.InsertNodeAuditEvents(node.ID, prevAck, status.AuditEvents)
-		if err != nil {
-			rlg.Error("audit ingest failed", "node_id", node.ID, "err", err.Error())
+
+		// Verify HMAC chain for events that carry the field (v2.5.0+ CLIs).
+		// Events without hmac (v2.3.x–v2.4.x) skip verification entirely.
+		chainOK := true
+		if hasHMACEvents(status.AuditEvents) {
+			chainHead, _ := h.DB.GetNodeAuditChainHead(node.ID)
+			var err error
+			chainHead, chainOK, err = verifyAuditChain(psk, chainHead, status.AuditEvents)
+			if err != nil {
+				rlg.Error("audit chain verify error", "node_id", node.ID, "err", err.Error())
+			}
+			if !chainOK {
+				rlg.Error("AUDIT CHAIN BREAK", "node_id", node.ID, "uid", node.UID)
+				// Insert a critical audit row so the chain break is visible on /audit.
+				_ = h.DB.InsertServerAuditLog(0, "system", "", "audit_chain_break", "critical",
+					"detect", "node", fmt.Sprintf("%d", node.ID),
+					"HMAC chain break on node "+node.Name+" — possible tampering or PSK mismatch",
+					map[string]string{"node_id": fmt.Sprintf("%d", node.ID), "uid": node.UID})
+			} else {
+				// Chain verified — persist the new head.
+				_ = h.DB.SetNodeAuditChainHead(node.ID, chainHead)
+			}
 		}
-		resp["audit_ack_seq"] = newAck
+
+		// Still insert the events even on chain break — we want the data for
+		// forensics, just don't advance the ack (CLI resends next heartbeat).
+		if chainOK {
+			newAck, err := h.DB.InsertNodeAuditEvents(node.ID, prevAck, status.AuditEvents)
+			if err != nil {
+				rlg.Error("audit ingest failed", "node_id", node.ID, "err", err.Error())
+			}
+			resp["audit_ack_seq"] = newAck
+		} else {
+			// Chain break — insert events but don't advance ack.
+			for _, e := range status.AuditEvents {
+				h.DB.InsertNodeAuditIgnoreErr(node.ID, e)
+			}
+			resp["audit_ack_seq"] = prevAck
+		}
 	} else {
 		// Always return current ack seq so CLI can reconcile if it lost local state.
 		if ack, err := h.DB.GetNodeAuditAckSeq(node.ID); err == nil && ack > 0 {
@@ -385,6 +421,50 @@ func pct(part, whole int64) float64 {
 		return 0
 	}
 	return float64(part) * 100 / float64(whole)
+}
+
+// hasHMACEvents returns true if any event in the batch carries a non-empty HMAC field.
+func hasHMACEvents(events []models.AuditEvent) bool {
+	for _, e := range events {
+		if e.HMAC != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// verifyAuditChain walks the events in order, verifying each HMAC against the
+// chain. Returns the new chain head, whether the chain is intact, and any error.
+// Events without HMAC are skipped (backward compat with pre-v2.5.0 CLIs).
+func verifyAuditChain(psk string, chainHead string, events []models.AuditEvent) (string, bool, error) {
+	head := chainHead
+	if head == "" {
+		head = crypto.ZeroHMAC
+	}
+	for _, e := range events {
+		if e.HMAC == "" {
+			continue
+		}
+		// Build canonical JSON of the event WITHOUT the hmac field.
+		stripped := models.AuditEvent{
+			Seq:      e.Seq,
+			TS:       e.TS,
+			Category: e.Category,
+			Severity: e.Severity,
+			Actor:    e.Actor,
+			Message:  e.Message,
+			Details:  e.Details,
+		}
+		eventJSON, err := json.Marshal(stripped)
+		if err != nil {
+			return head, false, err
+		}
+		if !crypto.VerifyEventHMAC(psk, head, eventJSON, e.HMAC) {
+			return head, false, nil
+		}
+		head = e.HMAC
+	}
+	return head, true, nil
 }
 
 func apiError(w http.ResponseWriter, code int) {

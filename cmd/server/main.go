@@ -291,6 +291,10 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodeAudit(w, r)
 			return
 		}
+		if parts[1] == "reset-audit-chain" {
+			s.HandleResetAuditChain(w, r)
+			return
+		}
 		switch parts[1] {
 		case "edit":
 			s.HandleNodeEdit(w, r)

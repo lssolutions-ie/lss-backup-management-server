@@ -170,6 +170,32 @@ func (s *Server) HandleAnomalyBulkAck(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true,"updated":` + strconv.Itoa(done) + `}`))
 }
 
+// HandleResetAuditChain POST /nodes/{id}/reset-audit-chain (superadmin only)
+func (s *Server) HandleResetAuditChain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+	if err := s.DB.ResetNodeAuditChain(node.ID); err != nil {
+		s.Fail(w, r, http.StatusInternalServerError, err, "DB error")
+		return
+	}
+	s.auditServer(r, "audit_chain_reset", "critical", "reset", "node",
+		strconv.FormatUint(node.ID, 10),
+		"Audit chain reset for node "+node.Name,
+		map[string]string{"node_id": strconv.FormatUint(node.ID, 10), "node_name": node.Name})
+	setFlash(w, "Audit chain reset for "+node.Name+". Next events from this node will start a fresh chain.")
+	http.Redirect(w, r, "/nodes/"+strconv.FormatUint(node.ID, 10), http.StatusSeeOther)
+}
+
 // HandleAnomalyAck POST /anomalies/{id}/ack | /anomalies/{id}/unack
 func (s *Server) HandleAnomalyAck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

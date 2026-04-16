@@ -154,6 +154,28 @@ func (d *DB) insertNodeAudit(nodeID uint64, e models.AuditEvent) error {
 	return err
 }
 
+// GetNodeAuditChainHead returns the last verified HMAC for this node (empty if none).
+func (d *DB) GetNodeAuditChainHead(nodeID uint64) (string, error) {
+	var head string
+	err := d.db.QueryRow("SELECT audit_chain_head FROM nodes WHERE id = ?", nodeID).Scan(&head)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return head, err
+}
+
+// SetNodeAuditChainHead persists the chain head after successful verification.
+func (d *DB) SetNodeAuditChainHead(nodeID uint64, head string) error {
+	_, err := d.db.Exec("UPDATE nodes SET audit_chain_head = ? WHERE id = ?", head, nodeID)
+	return err
+}
+
+// ResetNodeAuditChain clears the chain head and optionally the ack seq (for PSK rotation / manual reset).
+func (d *DB) ResetNodeAuditChain(nodeID uint64) error {
+	_, err := d.db.Exec("UPDATE nodes SET audit_chain_head = '', audit_ack_seq = 0 WHERE id = ?", nodeID)
+	return err
+}
+
 // GetNodeAuditAckSeq returns the highest seq already acked for this node (0 if none).
 func (d *DB) GetNodeAuditAckSeq(nodeID uint64) (uint64, error) {
 	var n uint64
@@ -238,6 +260,13 @@ func (d *DB) ListAuditLog(nodeID uint64, source string, limit int) ([]*EnrichedA
 		out = append(out, ea)
 	}
 	return out, rows.Err()
+}
+
+// InsertNodeAuditIgnoreErr inserts a single node event, ignoring errors.
+// Used when the HMAC chain is broken — we still want the data for forensics
+// but don't advance the ack pointer.
+func (d *DB) InsertNodeAuditIgnoreErr(nodeID uint64, e models.AuditEvent) {
+	_ = d.insertNodeAudit(nodeID, e)
 }
 
 // GetHostAuditCursor returns the journal cursor we last successfully consumed

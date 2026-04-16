@@ -411,6 +411,7 @@ type AuditEvent struct {
 	Actor    string            `json:"actor"`
 	Message  string            `json:"message"`
 	Details  map[string]string `json:"details,omitempty"`
+	HMAC     string            `json:"hmac,omitempty"` // v2.5.0+: per-event HMAC chain signature
 }
 
 // AuditLog is a single row from the audit_log table, used for display + query.

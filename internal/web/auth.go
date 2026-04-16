@@ -303,6 +303,10 @@ func (s *Server) HandleTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
 
 	// Verify the code to confirm setup.
 	code := r.FormValue("code")
@@ -353,6 +357,11 @@ func (s *Server) HandleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
 	user, _ := r.Context().Value(ctxUser).(*models.User)
 	if user == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -375,6 +384,10 @@ func (s *Server) HandleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
 

@@ -1909,6 +1909,7 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 		limit = 200
 	}
 	var conds []string
+	var args []interface{}
 	switch filter {
 	case "ack":
 		conds = append(conds, "a.acknowledged = 1")
@@ -1917,15 +1918,18 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 	}
 	if archiveDays > 0 {
 		if archiveOnly {
-			conds = append(conds, fmt.Sprintf("a.acknowledged = 1 AND a.acknowledged_at IS NOT NULL AND a.acknowledged_at < NOW() - INTERVAL %d DAY", archiveDays))
+			conds = append(conds, "a.acknowledged = 1 AND a.acknowledged_at IS NOT NULL AND a.acknowledged_at < DATE_SUB(NOW(), INTERVAL ? DAY)")
+			args = append(args, archiveDays)
 		} else {
-			conds = append(conds, fmt.Sprintf("(a.acknowledged = 0 OR a.acknowledged_at IS NULL OR a.acknowledged_at >= NOW() - INTERVAL %d DAY)", archiveDays))
+			conds = append(conds, "(a.acknowledged = 0 OR a.acknowledged_at IS NULL OR a.acknowledged_at >= DATE_SUB(NOW(), INTERVAL ? DAY))")
+			args = append(args, archiveDays)
 		}
 	}
 	where := ""
 	if len(conds) > 0 {
 		where = "WHERE " + strings.Join(conds, " AND ")
 	}
+	args = append(args, limit)
 	rows, err := d.db.Query(`
 		SELECT a.id, a.node_id, a.job_id, a.detected_at, a.anomaly_type, a.prev_value, a.curr_value,
 		       a.delta_value, a.delta_pct, a.snapshot_id, a.acknowledged, a.acknowledged_by, a.acknowledged_at,
@@ -1940,7 +1944,7 @@ func (d *DB) ListEnrichedAnomalies(filter string, archiveDays uint32, archiveOnl
 		LEFT JOIN job_snapshots j ON j.node_id = a.node_id AND j.job_id = a.job_id
 		LEFT JOIN users u         ON u.id = a.acknowledged_by
 		`+where+`
-		ORDER BY a.detected_at DESC LIMIT ?`, limit)
+		ORDER BY a.detected_at DESC LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}

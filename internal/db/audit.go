@@ -315,22 +315,21 @@ func (d *DB) InsertHostAuditEvent(category, severity, actor, message string, det
 // since that last_seen_at. Atomic-ish: a single INSERT … SELECT statement so
 // concurrent calls converge on at most one alert per silence transition.
 func (d *DB) FireSilentNodeAlerts(thresholdMinutes uint32) error {
-	q := fmt.Sprintf(`
+	_, err := d.db.Exec(`
 		INSERT INTO audit_log
 		  (ts, source, source_node_id, category, severity, actor, action, entity_type, entity_id, message)
 		SELECT NOW(), 'server', n.id, 'node_silent', 'warn', 'system', 'detect', 'node',
 		       CAST(n.id AS CHAR),
-		       CONCAT('Node "', n.name, '" missed heartbeat — last seen ', DATE_FORMAT(n.last_seen_at, '%%Y-%%m-%%d %%H:%%i:%%s'))
+		       CONCAT('Node "', n.name, '" missed heartbeat — last seen ', DATE_FORMAT(n.last_seen_at, '%Y-%m-%d %H:%i:%s'))
 		FROM nodes n
 		WHERE n.last_seen_at IS NOT NULL
-		  AND n.last_seen_at < NOW() - INTERVAL %d MINUTE
+		  AND n.last_seen_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)
 		  AND NOT EXISTS (
 		    SELECT 1 FROM audit_log a
 		    WHERE a.source_node_id = n.id
 		      AND a.category = 'node_silent'
 		      AND a.ts > n.last_seen_at
 		  )`, thresholdMinutes)
-	_, err := d.db.Exec(q)
 	return err
 }
 
@@ -339,7 +338,7 @@ func (d *DB) PruneAuditLog(days uint32) (int64, error) {
 	if days == 0 {
 		return 0, nil
 	}
-	res, err := d.db.Exec(fmt.Sprintf("DELETE FROM audit_log WHERE ts < NOW() - INTERVAL %d DAY", days))
+	res, err := d.db.Exec("DELETE FROM audit_log WHERE ts < DATE_SUB(NOW(), INTERVAL ? DAY)", days)
 	if err != nil {
 		return 0, err
 	}

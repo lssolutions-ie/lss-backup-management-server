@@ -59,11 +59,14 @@ func (w *HostAuditWorker) tick() {
 	// is always "sshd" regardless of whether the unit is ssh.service, sshd.service,
 	// or openssh-server.service. Eliminates "exit status 1" spam on Ubuntu versions
 	// where the unit name doesn't match.
+	// journalctl uses AND between different field types. Use "+" separator
+	// to create OR groups: (sshd OR sudo) OR (lss-management.service).
 	args := []string{
 		"--output=json",
 		"--no-pager",
 		"SYSLOG_IDENTIFIER=sshd",
 		"SYSLOG_IDENTIFIER=sudo",
+		"+",
 		"_SYSTEMD_UNIT=lss-management.service",
 	}
 	if cursor != "" {
@@ -75,8 +78,6 @@ func (w *HostAuditWorker) tick() {
 	cmd := exec.Command("journalctl", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil && len(out) == 0 {
-		// Only warn if there's truly no output — journalctl exits 1 when
-		// there are no matching entries, which is normal on a quiet system.
 		return
 	}
 

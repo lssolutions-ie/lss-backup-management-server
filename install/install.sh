@@ -146,6 +146,13 @@ else
     info "User $SERVICE_USER already exists"
 fi
 
+# The host-audit worker reads the systemd journal for sshd/sudo events.
+# Without this group membership, journalctl returns "insufficient permissions".
+if getent group systemd-journal &>/dev/null; then
+    usermod -aG systemd-journal "$SERVICE_USER" 2>/dev/null || true
+    info "Added $SERVICE_USER to systemd-journal group"
+fi
+
 mkdir -p "$CONFIG_DIR"
 chown "$SERVICE_USER:$SERVICE_USER" "$CONFIG_DIR"
 chmod 750 "$CONFIG_DIR"

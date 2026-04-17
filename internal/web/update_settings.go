@@ -11,6 +11,7 @@ import (
 type updateSettingsPageData struct {
 	PageData
 	LatestCLIVersion             string
+	LatestCLIReleaseNotes        string
 	LatestCLIVersionCheckedAt    *time.Time
 	ServerVersion                string
 	LatestServerVersion          string
@@ -30,6 +31,7 @@ func (s *Server) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "update_settings.html", updateSettingsPageData{
 		PageData:                     s.newPageData(r),
 		LatestCLIVersion:             t.LatestCLIVersion,
+		LatestCLIReleaseNotes:        t.LatestCLIReleaseNotes,
 		LatestCLIVersionCheckedAt:    t.LatestCLIVersionCheckedAt,
 		ServerVersion:                ServerVersion,
 		LatestServerVersion:          t.LatestServerVersion,

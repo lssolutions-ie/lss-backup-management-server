@@ -450,6 +450,7 @@ type ServerTuning struct {
 	TerminalRecordingRetentionDays uint32
 	SilentAlertThresholdMinutes    uint32
 	LatestCLIVersion               string
+	LatestCLIReleaseNotes          string
 	LatestCLIVersionCheckedAt      *time.Time
 	UpdateCheckIntervalMinutes     uint32
 	LatestServerVersion            string

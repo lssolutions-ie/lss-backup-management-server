@@ -1667,7 +1667,7 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       anomaly_ack_retention_days, audit_retention_days,
 		       terminal_recording_enabled, terminal_recording_retention_days,
 		       silent_alert_threshold_minutes,
-		       latest_cli_version, latest_cli_version_checked_at,
+		       latest_cli_version, COALESCE(latest_cli_release_notes, ''), latest_cli_version_checked_at,
 		       update_check_interval_minutes,
 		       latest_server_version, COALESCE(latest_server_release_notes, ''), latest_server_version_checked_at,
 		       server_backup_enabled, server_backup_interval_hours,
@@ -1682,7 +1682,7 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			&t.AnomalyAckRetentionDays, &t.AuditRetentionDays,
 			&t.TerminalRecordingEnabled, &t.TerminalRecordingRetentionDays,
 			&t.SilentAlertThresholdMinutes,
-			&t.LatestCLIVersion, &t.LatestCLIVersionCheckedAt,
+			&t.LatestCLIVersion, &t.LatestCLIReleaseNotes, &t.LatestCLIVersionCheckedAt,
 			&t.UpdateCheckIntervalMinutes,
 			&t.LatestServerVersion, &t.LatestServerReleaseNotes, &t.LatestServerVersionCheckedAt,
 			&t.ServerBackupEnabled, &t.ServerBackupIntervalHours,
@@ -2509,9 +2509,9 @@ func (d *DB) SetNodeCLIUpdatePending(nodeID uint64, pending bool) error {
 	return err
 }
 
-// SetLatestCLIVersion caches the latest known CLI version from GitHub.
-func (d *DB) SetLatestCLIVersion(version string) error {
-	_, err := d.db.Exec("UPDATE server_tuning SET latest_cli_version = ?, latest_cli_version_checked_at = NOW() WHERE id = 1", version)
+// SetLatestCLIVersion caches the latest known CLI version and release notes from GitHub.
+func (d *DB) SetLatestCLIVersion(version, releaseNotes string) error {
+	_, err := d.db.Exec("UPDATE server_tuning SET latest_cli_version = ?, latest_cli_release_notes = ?, latest_cli_version_checked_at = NOW() WHERE id = 1", version, releaseNotes)
 	return err
 }
 

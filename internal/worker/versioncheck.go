@@ -60,10 +60,10 @@ func (c *VersionChecker) tick() {
 	c.CheckServerVersion()
 }
 
-// CheckCLIVersion fetches the latest CLI version from GitHub and caches it.
+// CheckCLIVersion fetches the latest CLI version and release notes from GitHub.
 // Public so the "Check Now" handler can call it directly.
 func (c *VersionChecker) CheckCLIVersion() (string, error) {
-	version, err := c.fetchLatestTag(c.cliRepoURL)
+	version, notes, err := c.fetchLatestRelease("https://api.github.com/repos/lssolutions-ie/lss-backup-cli/releases/latest")
 	if err != nil {
 		lg.Warn("version-check: CLI request failed", "err", err.Error())
 		return "", err
@@ -71,7 +71,7 @@ func (c *VersionChecker) CheckCLIVersion() (string, error) {
 	if version == "" {
 		return "", nil
 	}
-	if err := c.db.SetLatestCLIVersion(version); err != nil {
+	if err := c.db.SetLatestCLIVersion(version, notes); err != nil {
 		lg.Error("version-check: save CLI version failed", "err", err.Error())
 		return version, err
 	}

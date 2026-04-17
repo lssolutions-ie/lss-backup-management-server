@@ -22,88 +22,89 @@
       </a>
       <div class="collapse navbar-collapse" id="navbar-menu">
         <ul class="navbar-nav pt-lg-3">
+
+          <!-- Dashboard -->
           <li class="nav-item">
             <a class="nav-link" href="/">
               <span class="nav-link-icon"><i class="ti ti-dashboard"></i></span>
               <span class="nav-link-title">Dashboard</span>
             </a>
           </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/anomalies">
-              <span class="nav-link-icon"><i class="ti ti-shield-x"></i></span>
-              <span class="nav-link-title">Anomalies</span>
+
+          <!-- Intelligence -->
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#navbar-intelligence" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="false">
+              <span class="nav-link-icon"><i class="ti ti-brain"></i></span>
+              <span class="nav-link-title">Intelligence</span>
             </a>
+            <div class="dropdown-menu">
+              <a class="dropdown-item" href="/anomalies"><i class="ti ti-shield-x me-2"></i>Anomalies</a>
+              {{if or .User.IsSuperAdmin .User.IsManager}}
+              <a class="dropdown-item" href="/audit"><i class="ti ti-history me-2"></i>Audit Log</a>
+              {{end}}
+            </div>
           </li>
-          {{if or .User.IsSuperAdmin .User.IsManager}}
-          <li class="nav-item">
-            <a class="nav-link" href="/audit">
-              <span class="nav-link-icon"><i class="ti ti-history"></i></span>
-              <span class="nav-link-title">Audit Log</span>
+
+          <!-- Nodes -->
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#navbar-nodes" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="false">
+              <span class="nav-link-icon"><i class="ti ti-server"></i></span>
+              <span class="nav-link-title">Nodes</span>
             </a>
+            <div class="dropdown-menu">
+              <a class="dropdown-item" href="/"><i class="ti ti-list me-2"></i>All Nodes</a>
+              {{if .User.CanWrite}}
+              <a class="dropdown-item" href="/nodes/new"><i class="ti ti-server-bolt me-2"></i>Register Node</a>
+              {{end}}
+              {{if or .User.IsSuperAdmin .User.IsManager}}
+              <a class="dropdown-item" href="/settings/pending-nodes"><i class="ti ti-clock me-2"></i>Pending Nodes</a>
+              {{end}}
+            </div>
           </li>
-          {{end}}
+
+          <!-- Configuration -->
           {{if .User.CanWrite}}
-          <li class="nav-item">
-            <a class="nav-link" href="/nodes/new">
-              <span class="nav-link-icon"><i class="ti ti-server-bolt"></i></span>
-              <span class="nav-link-title">Register Node</span>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#navbar-config" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="false">
+              <span class="nav-link-icon"><i class="ti ti-adjustments"></i></span>
+              <span class="nav-link-title">Configuration</span>
             </a>
+            <div class="dropdown-menu">
+              <a class="dropdown-item" href="/groups"><i class="ti ti-folders me-2"></i>Clients</a>
+              <a class="dropdown-item" href="/tags"><i class="ti ti-tags me-2"></i>Node Tags</a>
+              {{if .User.IsSuperAdmin}}
+              <a class="dropdown-item" href="/job-tags"><i class="ti ti-flag me-2"></i>Job Tags</a>
+              {{end}}
+            </div>
           </li>
           {{end}}
-          <li class="nav-item">
-            <a class="nav-link" href="/tags">
-              <span class="nav-link-icon"><i class="ti ti-tags"></i></span>
-              <span class="nav-link-title">Node Tags</span>
-            </a>
-          </li>
-          {{if .User.IsSuperAdmin}}
-          <li class="nav-item">
-            <a class="nav-link" href="/user-tags">
-              <span class="nav-link-icon"><i class="ti ti-user-plus"></i></span>
-              <span class="nav-link-title">User Tags</span>
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/user-groups">
-              <span class="nav-link-icon"><i class="ti ti-users-group"></i></span>
-              <span class="nav-link-title">User Groups</span>
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/job-tags">
-              <span class="nav-link-icon"><i class="ti ti-flag"></i></span>
-              <span class="nav-link-title">Job Tags</span>
-            </a>
-          </li>
-          {{end}}
+
+          <!-- Access Control -->
           {{if .User.CanManageUsers}}
-          <li class="nav-item">
-            <a class="nav-link" href="/permissions">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#navbar-access" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="false">
               <span class="nav-link-icon"><i class="ti ti-lock"></i></span>
-              <span class="nav-link-title">Permissions</span>
+              <span class="nav-link-title">Access Control</span>
             </a>
+            <div class="dropdown-menu">
+              <a class="dropdown-item" href="/users"><i class="ti ti-users me-2"></i>Users</a>
+              {{if .User.IsSuperAdmin}}
+              <a class="dropdown-item" href="/user-groups"><i class="ti ti-users-group me-2"></i>User Groups</a>
+              <a class="dropdown-item" href="/user-tags"><i class="ti ti-user-plus me-2"></i>User Tags</a>
+              {{end}}
+              <a class="dropdown-item" href="/permissions"><i class="ti ti-shield-lock me-2"></i>Permissions</a>
+            </div>
           </li>
           {{end}}
-          {{if .User.CanManageUsers}}
-          <li class="nav-item">
-            <a class="nav-link" href="/groups">
-              <span class="nav-link-icon"><i class="ti ti-folders"></i></span>
-              <span class="nav-link-title">Clients</span>
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/users">
-              <span class="nav-link-icon"><i class="ti ti-users"></i></span>
-              <span class="nav-link-title">Users</span>
-            </a>
-          </li>
-          {{end}}
+
+          <!-- Settings -->
           <li class="nav-item">
             <a class="nav-link" href="/settings">
               <span class="nav-link-icon"><i class="ti ti-settings"></i></span>
               <span class="nav-link-title">Settings</span>
             </a>
           </li>
+
         </ul>
         <div class="mt-auto p-3">
           <div class="d-flex align-items-center mb-3">

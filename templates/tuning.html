@@ -112,57 +112,7 @@
       </div>
     </div>
 
-    <div class="col-md-12">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Anomaly Tuning</h3></div>
-        <div class="card-body">
-          <p class="text-muted small">Controls the global Security &mdash; Anomalies page: thresholds for what fires, plus how long acknowledged rows stay on the live view before moving to the archive.</p>
-          <div class="row">
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Keep acknowledged anomalies on live page (days)</label>
-              <input type="number" name="anomaly_ack_retention_days" class="form-control" min="1" value="{{.Tuning.AnomalyAckRetentionDays}}">
-              <small class="form-hint">After this many days, acknowledged anomalies disappear from <code>/anomalies</code> but remain forever on <code>/anomalies/archive</code>. Default <strong>30</strong>.</small>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-12">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Anomaly Thresholds</h3></div>
-        <div class="card-body">
-          <p class="text-muted small">Triggers when a backup run shows unexpected drops vs. the previous run — possible signs of source deletion, ransomware, or repo tampering. Each anomaly is logged for forensics.</p>
-          <div class="row">
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Snapshot count drop &gt;</label>
-              <input type="number" name="anomaly_snapshot_drop_threshold" class="form-control" min="1" value="{{.Tuning.AnomalySnapshotDropThreshold}}">
-              <small class="form-hint">Alert when the restic repo loses more than this many snapshots between two reports. Default <strong>1</strong>.</small>
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Files drop ≥ %</label>
-              <input type="number" name="anomaly_files_drop_pct" class="form-control" min="1" max="100" value="{{.Tuning.AnomalyFilesDropPct}}">
-              <small class="form-hint">% drop in source file count to flag.</small>
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">... AND drop ≥ N files</label>
-              <input type="number" name="anomaly_files_drop_min" class="form-control" min="1" value="{{.Tuning.AnomalyFilesDropMin}}">
-              <small class="form-hint">Both the % AND minimum-count must be exceeded to alert.</small>
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Bytes drop ≥ %</label>
-              <input type="number" name="anomaly_bytes_drop_pct" class="form-control" min="1" max="100" value="{{.Tuning.AnomalyBytesDropPct}}">
-              <small class="form-hint">% drop in source byte total to flag.</small>
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label">... AND drop ≥ N MB</label>
-              <input type="number" name="anomaly_bytes_drop_min_mb" class="form-control" min="1" value="{{.Tuning.AnomalyBytesDropMinMB}}">
-              <small class="form-hint">Suppresses noise from tiny dataset shrinkage.</small>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Anomaly settings moved to Intelligence Tuning (/settings/intelligence) -->
 
     <div class="col-md-6">
       <div class="card mb-3">

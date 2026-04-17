@@ -210,6 +210,7 @@ func main() {
 	// Settings
 	mux.HandleFunc("/settings", webServer.RequireAuth(webServer.HandleSettings))
 	mux.HandleFunc("/settings/tuning", webServer.RequireSuperAdmin(webServer.HandleServerTuning))
+	mux.HandleFunc("/settings/intelligence", webServer.RequireSuperAdmin(webServer.HandleIntelligenceTuning))
 	mux.HandleFunc("/settings/node-disaster-recovery", webServer.RequireSuperAdmin(webServer.HandleDRSettings))
 	mux.HandleFunc("/settings/updates", webServer.RequireSuperAdmin(webServer.HandleUpdateSettings))
 	mux.HandleFunc("/settings/updates/check-cli", webServer.RequireSuperAdmin(webServer.HandleCheckCLIVersion))

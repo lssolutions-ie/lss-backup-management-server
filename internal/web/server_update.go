@@ -116,72 +116,42 @@ func (s *Server) HandleServerUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpFile, err := os.CreateTemp("", "lss-server-update-*")
+	stagingPath := "/var/lib/lss-management/update-staging"
+	staged, err := os.OpenFile(stagingPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
-		lg.Error("server update: create temp file failed", "err", err.Error())
-		setFlash(w, "Update failed: could not create temp file.")
+		lg.Error("server update: create staging file failed", "err", err.Error())
+		setFlash(w, "Update failed: could not create staging file.")
 		http.Redirect(w, r, "/settings/updates", http.StatusSeeOther)
 		return
 	}
-	tmpPath := tmpFile.Name()
 
-	if _, err := io.Copy(tmpFile, dlResp.Body); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpPath)
+	if _, err := io.Copy(staged, dlResp.Body); err != nil {
+		staged.Close()
+		os.Remove(stagingPath)
 		lg.Error("server update: write binary failed", "err", err.Error())
 		setFlash(w, "Update failed: could not write binary.")
 		http.Redirect(w, r, "/settings/updates", http.StatusSeeOther)
 		return
 	}
-	tmpFile.Close()
-
-	if err := os.Chmod(tmpPath, 0755); err != nil {
-		os.Remove(tmpPath)
-		lg.Error("server update: chmod failed", "err", err.Error())
-		setFlash(w, "Update failed: could not set permissions.")
-		http.Redirect(w, r, "/settings/updates", http.StatusSeeOther)
-		return
-	}
-
-	binaryPath := "/usr/local/bin/lss-management-server"
+	staged.Close()
 
 	s.auditServer(r, "server_update", "critical", "update", "server", "",
 		fmt.Sprintf("Server update from %s to %s", ServerVersion, tuning.LatestServerVersion), nil)
 
-	lg.Warn("server update: replacing binary and restarting", "from", ServerVersion, "to", tuning.LatestServerVersion)
+	lg.Warn("server update: applying update via helper script", "from", ServerVersion, "to", tuning.LatestServerVersion)
 
-	// Send response before restarting — the browser will see the flash after reload.
-	setFlash(w, fmt.Sprintf("Server updated to %s. Restarting...", tuning.LatestServerVersion))
+	setFlash(w, fmt.Sprintf("Server updating to %s. Restarting...", tuning.LatestServerVersion))
 	http.Redirect(w, r, "/settings/updates", http.StatusSeeOther)
 
-	// Flush response to the client before we die.
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
 
-	// Replace binary and restart in a goroutine so the HTTP response completes.
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-
-		if err := os.Rename(tmpPath, binaryPath); err != nil {
-			lg.Error("server update: rename failed, trying copy", "err", err.Error())
-			src, err2 := os.Open(tmpPath)
-			if err2 != nil {
-				lg.Error("server update: copy open failed", "err", err2.Error())
-				return
-			}
-			dst, err2 := os.OpenFile(binaryPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
-			if err2 != nil {
-				src.Close()
-				lg.Error("server update: copy create failed", "err", err2.Error())
-				return
-			}
-			io.Copy(dst, src)
-			src.Close()
-			dst.Close()
-			os.Remove(tmpPath)
+		out, err := exec.Command("sudo", "/usr/local/bin/lss-apply-update.sh").CombinedOutput()
+		if err != nil {
+			lg.Error("server update: apply failed", "err", err.Error(), "output", string(out))
 		}
-
-		exec.Command("systemctl", "restart", "lss-management").Run()
 	}()
 }

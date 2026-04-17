@@ -313,10 +313,22 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-update: if the node's CLI version is behind the latest known version,
 	// signal it to self-update on every heartbeat until it reports the new version.
+	// Include the direct download URL so the CLI doesn't hit the GitHub API.
 	if tuning, err := h.DB.GetServerTuning(); err == nil && tuning != nil {
 		if node.CLIVersion != "" && tuning.LatestCLIVersion != "" &&
 			node.CLIVersion != tuning.LatestCLIVersion {
 			resp["update_cli"] = true
+			os := node.HwOS
+			arch := node.HwArch
+			if os != "" && arch != "" {
+				ext := ""
+				if os == "windows" {
+					ext = ".exe"
+				}
+				resp["update_cli_url"] = fmt.Sprintf(
+					"https://github.com/lssolutions-ie/lss-backup-cli/releases/download/%s/lss-backup-cli-%s-%s%s",
+					tuning.LatestCLIVersion, os, arch, ext)
+			}
 		}
 	}
 

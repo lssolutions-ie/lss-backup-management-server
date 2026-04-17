@@ -225,8 +225,8 @@
               {{if and $.LatestCLIVersion (versionLT .CLIVersion $.LatestCLIVersion)}}
                 <code class="text-warning small">{{.CLIVersion}}</code>
                 <div><a href="#" class="text-warning small text-decoration-none"
-                   onclick="if(confirm('Force CLI update for {{.Name}}?')){fetch('/nodes/{{.ID}}/update-cli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'csrf_token={{$.CSRFToken}}',credentials:'same-origin'}).then(()=>location.reload())}; return false;"
-                   title="Auto-update is active. Click to force immediate update.">Update</a></div>
+                   onclick="triggerNodeUpdate({{.ID}}, '{{.Name}}'); return false;"
+                   title="Run CLI update now via SSH">Update</a></div>
               {{else}}
                 <code class="text-success small">{{.CLIVersion}}</code>
               {{end}}
@@ -343,5 +343,77 @@
     });
   }
 })();
+
+// ── CLI Update via SSH ──
+var updateSshCreds = {};
+function triggerNodeUpdate(nodeID, nodeName) {
+  var creds = updateSshCreds[nodeID];
+  if (creds) {
+    runUpdate(nodeID, nodeName, creds.username, creds.password);
+    return;
+  }
+  openUpdateSSHModal(nodeID, nodeName);
+}
+function runUpdate(nodeID, nodeName, user, pass) {
+  var btn = document.querySelector('[onclick*="triggerNodeUpdate(' + nodeID + '"]');
+  if (btn) btn.textContent = 'Updating…';
+  fetch('/nodes/' + nodeID + '/update-cli', {
+    method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: user, password: pass})
+  }).then(function(res) {
+    return res.json().then(function(d) {
+      if (res.status === 401) { delete updateSshCreds[nodeID]; alert('SSH credentials rejected. Try again.'); location.reload(); return; }
+      if (d.error) { alert('Update failed: ' + d.error); location.reload(); return; }
+      alert('Update triggered on ' + nodeName + '. Node will restart with the new version.');
+      location.reload();
+    });
+  }).catch(function(err) { alert('Error: ' + err.message); location.reload(); });
+}
+function openUpdateSSHModal(nodeID, nodeName) {
+  var m = document.getElementById('update-ssh-modal');
+  if (!m) return;
+  document.getElementById('update-ssh-node-name').textContent = nodeName;
+  document.getElementById('update-ssh-user').value = '';
+  document.getElementById('update-ssh-pass').value = '';
+  var btn = document.getElementById('update-ssh-confirm');
+  var nb = btn.cloneNode(true); btn.parentNode.replaceChild(nb, btn);
+  var modal = window.bootstrap && window.bootstrap.Modal ? new window.bootstrap.Modal(m) : null;
+  nb.addEventListener('click', function() {
+    var u = document.getElementById('update-ssh-user').value.trim();
+    var p = document.getElementById('update-ssh-pass').value;
+    if (!u) return;
+    updateSshCreds[nodeID] = {username: u, password: p};
+    if (modal) modal.hide();
+    runUpdate(nodeID, nodeName, u, p);
+  });
+  if (modal) modal.show(); else { m.classList.add('show'); m.style.display = 'block'; }
+}
 </script>
+
+<div class="modal modal-blur fade" id="update-ssh-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-refresh me-1"></i> Update CLI on <span id="update-ssh-node-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">SSH credentials are needed to connect to the node and run the update immediately.</p>
+        <div class="mb-3">
+          <label class="form-label">SSH Username</label>
+          <input type="text" id="update-ssh-user" class="form-control" placeholder="root">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">SSH Password</label>
+          <input type="password" id="update-ssh-pass" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="update-ssh-confirm" class="btn btn-primary"><i class="ti ti-refresh"></i> Update Now</button>
+      </div>
+    </div>
+  </div>
+</div>
 {{end}}

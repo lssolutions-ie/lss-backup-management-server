@@ -230,12 +230,10 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if len(status.AuditEvents) > 0 {
 		prevAck, _ := h.DB.GetNodeAuditAckSeq(node.ID)
 
-		// HMAC chain verification is disabled pending a joint debugging session
-		// with CLI to resolve the canonical-JSON mismatch. The chain head is
-		// still stored for when we re-enable. Events are always accepted.
-		// TODO: re-enable after fixing the canonical form discrepancy.
+		// Verify HMAC chain for events that carry the field (v2.5.0+ CLIs).
+		// Events without hmac (v2.3.x–v2.4.x) skip verification entirely.
 		chainOK := true
-		if false && hasHMACEvents(status.AuditEvents) {
+		if hasHMACEvents(status.AuditEvents) {
 			chainHead, _ := h.DB.GetNodeAuditChainHead(node.ID)
 			var err error
 			var chainDiag string
@@ -575,16 +573,20 @@ func verifyAuditChain(psk string, chainHead string, events []models.AuditEvent) 
 }
 
 func marshalEventForHMAC(e models.AuditEvent) ([]byte, error) {
-	stripped := models.AuditEvent{
-		Seq:      e.Seq,
-		TS:       e.TS,
-		Category: e.Category,
-		Severity: e.Severity,
-		Actor:    e.Actor,
-		Message:  e.Message,
-		Details:  e.Details,
+	// Build as a map to match the CLI's canonical form exactly.
+	// The CLI always includes "details" in the map (nil → "details":null),
+	// but Go's struct omitempty drops nil maps entirely. Using a map
+	// ensures both sides produce identical JSON.
+	m := map[string]interface{}{
+		"seq":      e.Seq,
+		"ts":       e.TS,
+		"category": e.Category,
+		"severity": e.Severity,
+		"actor":    e.Actor,
+		"message":  e.Message,
+		"details":  e.Details,
 	}
-	return json.Marshal(stripped)
+	return json.Marshal(m)
 }
 
 func apiError(w http.ResponseWriter, code int) {

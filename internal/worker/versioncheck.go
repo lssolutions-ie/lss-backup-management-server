@@ -9,21 +9,21 @@ import (
 )
 
 // VersionChecker polls the GitHub tags API periodically to discover the latest
-// CLI release version. The result is cached in server_tuning so the dashboard
-// can compare it against each node's reported cli_version.
+// CLI and server release versions. Results are cached in server_tuning so the
+// dashboard can compare them against reported versions.
 type VersionChecker struct {
-	db       *db.DB
-	interval time.Duration
-	repoURL  string
-	client   *http.Client
+	db            *db.DB
+	cliRepoURL    string
+	serverRepoURL string
+	client        *http.Client
 }
 
 func NewVersionChecker(d *db.DB) *VersionChecker {
 	return &VersionChecker{
-		db:       d,
-		interval: 30 * time.Minute,
-		repoURL:  "https://api.github.com/repos/lssolutions-ie/lss-backup-cli/tags?per_page=1",
-		client:   &http.Client{Timeout: 15 * time.Second},
+		db:            d,
+		cliRepoURL:    "https://api.github.com/repos/lssolutions-ie/lss-backup-cli/tags?per_page=1",
+		serverRepoURL: "https://api.github.com/repos/lssolutions-ie/lss-backup-management-server/tags?per_page=1",
+		client:        &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
@@ -32,13 +32,23 @@ func (c *VersionChecker) Start() {
 }
 
 func (c *VersionChecker) run() {
-	// Run once on startup, then on interval.
+	// Run once on startup, then on configurable interval.
 	c.tick()
-	t := time.NewTicker(c.interval)
-	defer t.Stop()
-	for range t.C {
+	for {
+		interval := c.getInterval()
+		time.Sleep(interval)
 		c.tick()
 	}
+}
+
+// getInterval reads the configured update check interval from the DB.
+// Falls back to 30 minutes if the DB query fails or returns 0.
+func (c *VersionChecker) getInterval() time.Duration {
+	t, err := c.db.GetServerTuning()
+	if err != nil || t.UpdateCheckIntervalMinutes == 0 {
+		return 30 * time.Minute
+	}
+	return time.Duration(t.UpdateCheckIntervalMinutes) * time.Minute
 }
 
 type githubTag struct {
@@ -46,47 +56,77 @@ type githubTag struct {
 }
 
 func (c *VersionChecker) tick() {
-	req, err := http.NewRequest(http.MethodGet, c.repoURL, nil)
+	c.CheckCLIVersion()
+	c.CheckServerVersion()
+}
+
+// CheckCLIVersion fetches the latest CLI version from GitHub and caches it.
+// Public so the "Check Now" handler can call it directly.
+func (c *VersionChecker) CheckCLIVersion() (string, error) {
+	version, err := c.fetchLatestTag(c.cliRepoURL)
 	if err != nil {
-		lg.Warn("version-check: build request failed", "err", err.Error())
-		return
+		lg.Warn("version-check: CLI request failed", "err", err.Error())
+		return "", err
+	}
+	if version == "" {
+		return "", nil
+	}
+	if err := c.db.SetLatestCLIVersion(version); err != nil {
+		lg.Error("version-check: save CLI version failed", "err", err.Error())
+		return version, err
+	}
+	lg.Debug("version-check: cached latest CLI version", "version", version)
+	return version, nil
+}
+
+// CheckServerVersion fetches the latest server version from GitHub and caches it.
+// Public so the "Check Now" handler can call it directly.
+func (c *VersionChecker) CheckServerVersion() (string, error) {
+	version, err := c.fetchLatestTag(c.serverRepoURL)
+	if err != nil {
+		lg.Warn("version-check: server request failed", "err", err.Error())
+		return "", err
+	}
+	if version == "" {
+		return "", nil
+	}
+	if err := c.db.SetLatestServerVersion(version); err != nil {
+		lg.Error("version-check: save server version failed", "err", err.Error())
+		return version, err
+	}
+	lg.Debug("version-check: cached latest server version", "version", version)
+	return version, nil
+}
+
+// fetchLatestTag hits the GitHub tags API and returns the name of the first tag.
+func (c *VersionChecker) fetchLatestTag(url string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
 	}
 	req.Header.Set("User-Agent", "LSS-Management-Server")
 	req.Header.Set("Accept", "application/vnd.github+json")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		lg.Warn("version-check: request failed", "err", err.Error())
-		return
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		lg.Warn("version-check: non-200 response", "status", resp.StatusCode)
-		return
+		lg.Warn("version-check: non-200 response", "url", url, "status", resp.StatusCode)
+		return "", nil
 	}
 
 	var tags []githubTag
 	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		lg.Warn("version-check: decode failed", "err", err.Error())
-		return
+		return "", err
 	}
 
-	if len(tags) == 0 {
-		lg.Warn("version-check: no tags returned")
-		return
+	if len(tags) == 0 || tags[0].Name == "" {
+		lg.Warn("version-check: no tags returned", "url", url)
+		return "", nil
 	}
 
-	latest := tags[0].Name
-	if latest == "" {
-		lg.Warn("version-check: empty tag name")
-		return
-	}
-
-	if err := c.db.SetLatestCLIVersion(latest); err != nil {
-		lg.Error("version-check: save failed", "err", err.Error())
-		return
-	}
-
-	lg.Debug("version-check: cached latest CLI version", "version", latest)
+	return tags[0].Name, nil
 }

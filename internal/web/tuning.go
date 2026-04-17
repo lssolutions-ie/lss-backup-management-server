@@ -56,6 +56,7 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 		t.TerminalRecordingEnabled = r.FormValue("terminal_recording_enabled") == "1"
 		t.TerminalRecordingRetentionDays = parse("terminal_recording_retention_days", t.TerminalRecordingRetentionDays)
 		t.SilentAlertThresholdMinutes = parse("silent_alert_threshold_minutes", t.SilentAlertThresholdMinutes)
+		t.UpdateCheckIntervalMinutes = parse("update_check_interval_minutes", t.UpdateCheckIntervalMinutes)
 		if err := s.DB.UpdateServerTuning(t); err != nil {
 			logx.FromContext(r.Context()).Error("save tuning failed", "err", err.Error())
 			s.render(w, r, http.StatusInternalServerError, "tuning.html", tuningPageData{

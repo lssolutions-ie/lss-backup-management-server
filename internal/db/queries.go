@@ -1656,7 +1656,9 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       anomaly_ack_retention_days, audit_retention_days,
 		       terminal_recording_enabled, terminal_recording_retention_days,
 		       silent_alert_threshold_minutes,
-		       latest_cli_version, latest_cli_version_checked_at
+		       latest_cli_version, latest_cli_version_checked_at,
+		       update_check_interval_minutes,
+		       latest_server_version, latest_server_version_checked_at
 		FROM server_tuning WHERE id = 1`).
 		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
 			&t.RetentionRawDays, &t.RetentionPostRunDays,
@@ -1667,7 +1669,9 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			&t.AnomalyAckRetentionDays, &t.AuditRetentionDays,
 			&t.TerminalRecordingEnabled, &t.TerminalRecordingRetentionDays,
 			&t.SilentAlertThresholdMinutes,
-			&t.LatestCLIVersion, &t.LatestCLIVersionCheckedAt)
+			&t.LatestCLIVersion, &t.LatestCLIVersionCheckedAt,
+			&t.UpdateCheckIntervalMinutes,
+			&t.LatestServerVersion, &t.LatestServerVersionCheckedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &models.ServerTuning{
 			RepoStatsIntervalSeconds:     86400,
@@ -1687,6 +1691,7 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			TerminalRecordingEnabled:       true,
 			TerminalRecordingRetentionDays: 30,
 			SilentAlertThresholdMinutes:    7,
+			UpdateCheckIntervalMinutes:     30,
 		}, nil
 	}
 	return t, err
@@ -1711,7 +1716,8 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		  audit_retention_days           = ?,
 		  terminal_recording_enabled      = ?,
 		  terminal_recording_retention_days = ?,
-		  silent_alert_threshold_minutes  = ?
+		  silent_alert_threshold_minutes  = ?,
+		  update_check_interval_minutes  = ?
 		WHERE id = 1`,
 		t.RepoStatsIntervalSeconds, t.RepoStatsTimeoutSeconds,
 		t.RetentionRawDays, t.RetentionPostRunDays,
@@ -1721,7 +1727,8 @@ func (d *DB) UpdateServerTuning(t *models.ServerTuning) error {
 		t.AnomalyBytesDropPct, t.AnomalyBytesDropMinMB,
 		t.AnomalyAckRetentionDays, t.AuditRetentionDays,
 		t.TerminalRecordingEnabled, t.TerminalRecordingRetentionDays,
-		t.SilentAlertThresholdMinutes)
+		t.SilentAlertThresholdMinutes,
+		t.UpdateCheckIntervalMinutes)
 	return err
 }
 
@@ -2488,6 +2495,12 @@ func (d *DB) SetNodeCLIUpdatePending(nodeID uint64, pending bool) error {
 // SetLatestCLIVersion caches the latest known CLI version from GitHub.
 func (d *DB) SetLatestCLIVersion(version string) error {
 	_, err := d.db.Exec("UPDATE server_tuning SET latest_cli_version = ?, latest_cli_version_checked_at = NOW() WHERE id = 1", version)
+	return err
+}
+
+// SetLatestServerVersion caches the latest known server version from GitHub.
+func (d *DB) SetLatestServerVersion(version string) error {
+	_, err := d.db.Exec("UPDATE server_tuning SET latest_server_version = ?, latest_server_version_checked_at = NOW() WHERE id = 1", version)
 	return err
 }
 

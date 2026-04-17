@@ -440,6 +440,9 @@ type ServerTuning struct {
 	SilentAlertThresholdMinutes    uint32
 	LatestCLIVersion               string
 	LatestCLIVersionCheckedAt      *time.Time
+	UpdateCheckIntervalMinutes     uint32
+	LatestServerVersion            string
+	LatestServerVersionCheckedAt   *time.Time
 }
 
 // AuditEvent is the wire format CLI nodes send inside the heartbeat payload.

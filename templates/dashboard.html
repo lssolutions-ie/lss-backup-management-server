@@ -186,10 +186,10 @@
           <th>Client</th>
           <th>Tags</th>
           <th>Last Seen</th>
-          <th>Jobs</th>
-          <th>Status</th>
-          <th>Version</th>
-          <th>Online</th>
+          <th class="text-center" style="width:60px;">Jobs</th>
+          <th class="text-center" style="width:80px;">Status</th>
+          <th class="text-center" style="width:80px;">Online</th>
+          <th class="text-center" style="width:70px;">Version</th>
         </tr>
       </thead>
       <tbody>
@@ -199,8 +199,8 @@
           <td>{{.ClientGroup}}</td>
           <td onclick="event.stopPropagation()">{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
           <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
-          <td>{{.JobCount}}</td>
-          <td>
+          <td class="text-center">{{.JobCount}}</td>
+          <td class="text-center">
             {{if eq .WorstStatus "failure"}}
             <span class="badge text-bg-danger">Failure</span>
             {{else if eq .WorstStatus "warning"}}
@@ -213,7 +213,14 @@
             <span class="badge text-bg-secondary">—</span>
             {{end}}
           </td>
-          <td onclick="event.stopPropagation()">
+          <td class="text-center">
+            {{if .IsOnline}}
+            <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
+            {{else}}
+            <span class="status status-red"><span class="status-dot"></span> Offline</span>
+            {{end}}
+          </td>
+          <td class="text-center" onclick="event.stopPropagation()">
             {{if .CLIUpdatePending}}
               <span class="text-muted small">Update<br>Scheduled</span>
             {{else if and .CLIVersion (ne .CLIVersion "")}}
@@ -227,13 +234,6 @@
               {{end}}
             {{else}}
               <span class="text-muted small">—</span>
-            {{end}}
-          </td>
-          <td>
-            {{if .IsOnline}}
-            <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
-            {{else}}
-            <span class="status status-red"><span class="status-dot"></span> Offline</span>
             {{end}}
           </td>
         </tr>

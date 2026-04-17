@@ -57,10 +57,16 @@
     </div>
     {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
     <div class="alert alert-warning mt-3 mb-0">
-      <strong>To update the server:</strong>
-      <pre class="mb-0 mt-1">cd /path/to/lss-backup-management-server
-git pull
-sudo bash install/install.sh</pre>
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <strong>Update available:</strong> {{.ServerVersion}} → {{.LatestServerVersion}}
+        </div>
+        <form method="POST" action="/settings/updates/apply" class="d-inline"
+              onsubmit="return confirm('This will download the latest release from GitHub, replace the server binary, and restart the service.\n\nThe dashboard will be briefly unavailable during restart.\n\nContinue?');">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-warning"><i class="ti ti-download me-1"></i>Update Server Now</button>
+        </form>
+      </div>
     </div>
     {{end}}
   </div>

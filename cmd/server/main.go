@@ -223,6 +223,7 @@ func main() {
 	mux.HandleFunc("/settings/updates", webServer.RequireSuperAdmin(webServer.HandleUpdateSettings))
 	mux.HandleFunc("/settings/updates/check-cli", webServer.RequireSuperAdmin(webServer.HandleCheckCLIVersion))
 	mux.HandleFunc("/settings/updates/check-server", webServer.RequireSuperAdmin(webServer.HandleCheckServerVersion))
+	mux.HandleFunc("/settings/updates/apply", webServer.RequireSuperAdmin(webServer.HandleServerUpdate))
 	mux.HandleFunc("/settings/pending-nodes", webServer.RequireManagerOrAbove(webServer.HandlePendingNodes))
 	mux.HandleFunc("/settings/pending-nodes/delete", webServer.RequireManagerOrAbove(webServer.HandleDeletePendingNode))
 	mux.HandleFunc("/settings/backup", webServer.RequireSuperAdmin(webServer.HandleBackupPage))

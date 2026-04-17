@@ -14,52 +14,144 @@
   <div class="col-sm-6 col-lg">
     <div class="card card-sm">
       <div class="card-body">
-        <div class="subheader">Total nodes</div>
+        <div class="subheader">Total Nodes</div>
         <div class="h1 mb-0">{{.Stats.TotalNodes}}</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-lg">
-    <div class="card card-sm">
+    <div class="card card-sm" style="cursor:pointer;" onclick="filterByOnline('online')">
       <div class="card-body">
-        <div class="subheader">Online (last 10 min)</div>
+        <div class="subheader">Online Nodes <span class="text-muted fw-normal" style="font-size:0.7rem;">(last 10 min)</span></div>
         <div class="h1 mb-0 text-success">{{.Stats.OnlineNodes}}</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-lg">
-    <div class="card card-sm">
+    <div class="card card-sm" style="cursor:pointer;" onclick="filterByStatus('failure')">
       <div class="card-body">
-        <div class="subheader">With failures</div>
+        <div class="subheader">Nodes with Job Failures</div>
         <div class="h1 mb-0 text-danger">{{.Stats.FailingNodes}}</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-lg">
-    <div class="card card-sm">
+    <div class="card card-sm" style="cursor:pointer;" onclick="filterByStatus('warning')">
       <div class="card-body">
-        <div class="subheader">With warnings</div>
+        <div class="subheader">Nodes with Job Warnings</div>
         <div class="h1 mb-0 text-warning">{{.Stats.WarningNodes}}</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-lg">
-    <div class="card card-sm">
+    <div class="card card-sm" style="cursor:pointer;" onclick="filterByOnline('offline')">
       <div class="card-body">
-        <div class="subheader">Never seen</div>
+        <div class="subheader">Nodes Never Seen</div>
         <div class="h1 mb-0 text-muted">{{.Stats.NeverSeenNodes}}</div>
       </div>
     </div>
   </div>
   <div class="col-sm-6 col-lg">
-    <div class="card card-sm" style="cursor: pointer;" onclick="window.location='/anomalies'">
+    <div class="card card-sm" style="cursor:pointer;" onclick="window.location='/anomalies'">
       <div class="card-body">
-        <div class="subheader">Anomalies</div>
+        <div class="subheader">Job Anomalies</div>
         <div class="h1 mb-0 {{if gt .AnomalyCount 0}}text-danger{{else}}text-muted{{end}}">{{.AnomalyCount}}</div>
       </div>
     </div>
   </div>
 </div>
+
+<!-- DR Status + System Health bar -->
+<div class="row row-cards mb-3">
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body d-flex align-items-center">
+        <div class="me-3">
+          {{if eq .DRProtected .DRTotal}}
+            <i class="ti ti-shield-check text-success" style="font-size:2rem;"></i>
+          {{else}}
+            <i class="ti ti-shield-x text-danger" style="font-size:2rem;"></i>
+          {{end}}
+        </div>
+        <div>
+          <div class="subheader">DR Protected</div>
+          <div class="h3 mb-0 {{if eq .DRProtected .DRTotal}}text-success{{else}}text-danger{{end}}">{{.DRProtected}} / {{.DRTotal}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body d-flex align-items-center">
+        <div class="me-3"><i class="ti ti-clock text-primary" style="font-size:2rem;"></i></div>
+        <div>
+          <div class="subheader">Server Uptime</div>
+          <div class="h3 mb-0">{{.ServerUptime}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body d-flex align-items-center">
+        <div class="me-3"><i class="ti ti-database text-info" style="font-size:2rem;"></i></div>
+        <div>
+          <div class="subheader">Database</div>
+          <div class="h3 mb-0">{{.DBSizeHuman}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-sm">
+      <div class="card-body d-flex align-items-center">
+        <div class="me-3">
+          {{if eq .LastBackupAge "never"}}
+            <i class="ti ti-database-export text-danger" style="font-size:2rem;"></i>
+          {{else}}
+            <i class="ti ti-database-export text-success" style="font-size:2rem;"></i>
+          {{end}}
+        </div>
+        <div>
+          <div class="subheader">Last Server Backup</div>
+          <div class="h3 mb-0 {{if eq .LastBackupAge "never"}}text-danger{{end}}">{{.LastBackupAge}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Activity -->
+{{if .RecentAudit}}
+<div class="card mb-3">
+  <div class="card-header d-flex align-items-center">
+    <h3 class="card-title"><i class="ti ti-activity me-2"></i>Recent Activity</h3>
+    <a href="/audit" class="ms-auto btn btn-sm btn-outline-secondary">View all</a>
+  </div>
+  <div class="list-group list-group-flush">
+    {{range .RecentAudit}}
+    <div class="list-group-item d-flex align-items-center py-2">
+      {{if eq .Severity "critical"}}
+        <span class="status status-red me-3"><span class="status-dot"></span></span>
+      {{else if eq .Severity "warn"}}
+        <span class="status status-yellow me-3"><span class="status-dot"></span></span>
+      {{else}}
+        <span class="status status-green me-3"><span class="status-dot"></span></span>
+      {{end}}
+      <div class="flex-fill">
+        <div class="small">{{.Message}}</div>
+        <div class="text-muted" style="font-size:0.7rem;">
+          {{if eq .Source "node"}}Node{{else if eq .Source "host"}}Host{{else}}Server{{end}}
+          · {{.Category}}
+          {{if .Username}} · {{.Username}}{{end}}
+        </div>
+      </div>
+      <div class="text-muted small text-nowrap ms-3">{{.TS.Format "15:04:05"}}</div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
 
 {{if .Groups}}
 <div class="row row-deck row-cards mb-3">
@@ -187,8 +279,8 @@
           <th>Tags</th>
           <th>Last Seen</th>
           <th class="text-center" style="width:60px;">Jobs</th>
-          <th class="text-center" style="width:80px;">Status</th>
-          <th class="text-center" style="width:80px;">Online</th>
+          <th class="text-center" style="width:90px;">Job Status</th>
+          <th class="text-center" style="width:100px;">Node Status</th>
           <th class="text-center" style="width:70px;">Version</th>
         </tr>
       </thead>

@@ -1,8 +1,11 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/db"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -14,6 +17,13 @@ type dashboardPageData struct {
 	AllTags          []*models.Tag
 	AnomalyCount     int
 	LatestCLIVersion string
+	DRProtected      int
+	DRTotal          int
+	RecentAudit      []*db.EnrichedAuditLog
+	ServerUptime     string
+	LastBackupAge    string
+	DBSizeHuman      string
+	RecordingSize    string
 }
 
 func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +93,24 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 		latestCLI = tuning.LatestCLIVersion
 	}
 
+	// DR status summary — query directly since ListNodesWithStatus doesn't fetch DR columns
+	var drProtected, drTotal int
+	if r, err := s.DB.RawQuery("SELECT COUNT(*) FROM nodes WHERE first_seen_at IS NOT NULL"); err == nil {
+		if r.Next() { r.Scan(&drTotal) }; r.Close()
+	}
+	if r, err := s.DB.RawQuery("SELECT COUNT(*) FROM nodes WHERE first_seen_at IS NOT NULL AND dr_enabled = 1 AND dr_last_status = 'success'"); err == nil {
+		if r.Next() { r.Scan(&drProtected) }; r.Close()
+	}
+
+	// Recent audit activity (last 5 events)
+	recentAudit, _ := s.DB.ListAuditLog(0, "", 5)
+
+	// System health
+	serverUptime := uptimeSince(ServerStartTime)
+	lastBackupAge := s.getLastBackupAge()
+	dbSize := s.getDBSize()
+	recSize := s.getRecordingSize()
+
 	s.render(w, r, http.StatusOK, "dashboard.html", dashboardPageData{
 		PageData:         pd,
 		Stats:            stats,
@@ -91,5 +119,83 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 		AllTags:          allTags,
 		AnomalyCount:     anomalyCount,
 		LatestCLIVersion: latestCLI,
+		DRProtected:      drProtected,
+		DRTotal:          drTotal,
+		RecentAudit:      recentAudit,
+		ServerUptime:     serverUptime,
+		LastBackupAge:    lastBackupAge,
+		DBSizeHuman:      dbSize,
+		RecordingSize:    recSize,
 	})
+}
+
+var ServerStartTime = time.Now()
+
+func uptimeSince(start time.Time) string {
+	d := time.Since(start)
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	return fmt.Sprintf("%dd %dh", days, hours)
+}
+
+func (s *Server) getLastBackupAge() string {
+	rows, err := s.DB.RawQuery("SELECT ts FROM audit_log WHERE category = 'backup_created' ORDER BY ts DESC LIMIT 1")
+	if err != nil {
+		return "never"
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return "never"
+	}
+	var ts time.Time
+	if err := rows.Scan(&ts); err != nil {
+		return "never"
+	}
+	d := time.Since(ts)
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(d.Hours())/24)
+}
+
+func (s *Server) getDBSize() string {
+	rows, err := s.DB.RawQuery("SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 1) FROM information_schema.tables WHERE table_schema = DATABASE()")
+	if err != nil {
+		return "?"
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return "?"
+	}
+	var size float64
+	if err := rows.Scan(&size); err != nil {
+		return "?"
+	}
+	if size < 1 {
+		return fmt.Sprintf("%.0f KB", size*1024)
+	}
+	return fmt.Sprintf("%.1f MB", size)
+}
+
+func (s *Server) getRecordingSize() string {
+	rows, err := s.DB.RawQuery("SELECT COUNT(*) FROM audit_log WHERE category = 'terminal_opened' AND details_json LIKE '%session_file%'")
+	if err != nil {
+		return "0"
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return "0"
+	}
+	var count int
+	rows.Scan(&count)
+	return fmt.Sprintf("%d sessions", count)
 }

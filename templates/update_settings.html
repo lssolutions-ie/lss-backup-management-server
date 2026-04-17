@@ -52,9 +52,11 @@
       </form>
     </div>
     {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
-    <div class="alert alert-danger mb-0">
-      <div class="mb-3"><i class="ti ti-alert-triangle me-1"></i><strong>Before updating, ensure you have a working backup.</strong> If the update fails, you may need to restore from a snapshot.</div>
-      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" id="update-csrf">
+    <div class="mt-3">
+      <div class="alert alert-danger mb-3">
+        <i class="ti ti-alert-triangle me-1"></i><strong>Before updating, ensure you have a working backup.</strong> If the update fails, you may need to restore from a snapshot.
+      </div>
+      <input type="hidden" id="update-csrf" value="{{.CSRFToken}}">
       <label class="form-check mb-3">
         <input class="form-check-input" type="checkbox" id="backup-confirmed">
         <span class="form-check-label">I confirm that a server backup exists and I can restore if needed</span>

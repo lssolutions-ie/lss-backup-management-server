@@ -1,67 +1,57 @@
 {{define "content"}}
-<div class="page-header mb-3"><h2 class="page-title"><i class="ti ti-settings me-1"></i> Settings</h2></div>
-
-<div class="row">
-  <div class="col-lg-3 mb-3">
-    <div class="card">
-      {{template "settings_sidebar" .}}
+<div class="page-header mb-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <div>
+      <h2 class="page-title mb-0">Pending Nodes</h2>
+      <div class="text-muted">Nodes created via server-assisted install that haven't completed registration yet. They will appear on the dashboard after their first heartbeat.</div>
     </div>
+    <a href="/nodes/new" class="btn btn-primary ms-3"><i class="ti ti-plus"></i> Add Node</a>
   </div>
+</div>
 
-  <div class="col-lg-9">
-    <div class="d-flex align-items-center justify-content-between mb-3">
-      <div>
-        <h3 class="mb-0">Pending Nodes</h3>
-        <div class="text-muted">Nodes created via server-assisted install that haven't completed registration yet. They will appear on the dashboard after their first heartbeat.</div>
-      </div>
-      <a href="/nodes/new" class="btn btn-primary ms-3"><i class="ti ti-plus"></i> Add Node</a>
-    </div>
-
-    <div class="card">
-      <div class="table-responsive">
-        <table class="table table-vcenter">
-          <thead>
-            <tr>
-              <th>Node UID</th>
-              <th>Client</th>
-              <th>Created</th>
-              <th class="text-center">Token Status</th>
-              <th class="w-1"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {{if not .Nodes}}
-            <tr><td colspan="5" class="text-center text-muted py-4">No pending nodes.</td></tr>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-vcenter">
+      <thead>
+        <tr>
+          <th>Node UID</th>
+          <th>Client</th>
+          <th>Created</th>
+          <th class="text-center">Token Status</th>
+          <th class="w-1"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if not .Nodes}}
+        <tr><td colspan="5" class="text-center text-muted py-4">No pending nodes.</td></tr>
+        {{else}}
+        {{$csrf := .CSRFToken}}
+        {{range .Nodes}}
+        <tr>
+          <td><code>{{.UID}}</code></td>
+          <td>{{if .Client}}{{.Client}}{{else}}<span class="text-muted">—</span>{{end}}</td>
+          <td class="small">{{.CreatedAt}}</td>
+          <td class="text-center">
+            {{if .TokenUsed}}
+              <span class="badge text-bg-warning">Used — waiting for heartbeat</span>
+            {{else if .Expired}}
+              <span class="badge text-bg-secondary">Expired</span>
             {{else}}
-            {{$csrf := .CSRFToken}}
-            {{range .Nodes}}
-            <tr>
-              <td><code>{{.UID}}</code></td>
-              <td>{{if .Client}}{{.Client}}{{else}}<span class="text-muted">—</span>{{end}}</td>
-              <td class="small">{{.CreatedAt}}</td>
-              <td class="text-center">
-                {{if .TokenUsed}}
-                  <span class="badge text-bg-warning">Used — waiting for heartbeat</span>
-                {{else if .Expired}}
-                  <span class="badge text-bg-secondary">Expired</span>
-                {{else}}
-                  <span class="badge text-bg-info">Waiting for install</span>
-                {{end}}
-              </td>
-              <td>
-                <form method="POST" action="/settings/pending-nodes/delete" class="d-inline">
-                  <input type="hidden" name="csrf_token" value="{{$csrf}}">
-                  <input type="hidden" name="node_id" value="{{.ID}}">
-                  <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete pending node {{.UID}}?')"><i class="ti ti-trash"></i></button>
-                </form>
-              </td>
-            </tr>
+              <span class="badge text-bg-info">Waiting for install</span>
             {{end}}
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    </div>
+          </td>
+          <td>
+            <form method="POST" action="/settings/pending-nodes/delete" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <input type="hidden" name="node_id" value="{{.ID}}">
+              <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete pending node {{.UID}}?')"><i class="ti ti-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+        {{end}}
+      </tbody>
+    </table>
   </div>
 </div>
 {{end}}

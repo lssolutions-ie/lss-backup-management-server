@@ -1,64 +1,54 @@
 {{define "content"}}
-<div class="page-header mb-3"><h2 class="page-title"><i class="ti ti-settings me-1"></i> Settings</h2></div>
+<div class="page-header mb-3"><h2 class="page-title"><i class="ti ti-user me-1"></i> Account Settings</h2></div>
 
 {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
-<div class="row">
-  <div class="col-lg-3 mb-3">
-    <div class="card">
-      {{template "settings_sidebar" .}}
+<div class="row row-cards">
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header"><h3 class="card-title"><i class="ti ti-key me-2"></i>Change Password</h3></div>
+      <div class="card-body">
+        <form action="/settings" method="POST" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="mb-3">
+            <label class="form-label">Current password</label>
+            <input type="password" name="current_password" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">New password</label>
+            <input type="password" name="new_password" class="form-control" required minlength="8">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Confirm new password</label>
+            <input type="password" name="confirm_password" class="form-control" required minlength="8">
+          </div>
+          <button type="submit" class="btn btn-primary w-100"><i class="ti ti-key me-1"></i>Update Password</button>
+        </form>
+      </div>
     </div>
   </div>
-
-  <div class="col-lg-9">
-    <div class="row row-cards">
-      <div class="col-lg-6">
-        <div class="card mb-3">
-          <div class="card-header"><h3 class="card-title"><i class="ti ti-key me-2"></i>Change Password</h3></div>
-          <div class="card-body">
-            <form action="/settings" method="POST" autocomplete="off">
-              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-              <div class="mb-3">
-                <label class="form-label">Current password</label>
-                <input type="password" name="current_password" class="form-control" required>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">New password</label>
-                <input type="password" name="new_password" class="form-control" required minlength="8">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Confirm new password</label>
-                <input type="password" name="confirm_password" class="form-control" required minlength="8">
-              </div>
-              <button type="submit" class="btn btn-primary w-100"><i class="ti ti-key me-1"></i>Update Password</button>
-            </form>
-          </div>
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header"><h3 class="card-title"><i class="ti ti-shield-lock me-2"></i>Two-Factor Authentication</h3></div>
+      <div class="card-body">
+        {{if .User.TOTPEnabled}}
+        <div class="mb-3">
+          <span class="status status-green"><span class="status-dot"></span> 2FA is enabled</span>
         </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="card mb-3">
-          <div class="card-header"><h3 class="card-title"><i class="ti ti-shield-lock me-2"></i>Two-Factor Authentication</h3></div>
-          <div class="card-body">
-            {{if .User.TOTPEnabled}}
-            <div class="mb-3">
-              <span class="status status-green"><span class="status-dot"></span> 2FA is enabled</span>
-            </div>
-            <form action="/settings/2fa/disable" method="POST">
-              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-              <button type="submit" class="btn btn-warning w-100" onclick="return confirm('Are you sure you want to disable two-factor authentication?')">
-                <i class="ti ti-shield-off me-1"></i>Disable 2FA
-              </button>
-            </form>
-            {{else}}
-            <div class="mb-3">
-              <span class="status status-secondary"><span class="status-dot"></span> 2FA is not enabled</span>
-            </div>
-            <p class="text-muted small">Protect your account with a time-based one-time password (TOTP) using an authenticator app.</p>
-            <a href="/settings/2fa/setup" class="btn btn-primary w-100"><i class="ti ti-shield-lock me-1"></i>Enable 2FA</a>
-            {{end}}
-          </div>
+        <form action="/settings/2fa/disable" method="POST">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn-warning w-100" onclick="return confirm('Are you sure you want to disable two-factor authentication?')">
+            <i class="ti ti-shield-off me-1"></i>Disable 2FA
+          </button>
+        </form>
+        {{else}}
+        <div class="mb-3">
+          <span class="status status-secondary"><span class="status-dot"></span> 2FA is not enabled</span>
         </div>
+        <p class="text-muted small">Protect your account with a time-based one-time password (TOTP) using an authenticator app.</p>
+        <a href="/settings/2fa/setup" class="btn btn-primary w-100"><i class="ti ti-shield-lock me-1"></i>Enable 2FA</a>
+        {{end}}
       </div>
     </div>
   </div>

@@ -25,15 +25,11 @@ type settingsPageData struct {
 }
 
 func (s *Server) settingsPage(r *http.Request) PageData {
-	pd := s.newPageData(r)
-	pd.SettingsTab = "account"
-	return pd
+	return s.newPageData(r)
 }
 
 func (s *Server) smtpPage(r *http.Request) PageData {
-	pd := s.newPageData(r)
-	pd.SettingsTab = "smtp"
-	return pd
+	return s.newPageData(r)
 }
 
 func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {

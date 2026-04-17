@@ -98,11 +98,28 @@
           {{end}}
 
           <!-- Settings -->
-          <li class="nav-item">
-            <a class="nav-link" href="/settings">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#navbar-settings" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="false">
               <span class="nav-link-icon"><i class="ti ti-settings"></i></span>
               <span class="nav-link-title">Settings</span>
             </a>
+            <div class="dropdown-menu">
+              <a class="dropdown-item" href="/settings"><i class="ti ti-user me-2"></i>Password & 2FA</a>
+              {{if .User.IsSuperAdmin}}
+              <div class="dropdown-divider"></div>
+              <a class="dropdown-item" href="/settings/tuning"><i class="ti ti-adjustments me-2"></i>Server Tuning</a>
+              <a class="dropdown-item" href="/settings/backup"><i class="ti ti-database-export me-2"></i>Backup & Restore</a>
+              <a class="dropdown-item" href="/settings/smtp"><i class="ti ti-mail me-2"></i>SMTP</a>
+              {{end}}
+              {{if or .User.IsSuperAdmin .User.IsManager}}
+              <div class="dropdown-divider"></div>
+              <a class="dropdown-item" href="/settings/node-disaster-recovery"><i class="ti ti-shield-check me-2"></i>Disaster Recovery</a>
+              {{if .User.IsSuperAdmin}}
+              <a class="dropdown-item" href="/settings/updates"><i class="ti ti-refresh me-2"></i>Software Updates</a>
+              {{end}}
+              <a class="dropdown-item" href="/settings/pending-nodes"><i class="ti ti-clock me-2"></i>Pending Nodes</a>
+              {{end}}
+            </div>
           </li>
 
         </ul>

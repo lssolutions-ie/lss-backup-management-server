@@ -52,10 +52,8 @@ func (s *Server) HandlePendingNodes(w http.ResponseWriter, r *http.Request) {
 		nodes = append(nodes, pn)
 	}
 
-	pnpd := s.newPageData(r)
-	pnpd.SettingsTab = "pending"
 	s.render(w, r, http.StatusOK, "pending_nodes.html", pendingNodesPageData{
-		PageData: pnpd,
+		PageData: s.newPageData(r),
 		Nodes:    nodes,
 	})
 }

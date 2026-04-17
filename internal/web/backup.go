@@ -49,10 +49,8 @@ type backupPageData struct {
 
 // HandleBackupPage renders the backup & restore settings page.
 func (s *Server) HandleBackupPage(w http.ResponseWriter, r *http.Request) {
-	pd := s.newPageData(r)
-	pd.SettingsTab = "backup"
 	s.render(w, r, http.StatusOK, "backup.html", backupPageData{
-		PageData: pd,
+		PageData: s.newPageData(r),
 	})
 }
 
@@ -229,10 +227,8 @@ func (s *Server) HandleRestore(w http.ResponseWriter, r *http.Request) {
 
 	file, _, err := r.FormFile("backup_file")
 	if err != nil {
-		bpd := s.newPageData(r)
-		bpd.SettingsTab = "backup"
 		s.render(w, r, http.StatusBadRequest, "backup.html", backupPageData{
-			PageData: bpd,
+			PageData: s.newPageData(r),
 			Error:    "Please select a backup zip file.",
 		})
 		return
@@ -258,10 +254,8 @@ func (s *Server) HandleRestore(w http.ResponseWriter, r *http.Request) {
 	// Open as zip.
 	zr, err := zip.OpenReader(tmpFile.Name())
 	if err != nil {
-		bpd2 := s.newPageData(r)
-		bpd2.SettingsTab = "backup"
 		s.render(w, r, http.StatusBadRequest, "backup.html", backupPageData{
-			PageData: bpd2,
+			PageData: s.newPageData(r),
 			Error:    "Invalid zip file.",
 		})
 		return
@@ -277,10 +271,8 @@ func (s *Server) HandleRestore(w http.ResponseWriter, r *http.Request) {
 	// Validate required files.
 	for _, required := range []string{"dump.sql", "secret.key", "metadata.json"} {
 		if _, ok := zipFiles[required]; !ok {
-			bpd3 := s.newPageData(r)
-			bpd3.SettingsTab = "backup"
 			s.render(w, r, http.StatusBadRequest, "backup.html", backupPageData{
-				PageData: bpd3,
+				PageData: s.newPageData(r),
 				Error:    fmt.Sprintf("Invalid backup: missing %s", required),
 			})
 			return

@@ -45,10 +45,8 @@ func (s *Server) HandleDRSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		drpd := s.newPageData(r)
-		drpd.SettingsTab = "dr"
 		s.render(w, r, http.StatusOK, "dr_settings.html", drSettingsPageData{
-			PageData:       drpd,
+			PageData:       s.newPageData(r),
 			Config:         cfg,
 			SecretKeyMask:  maskSecret(cfg.S3SecretKey),
 			ResticPWStatus: resticStatus,
@@ -90,10 +88,8 @@ func (s *Server) HandleDRSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.DB.SaveDRConfig(newCfg, s.AppKey); err != nil {
-		drpd2 := s.newPageData(r)
-		drpd2.SettingsTab = "dr"
 		s.render(w, r, http.StatusOK, "dr_settings.html", drSettingsPageData{
-			PageData:       drpd2,
+			PageData:       s.newPageData(r),
 			Config:         newCfg,
 			SecretKeyMask:  maskSecret(newCfg.S3SecretKey),
 			ResticPWStatus: resticStatus,

@@ -59,10 +59,8 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 		t.UpdateCheckIntervalMinutes = parse("update_check_interval_minutes", t.UpdateCheckIntervalMinutes)
 		if err := s.DB.UpdateServerTuning(t); err != nil {
 			logx.FromContext(r.Context()).Error("save tuning failed", "err", err.Error())
-			pd := s.newPageData(r)
-			pd.SettingsTab = "tuning"
 			s.render(w, r, http.StatusInternalServerError, "tuning.html", tuningPageData{
-				PageData: pd, Tuning: t, Error: "Failed to save settings.",
+				PageData: s.newPageData(r), Tuning: t, Error: "Failed to save settings.",
 			})
 			return
 		}
@@ -78,10 +76,8 @@ func (s *Server) HandleServerTuning(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pd := s.newPageData(r)
-	pd.SettingsTab = "tuning"
 	s.render(w, r, http.StatusOK, "tuning.html", tuningPageData{
-		PageData: pd,
+		PageData: s.newPageData(r),
 		Tuning:   t,
 	})
 }

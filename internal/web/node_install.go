@@ -116,12 +116,9 @@ func (s *Server) HandleGenerateInstallToken(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Build the install URL
-	scheme := r.Header.Get("X-Forwarded-Proto")
-	if scheme == "" {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+	// Always use HTTPS — the install URL contains a token that grants PSK access.
+	// Never serve over HTTP even if X-Forwarded-Proto says so (internal proxy hop).
+	baseURL := fmt.Sprintf("https://%s", r.Host)
 	installURL := fmt.Sprintf("%s/api/v1/install/%s", baseURL, token)
 
 	unixCmd := fmt.Sprintf("curl -fsSL '%s' | bash", installURL)

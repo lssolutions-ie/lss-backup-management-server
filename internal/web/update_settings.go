@@ -14,6 +14,7 @@ type updateSettingsPageData struct {
 	LatestCLIVersionCheckedAt    *time.Time
 	ServerVersion                string
 	LatestServerVersion          string
+	LatestServerReleaseNotes     string
 	LatestServerVersionCheckedAt *time.Time
 	UpdateCheckInterval          uint32
 }
@@ -32,6 +33,7 @@ func (s *Server) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		LatestCLIVersionCheckedAt:    t.LatestCLIVersionCheckedAt,
 		ServerVersion:                ServerVersion,
 		LatestServerVersion:          t.LatestServerVersion,
+		LatestServerReleaseNotes:     t.LatestServerReleaseNotes,
 		LatestServerVersionCheckedAt: t.LatestServerVersionCheckedAt,
 		UpdateCheckInterval:          t.UpdateCheckIntervalMinutes,
 	})

@@ -1669,7 +1669,7 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       silent_alert_threshold_minutes,
 		       latest_cli_version, latest_cli_version_checked_at,
 		       update_check_interval_minutes,
-		       latest_server_version, latest_server_version_checked_at,
+		       latest_server_version, COALESCE(latest_server_release_notes, ''), latest_server_version_checked_at,
 		       server_backup_enabled, server_backup_interval_hours,
 		       server_backup_last_at, server_backup_last_status, COALESCE(server_backup_last_error, '')
 		FROM server_tuning WHERE id = 1`).
@@ -1684,7 +1684,7 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			&t.SilentAlertThresholdMinutes,
 			&t.LatestCLIVersion, &t.LatestCLIVersionCheckedAt,
 			&t.UpdateCheckIntervalMinutes,
-			&t.LatestServerVersion, &t.LatestServerVersionCheckedAt,
+			&t.LatestServerVersion, &t.LatestServerReleaseNotes, &t.LatestServerVersionCheckedAt,
 			&t.ServerBackupEnabled, &t.ServerBackupIntervalHours,
 			&t.ServerBackupLastAt, &t.ServerBackupLastStatus, &t.ServerBackupLastError)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -2515,9 +2515,9 @@ func (d *DB) SetLatestCLIVersion(version string) error {
 	return err
 }
 
-// SetLatestServerVersion caches the latest known server version from GitHub.
-func (d *DB) SetLatestServerVersion(version string) error {
-	_, err := d.db.Exec("UPDATE server_tuning SET latest_server_version = ?, latest_server_version_checked_at = NOW() WHERE id = 1", version)
+// SetLatestServerVersion caches the latest known server version and release notes from GitHub.
+func (d *DB) SetLatestServerVersion(version, releaseNotes string) error {
+	_, err := d.db.Exec("UPDATE server_tuning SET latest_server_version = ?, latest_server_release_notes = ?, latest_server_version_checked_at = NOW() WHERE id = 1", version, releaseNotes)
 	return err
 }
 

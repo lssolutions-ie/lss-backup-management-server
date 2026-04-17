@@ -453,6 +453,7 @@ type ServerTuning struct {
 	LatestCLIVersionCheckedAt      *time.Time
 	UpdateCheckIntervalMinutes     uint32
 	LatestServerVersion            string
+	LatestServerReleaseNotes       string
 	LatestServerVersionCheckedAt   *time.Time
 	ServerBackupEnabled            bool
 	ServerBackupIntervalHours      uint32

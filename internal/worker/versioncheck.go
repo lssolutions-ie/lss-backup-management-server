@@ -79,10 +79,10 @@ func (c *VersionChecker) CheckCLIVersion() (string, error) {
 	return version, nil
 }
 
-// CheckServerVersion fetches the latest server version from GitHub and caches it.
+// CheckServerVersion fetches the latest server version and release notes from GitHub.
 // Public so the "Check Now" handler can call it directly.
 func (c *VersionChecker) CheckServerVersion() (string, error) {
-	version, err := c.fetchLatestTag(c.serverRepoURL)
+	version, notes, err := c.fetchLatestRelease("https://api.github.com/repos/lssolutions-ie/lss-backup-management-server/releases/latest")
 	if err != nil {
 		lg.Warn("version-check: server request failed", "err", err.Error())
 		return "", err
@@ -90,7 +90,7 @@ func (c *VersionChecker) CheckServerVersion() (string, error) {
 	if version == "" {
 		return "", nil
 	}
-	if err := c.db.SetLatestServerVersion(version); err != nil {
+	if err := c.db.SetLatestServerVersion(version, notes); err != nil {
 		lg.Error("version-check: save server version failed", "err", err.Error())
 		return version, err
 	}
@@ -129,4 +129,37 @@ func (c *VersionChecker) fetchLatestTag(url string) (string, error) {
 	}
 
 	return tags[0].Name, nil
+}
+
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+	Body    string `json:"body"`
+}
+
+// fetchLatestRelease hits the GitHub releases API and returns the tag name and body.
+func (c *VersionChecker) fetchLatestRelease(url string) (string, string, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("User-Agent", "LSS-Management-Server")
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		lg.Warn("version-check: non-200 response", "url", url, "status", resp.StatusCode)
+		return "", "", nil
+	}
+
+	var rel githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", "", err
+	}
+
+	return rel.TagName, rel.Body, nil
 }

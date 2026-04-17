@@ -52,6 +52,12 @@
       </form>
     </div>
     {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
+    {{if .LatestServerReleaseNotes}}
+    <div class="mt-3 mb-2">
+      <strong>Release notes for {{.LatestServerVersion}}:</strong>
+      <div class="border rounded p-3 mt-1 bg-light small" style="white-space: pre-wrap;">{{.LatestServerReleaseNotes}}</div>
+    </div>
+    {{end}}
     <div class="mt-3">
       <div class="alert alert-danger mb-3">
         <i class="ti ti-alert-triangle me-1"></i><strong>Before updating, ensure you have a working backup.</strong> If the update fails, you may need to restore from a snapshot.

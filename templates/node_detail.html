@@ -15,6 +15,11 @@
       <h2 class="page-title">{{.Node.Name}}</h2>
       <div class="text-muted">
         Node ID <code>{{.Node.UID}}</code> · Client <strong>{{.Node.ClientGroup}}</strong>
+        {{if .Node.CLIUpdatePending}}
+          <span class="badge text-bg-warning ms-2">Update Scheduled</span>
+        {{else if and .Node.CLIVersion (ne .Node.CLIVersion "")}}
+          <span class="badge text-bg-secondary ms-2">CLI {{.Node.CLIVersion}}</span>
+        {{end}}
       </div>
     </div>
     {{if eq (printf "%s" .NodeAccess) "manage"}}

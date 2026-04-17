@@ -172,7 +172,15 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 7c. If the node reported hardware info, persist it.
+	// 7c. If the node reported a CLI version, persist it and clear update_pending if version changed.
+	if status.CLIVersion != "" && status.CLIVersion != node.CLIVersion {
+		if node.CLIUpdatePending {
+			_ = h.DB.SetNodeCLIUpdatePending(node.ID, false)
+		}
+		_ = h.DB.UpdateNodeCLIVersion(node.ID, status.CLIVersion)
+	}
+
+	// 7d. If the node reported hardware info, persist it.
 	if status.Hardware != nil {
 		if err := h.DB.UpdateNodeHardware(node.ID, status.Hardware); err != nil {
 			rlg.Error("update hardware failed", "node_id", node.ID, "err", err.Error())
@@ -304,6 +312,11 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	// Signal the CLI to self-update when an operator has scheduled it.
+	if node.CLIUpdatePending {
+		resp["update_cli"] = true
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -70,6 +70,8 @@ func main() {
 	hostAuditWorker.Start()
 	retentionWorker := worker.NewRetentionWorker(database, cfg.Terminal.SessionsDir)
 	retentionWorker.Start()
+	versionChecker := worker.NewVersionChecker(database)
+	versionChecker.Start()
 
 	web.ServerVersion = Version
 
@@ -324,6 +326,8 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodeRegeneratePSK(w, r)
 		case "psk":
 			s.HandleNodePSK(w, r)
+		case "update-cli":
+			s.HandleScheduleCLIUpdate(w, r)
 		case "terminal":
 			s.HandleTerminalPage(w, r)
 		case "tags":

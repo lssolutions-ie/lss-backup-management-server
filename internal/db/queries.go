@@ -332,7 +332,8 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 		       n.created_at,
 		       n.dr_enabled, n.dr_interval_hours, n.dr_last_backup_at,
 		       n.dr_last_status, n.dr_last_error, n.dr_snapshot_count,
-		       n.dr_force_run, n.dr_config_version
+		       n.dr_force_run, n.dr_config_version,
+		       n.cli_version, n.cli_update_pending
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.uid = ?`, uid).
@@ -344,7 +345,8 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 			&n.CreatedAt,
 			&n.DREnabled, &n.DRIntervalHours, &n.DRLastBackupAt,
 			&n.DRLastStatus, &n.DRLastError, &n.DRSnapshotCount,
-			&n.DRForceRun, &n.DRConfigVersion)
+			&n.DRForceRun, &n.DRConfigVersion,
+			&n.CLIVersion, &n.CLIUpdatePending)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -365,7 +367,8 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 		       n.created_at,
 		       n.dr_enabled, n.dr_interval_hours, n.dr_last_backup_at,
 		       n.dr_last_status, n.dr_last_error, n.dr_snapshot_count,
-		       n.dr_force_run, n.dr_config_version
+		       n.dr_force_run, n.dr_config_version,
+		       n.cli_version, n.cli_update_pending
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.id = ?`, id).
@@ -377,7 +380,8 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 			&n.CreatedAt,
 			&n.DREnabled, &n.DRIntervalHours, &n.DRLastBackupAt,
 			&n.DRLastStatus, &n.DRLastError, &n.DRSnapshotCount,
-			&n.DRForceRun, &n.DRConfigVersion)
+			&n.DRForceRun, &n.DRConfigVersion,
+			&n.CLIVersion, &n.CLIUpdatePending)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -558,6 +562,7 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 		       n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
 		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
 		       n.created_at,
+		       n.cli_version, n.cli_update_pending,
 		       COUNT(js.id) AS job_count,
 		       CASE
 		         WHEN SUM(js.last_status = 'failure') > 0 THEN 'failure'
@@ -580,7 +585,7 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 	                    n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,
 	                    n.hw_os, n.hw_arch, n.hw_cpus, n.hw_hostname,
 	                    n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
-	                    n.created_at
+	                    n.created_at, n.cli_version, n.cli_update_pending
 	          ORDER BY n.name`
 
 	rows, err := d.db.Query(query, args...)
@@ -601,6 +606,7 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 			&ns.HwOS, &ns.HwArch, &ns.HwCPUs, &ns.HwHostname,
 			&ns.HwRAMBytes, &ns.HwLANIP, &ns.HwPublicIP, &ns.HwStorageJSON,
 			&ns.CreatedAt,
+			&ns.CLIVersion, &ns.CLIUpdatePending,
 			&ns.JobCount, &ns.WorstStatus,
 		); err != nil {
 			return nil, err
@@ -1649,7 +1655,8 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       anomaly_bytes_drop_pct, anomaly_bytes_drop_min_mb,
 		       anomaly_ack_retention_days, audit_retention_days,
 		       terminal_recording_enabled, terminal_recording_retention_days,
-		       silent_alert_threshold_minutes
+		       silent_alert_threshold_minutes,
+		       latest_cli_version, latest_cli_version_checked_at
 		FROM server_tuning WHERE id = 1`).
 		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
 			&t.RetentionRawDays, &t.RetentionPostRunDays,
@@ -1659,7 +1666,8 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			&t.AnomalyBytesDropPct, &t.AnomalyBytesDropMinMB,
 			&t.AnomalyAckRetentionDays, &t.AuditRetentionDays,
 			&t.TerminalRecordingEnabled, &t.TerminalRecordingRetentionDays,
-			&t.SilentAlertThresholdMinutes)
+			&t.SilentAlertThresholdMinutes,
+			&t.LatestCLIVersion, &t.LatestCLIVersionCheckedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &models.ServerTuning{
 			RepoStatsIntervalSeconds:     86400,
@@ -2463,5 +2471,23 @@ func (d *DB) SetUserGroupTags(groupID uint64, tagIDs []uint64) error {
 		}
 	}
 	return nil
+}
+
+// UpdateNodeCLIVersion sets the cli_version for a node.
+func (d *DB) UpdateNodeCLIVersion(nodeID uint64, version string) error {
+	_, err := d.db.Exec("UPDATE nodes SET cli_version = ? WHERE id = ?", version, nodeID)
+	return err
+}
+
+// SetNodeCLIUpdatePending sets or clears the cli_update_pending flag.
+func (d *DB) SetNodeCLIUpdatePending(nodeID uint64, pending bool) error {
+	_, err := d.db.Exec("UPDATE nodes SET cli_update_pending = ? WHERE id = ?", pending, nodeID)
+	return err
+}
+
+// SetLatestCLIVersion caches the latest known CLI version from GitHub.
+func (d *DB) SetLatestCLIVersion(version string) error {
+	_, err := d.db.Exec("UPDATE server_tuning SET latest_cli_version = ?, latest_cli_version_checked_at = NOW() WHERE id = 1", version)
+	return err
 }
 

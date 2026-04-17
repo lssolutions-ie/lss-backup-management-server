@@ -188,6 +188,7 @@
           <th>Last Seen</th>
           <th>Jobs</th>
           <th>Status</th>
+          <th>Version</th>
           <th>Online</th>
         </tr>
       </thead>
@@ -212,6 +213,22 @@
             <span class="badge text-bg-secondary">—</span>
             {{end}}
           </td>
+          <td onclick="event.stopPropagation()">
+            {{if .CLIUpdatePending}}
+              <span class="text-muted small">Update<br>Scheduled</span>
+            {{else if and .CLIVersion (ne .CLIVersion "")}}
+              {{if and $.LatestCLIVersion (versionLT .CLIVersion $.LatestCLIVersion)}}
+                <a href="#" class="text-warning small text-decoration-none"
+                   onclick="if(confirm('Schedule CLI update for {{.Name}}?')){fetch('/nodes/{{.ID}}/update-cli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'csrf_token={{$.CSRFToken}}',credentials:'same-origin'}).then(()=>location.reload())}; return false;">
+                  Update<br>Available
+                </a>
+              {{else}}
+                <code class="text-success small">{{.CLIVersion}}</code>
+              {{end}}
+            {{else}}
+              <span class="text-muted small">—</span>
+            {{end}}
+          </td>
           <td>
             {{if .IsOnline}}
             <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
@@ -221,7 +238,7 @@
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="7" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
+        <tr><td colspan="8" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
         {{end}}
       </tbody>
     </table>

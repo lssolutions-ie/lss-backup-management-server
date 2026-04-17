@@ -196,6 +196,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 			sort.Strings(out)
 			return out
 		},
+		"versionLT": func(a, b string) bool {
+			return versionLessThan(a, b)
+		},
 		"prettyJSON": func(s string) string {
 			if s == "" {
 				return ""
@@ -603,4 +606,29 @@ func recordLoginFailure(ip string) {
 	loginRateLimiter.Lock()
 	defer loginRateLimiter.Unlock()
 	loginRateLimiter.attempts[ip] = append(loginRateLimiter.attempts[ip], time.Now())
+}
+
+// versionLessThan compares two semver strings (with optional "v" prefix).
+// Returns true if a < b. Non-numeric parts are treated as 0.
+func versionLessThan(a, b string) bool {
+	a = strings.TrimPrefix(a, "v")
+	b = strings.TrimPrefix(b, "v")
+	ap := strings.Split(a, ".")
+	bp := strings.Split(b, ".")
+	for i := 0; i < len(ap) || i < len(bp); i++ {
+		var ai, bi int
+		if i < len(ap) {
+			fmt.Sscanf(ap[i], "%d", &ai)
+		}
+		if i < len(bp) {
+			fmt.Sscanf(bp[i], "%d", &bi)
+		}
+		if ai < bi {
+			return true
+		}
+		if ai > bi {
+			return false
+		}
+	}
+	return false
 }

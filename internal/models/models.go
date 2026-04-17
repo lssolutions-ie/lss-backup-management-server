@@ -132,6 +132,10 @@ type Node struct {
 	HwStorageJSON string // JSON array of StorageInfo
 	Tags          []Tag  // populated separately, not from the main query
 
+	// CLI version tracking
+	CLIVersion       string
+	CLIUpdatePending bool
+
 	// Disaster Recovery (DR) state — per-node, updated via heartbeat
 	DREnabled       bool
 	DRIntervalHours uint32
@@ -285,6 +289,7 @@ type NodeStatus struct {
 	Jobs           []JobStatus   `json:"jobs"`
 	Tunnel         *TunnelInfo   `json:"tunnel,omitempty"`
 	Hardware       *HardwareInfo `json:"hardware,omitempty"`
+	CLIVersion     string        `json:"cli_version,omitempty"`
 	AuditEvents    []AuditEvent  `json:"audit_events,omitempty"` // v3+
 	DRStatus       *DRStatus     `json:"dr_status,omitempty"`
 }
@@ -433,6 +438,8 @@ type ServerTuning struct {
 	TerminalRecordingEnabled       bool
 	TerminalRecordingRetentionDays uint32
 	SilentAlertThresholdMinutes    uint32
+	LatestCLIVersion               string
+	LatestCLIVersionCheckedAt      *time.Time
 }
 
 // AuditEvent is the wire format CLI nodes send inside the heartbeat payload.

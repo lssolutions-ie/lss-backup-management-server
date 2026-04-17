@@ -1,7 +1,29 @@
 {{define "content"}}
 <div class="page-header mb-3">
   <div class="row g-2 align-items-center">
-    <div class="col"><h2 class="page-title">Dashboard</h2></div>
+    <div class="col">
+      <h2 class="page-title">Dashboard</h2>
+      <div class="text-muted" id="dashboard-clock"></div>
+      <script>
+      (function(){
+        var el = document.getElementById('dashboard-clock');
+        var serverNow = '{{.ServerNowFormatted}}';
+        var clientLoadedAt = Date.now();
+        var baseDate = new Date(serverNow);
+        function pad(n){ return n < 10 ? '0' + n : n; }
+        var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        function tick(){
+          var ms = baseDate.getTime() + (Date.now() - clientLoadedAt);
+          var d = new Date(ms);
+          var day = days[d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+          var time = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+          el.textContent = day + ' · ' + time + ' {{.ServerTZ}}';
+        }
+        tick(); setInterval(tick, 1000);
+      })();
+      </script>
+    </div>
     {{if .User.CanWrite}}
     <div class="col-auto">
       <a href="/nodes/new" class="btn btn-primary">Register Node</a>
@@ -328,7 +350,10 @@
             <input type="checkbox" class="form-check-input dash-node-check" value="{{.ID}}" onchange="dashUpdateSelection()">
           </td>
           {{end}}
-          <td>{{.Name}}</td>
+          <td>
+            <div>{{.Name}}</div>
+            <div class="text-muted small">{{if .HwHostname}}{{.HwHostname}} · {{end}}<code>{{.UID}}</code></div>
+          </td>
           <td>{{.ClientGroup}}</td>
           <td onclick="event.stopPropagation()">{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
           <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>

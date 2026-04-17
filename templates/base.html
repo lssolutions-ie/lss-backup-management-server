@@ -42,10 +42,6 @@
               {{if or .User.IsSuperAdmin .User.IsManager}}
               <a class="dropdown-item" href="/audit"><i class="ti ti-history me-2"></i>Audit Log</a>
               {{end}}
-              {{if .User.IsSuperAdmin}}
-              <div class="dropdown-divider"></div>
-              <a class="dropdown-item" href="/settings/intelligence"><i class="ti ti-adjustments me-2"></i>Intelligence Tuning</a>
-              {{end}}
             </div>
           </li>
 
@@ -112,6 +108,7 @@
               {{if .User.IsSuperAdmin}}
               <div class="dropdown-divider"></div>
               <a class="dropdown-item" href="/settings/tuning"><i class="ti ti-adjustments me-2"></i>Server Tuning</a>
+              <a class="dropdown-item" href="/settings/intelligence"><i class="ti ti-brain me-2"></i>Intelligence Tuning</a>
               <a class="dropdown-item" href="/settings/backup"><i class="ti ti-database-export me-2"></i>Backup & Restore</a>
               <a class="dropdown-item" href="/settings/smtp"><i class="ti ti-mail me-2"></i>SMTP</a>
               {{end}}

@@ -15,61 +15,64 @@
       <h2 class="page-title">{{.Node.Name}}</h2>
       <div class="text-muted">
         Node ID <code>{{.Node.UID}}</code> · Client <strong>{{.Node.ClientGroup}}</strong>
-        {{if .Node.CLIUpdatePending}}
-          <span class="badge text-bg-warning ms-2">Update Scheduled</span>
-        {{else if and .Node.CLIVersion (ne .Node.CLIVersion "")}}
-          <span class="badge text-bg-secondary ms-2">CLI {{.Node.CLIVersion}}</span>
-        {{end}}
       </div>
+      {{if .Node.HwHostname}}<div class="text-muted">Hostname <code>{{.Node.HwHostname}}</code></div>{{end}}
     </div>
     {{if eq (printf "%s" .NodeAccess) "manage"}}
     <div class="col-auto">
       <div class="btn-list flex-nowrap">
         {{if .User.IsSuperAdmin}}
-        <span class="btn btn-ghost-secondary pe-none" title="DR: {{if not .Node.DREnabled}}disabled{{else if eq .Node.DRLastStatus "success"}}last backup OK{{else if eq .Node.DRLastStatus "failure"}}last backup failed{{else}}enabled, no backup yet{{end}}">
-          {{if not .Node.DREnabled}}<i class="ti ti-shield-off text-muted"></i>
-          {{else if eq .Node.DRLastStatus "success"}}<i class="ti ti-shield-check text-success"></i>
-          {{else if eq .Node.DRLastStatus "failure"}}<i class="ti ti-shield-x text-danger"></i>
-          {{else}}<i class="ti ti-shield-check text-muted"></i>
-          {{end}} DR
-        </span>
-        {{end}}
-        <a href="/nodes/{{.Node.ID}}/anomalies" class="btn btn-outline-danger" title="Security anomalies"><i class="ti ti-shield"></i> Security</a>
-        <a href="/nodes/{{.Node.ID}}/audit" class="btn btn-outline-secondary" title="Audit log"><i class="ti ti-history"></i> Audit</a>
-        {{if .User.CanTerminal}}<a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary">Terminal</a>{{end}}
-        <a href="/nodes/{{.Node.ID}}/edit" class="btn">Edit</a>
-        <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn">Regenerate PSK</button>
-        </form>
-        {{if eq .Node.DeletionPhase ""}}
-        <form action="/nodes/{{.Node.ID}}/delete/initiate" method="POST" class="d-inline"
-              onsubmit="return confirm('This will start the graceful deletion flow. Continue?');">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn btn-danger">Delete</button>
-        </form>
-        {{end}}
-        {{if .User.IsSuperAdmin}}
-        <span class="vr mx-1"></span>
-        {{if .Node.DREnabled}}
-        <button type="button" class="btn btn-outline-primary btn-sm" title="Run DR backup immediately via SSH"
-                onclick="triggerDRNow({{.Node.ID}}, '{{.Node.Name}}')"><i class="ti ti-player-play me-1"></i>DR Now</button>
-        <form action="/nodes/{{.Node.ID}}/dr/disable" method="POST" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn btn-outline-warning btn-sm">Disable DR</button>
-        </form>
+        {{if not .Node.DREnabled}}
+        <span class="badge badge-outline text-muted fs-5 px-3 py-2" title="Disaster Recovery disabled"><i class="ti ti-shield-off me-1"></i>DR Off</span>
+        {{else if eq .Node.DRLastStatus "success"}}
+        <span class="badge bg-success-lt text-success fs-5 px-3 py-2" title="DR: last backup OK"><i class="ti ti-shield-check me-1"></i>DR OK</span>
+        {{else if eq .Node.DRLastStatus "failure"}}
+        <span class="badge bg-danger-lt text-danger fs-5 px-3 py-2" title="DR: last backup failed"><i class="ti ti-shield-x me-1"></i>DR Failed</span>
         {{else}}
-        <form action="/nodes/{{.Node.ID}}/dr/enable" method="POST" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn btn-outline-success btn-sm">Enable DR</button>
-        </form>
-        {{end}}
-        {{if not .Node.NeverSeen}}
-        <button type="button" class="btn btn-outline-warning btn-sm" onclick="generateRecoveryToken({{.Node.ID}}, '{{.Node.Name}}')" title="Generate recovery command for this node">
-          <i class="ti ti-restore me-1"></i>Recover
-        </button>
+        <span class="badge bg-warning-lt text-warning fs-5 px-3 py-2" title="DR: enabled, awaiting first backup"><i class="ti ti-shield-check me-1"></i>DR Pending</span>
         {{end}}
         {{end}}
+
+        <a href="/nodes/{{.Node.ID}}/anomalies" class="btn btn-outline-danger"><i class="ti ti-shield-x me-1"></i>Security</a>
+        <a href="/nodes/{{.Node.ID}}/audit" class="btn btn-outline-secondary"><i class="ti ti-history me-1"></i>Audit</a>
+        {{if .User.CanTerminal}}<a href="/nodes/{{.Node.ID}}/terminal" class="btn btn-primary"><i class="ti ti-terminal me-1"></i>Terminal</a>{{end}}
+
+        <div class="dropdown">
+          <button class="btn dropdown-toggle" data-bs-toggle="dropdown"><i class="ti ti-settings me-1"></i>Actions</button>
+          <div class="dropdown-menu dropdown-menu-end">
+            <a class="dropdown-item" href="/nodes/{{.Node.ID}}/edit"><i class="ti ti-edit me-2"></i>Edit Node</a>
+            <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="dropdown-item"><i class="ti ti-key me-2"></i>Regenerate PSK</button>
+            </form>
+            {{if .User.IsSuperAdmin}}
+            {{if not .Node.NeverSeen}}
+            <button type="button" class="dropdown-item" onclick="generateRecoveryToken({{.Node.ID}}, '{{.Node.Name}}')"><i class="ti ti-restore me-2"></i>Recover Node</button>
+            {{end}}
+            <div class="dropdown-divider"></div>
+            {{if .Node.DREnabled}}
+            <button type="button" class="dropdown-item" onclick="triggerDRNow({{.Node.ID}}, '{{.Node.Name}}')"><i class="ti ti-player-play me-2"></i>Run DR Now</button>
+            <form action="/nodes/{{.Node.ID}}/dr/disable" method="POST">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="dropdown-item text-warning"><i class="ti ti-shield-off me-2"></i>Disable DR</button>
+            </form>
+            {{else}}
+            <form action="/nodes/{{.Node.ID}}/dr/enable" method="POST">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="dropdown-item text-success"><i class="ti ti-shield-check me-2"></i>Enable DR</button>
+            </form>
+            {{end}}
+            {{end}}
+            {{if eq .Node.DeletionPhase ""}}
+            <div class="dropdown-divider"></div>
+            <form action="/nodes/{{.Node.ID}}/delete/initiate" method="POST"
+                  onsubmit="return confirm('This will start the graceful deletion flow. Continue?');">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="dropdown-item text-danger"><i class="ti ti-trash me-2"></i>Delete Node</button>
+            </form>
+            {{end}}
+          </div>
+        </div>
       </div>
     </div>
     {{end}}
@@ -220,65 +223,95 @@
 </div>
 {{end}}
 
-<div class="row row-cards mb-3" style="align-items: stretch;">
+<div class="row row-cards mb-3">
   <div class="col-md-6 d-flex">
     <div class="card w-100">
+      <div class="card-header"><h3 class="card-title"><i class="ti ti-info-circle me-2"></i>Node Info</h3></div>
       <div class="card-body">
-        <h3 class="card-title">Node info</h3>
-        <dl class="row">
-          <dt class="col-4">Created</dt>
-          <dd class="col-8">{{.Node.CreatedAt.Format "02-01-2006 15:04:05"}}</dd>
-          <dt class="col-4">First seen</dt>
-          <dd class="col-8">{{if .Node.FirstSeenAt}}{{.Node.FirstSeenAt.Format "02-01-2006 15:04:05"}}{{else}}never{{end}}</dd>
-          <dt class="col-4">Last seen</dt>
-          <dd class="col-8">{{if .Node.LastSeenAt}}{{.Node.LastSeenAt.Format "02-01-2006 15:04:05"}}{{else}}never{{end}}</dd>
-          <dt class="col-4">Status</dt>
-          <dd class="col-8">
-            {{if .Node.IsOnline}}
-            <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
-            {{else}}
-            <span class="status status-red"><span class="status-dot"></span> Offline</span>
-            {{end}}
-          </dd>
-          <dt class="col-4">Tunnel</dt>
-          <dd class="col-8">
-            {{if .Node.TunnelReady}}
-            <span class="status status-green"><span class="status-dot"></span> Connected (port {{.Node.TunnelPort}})</span>
-            {{else}}
-            <span class="status status-secondary"><span class="status-dot"></span> Not connected</span>
-            {{end}}
-          </dd>
-        </dl>
+        <div class="datagrid">
+          <div class="datagrid-item">
+            <div class="datagrid-title">Created</div>
+            <div class="datagrid-content">{{.Node.CreatedAt.Format "02 Jan 2006, 15:04"}}</div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">First Seen</div>
+            <div class="datagrid-content">{{if .Node.FirstSeenAt}}{{.Node.FirstSeenAt.Format "02 Jan 2006, 15:04"}}{{else}}<span class="text-muted">Never</span>{{end}}</div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">Last Seen</div>
+            <div class="datagrid-content">{{if .Node.LastSeenAt}}{{.Node.LastSeenAt.Format "02 Jan 2006, 15:04"}}{{else}}<span class="text-muted">Never</span>{{end}}</div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">Status</div>
+            <div class="datagrid-content">
+              {{if .Node.IsOnline}}
+              <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
+              {{else}}
+              <span class="status status-red"><span class="status-dot"></span> Offline</span>
+              {{end}}
+            </div>
+          </div>
+          {{if and .Node.CLIVersion (ne .Node.CLIVersion "")}}
+          <div class="datagrid-item">
+            <div class="datagrid-title">CLI Version</div>
+            <div class="datagrid-content"><span class="badge text-bg-secondary">{{.Node.CLIVersion}}</span></div>
+          </div>
+          {{end}}
+          <div class="datagrid-item">
+            <div class="datagrid-title">Tunnel</div>
+            <div class="datagrid-content">
+              {{if .Node.TunnelReady}}
+              <span class="status status-green"><span class="status-dot"></span> Connected (port {{.Node.TunnelPort}})</span>
+              {{else}}
+              <span class="status status-secondary"><span class="status-dot"></span> Not connected</span>
+              {{end}}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
   {{if .Node.HasHardware}}
   <div class="col-md-6 d-flex">
     <div class="card w-100">
+      <div class="card-header"><h3 class="card-title"><i class="ti ti-cpu me-2"></i>Hardware</h3></div>
       <div class="card-body">
-        <h3 class="card-title">Hardware</h3>
-        <dl class="row">
-          <dt class="col-4">OS</dt>
-          <dd class="col-8">{{.Node.HwOSFormatted}} ({{.Node.HwArch}})</dd>
-          <dt class="col-4">Hostname</dt>
-          <dd class="col-8">{{.Node.HwHostname}}</dd>
-          <dt class="col-4">CPUs</dt>
-          <dd class="col-8">{{.Node.HwCPUs}}</dd>
-          <dt class="col-4">RAM</dt>
-          <dd class="col-8">{{.Node.HwRAMFormatted}}</dd>
+        <div class="datagrid">
+          <div class="datagrid-item">
+            <div class="datagrid-title">Operating System</div>
+            <div class="datagrid-content">{{.Node.HwOSFormatted}} <span class="text-muted">({{.Node.HwArch}})</span></div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">Hostname</div>
+            <div class="datagrid-content">{{.Node.HwHostname}}</div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">CPU Cores</div>
+            <div class="datagrid-content">{{.Node.HwCPUs}}</div>
+          </div>
+          <div class="datagrid-item">
+            <div class="datagrid-title">Memory</div>
+            <div class="datagrid-content">{{.Node.HwRAMFormatted}}</div>
+          </div>
           {{range .Node.HwStorage}}
-          <dt class="col-4">Disk {{.Path}}</dt>
-          <dd class="col-8">{{bytesFmt .UsedBytes}} / {{bytesFmt .TotalBytes}} ({{bytesFmt .FreeBytes}} free)</dd>
+          <div class="datagrid-item">
+            <div class="datagrid-title">Disk {{.Path}}</div>
+            <div class="datagrid-content">{{bytesFmt .UsedBytes}} / {{bytesFmt .TotalBytes}} <span class="text-muted">({{bytesFmt .FreeBytes}} free)</span></div>
+          </div>
           {{end}}
           {{if .Node.HwLANIP}}
-          <dt class="col-4">LAN IP</dt>
-          <dd class="col-8">{{.Node.HwLANIP}}</dd>
+          <div class="datagrid-item">
+            <div class="datagrid-title">LAN IP</div>
+            <div class="datagrid-content"><code>{{.Node.HwLANIP}}</code></div>
+          </div>
           {{end}}
           {{if .Node.HwPublicIP}}
-          <dt class="col-4">Public IP</dt>
-          <dd class="col-8">{{.Node.HwPublicIP}}</dd>
+          <div class="datagrid-item">
+            <div class="datagrid-title">Public IP</div>
+            <div class="datagrid-content"><code>{{.Node.HwPublicIP}}</code></div>
+          </div>
           {{end}}
-        </dl>
+        </div>
       </div>
     </div>
   </div>

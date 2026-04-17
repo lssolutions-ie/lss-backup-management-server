@@ -24,6 +24,8 @@ type dashboardPageData struct {
 	LastBackupAge    string
 	DBSizeHuman      string
 	RecordingSize    string
+	ServerNowFormatted string
+	ServerTZ           string
 }
 
 func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +113,8 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	dbSize := s.getDBSize()
 	recSize := s.getRecordingSize()
 
+	now := time.Now()
+	zone, _ := now.Zone()
 	s.render(w, r, http.StatusOK, "dashboard.html", dashboardPageData{
 		PageData:         pd,
 		Stats:            stats,
@@ -126,6 +130,8 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 		LastBackupAge:    lastBackupAge,
 		DBSizeHuman:      dbSize,
 		RecordingSize:    recSize,
+		ServerNowFormatted: now.Format("2006-01-02T15:04:05Z"),
+		ServerTZ:           zone,
 	})
 }
 

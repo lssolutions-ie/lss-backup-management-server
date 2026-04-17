@@ -134,7 +134,10 @@
             <input type="checkbox" class="form-check-input node-check" value="{{.ID}}" onchange="updateSelection()">
           </td>
           {{end}}
-          <td><a href="/nodes/{{.ID}}" class="text-reset">{{.Name}}</a></td>
+          <td>
+            <a href="/nodes/{{.ID}}" class="text-reset">{{.Name}}</a>
+            <div class="text-muted small">{{if .HwHostname}}{{.HwHostname}} · {{end}}<code>{{.UID}}</code></div>
+          </td>
           <td>{{.ClientGroup}}</td>
           <td>{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
           <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}<span class="text-muted">--</span>{{end}}</td>

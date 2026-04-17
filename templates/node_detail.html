@@ -52,10 +52,8 @@
         {{if .User.IsSuperAdmin}}
         <span class="vr mx-1"></span>
         {{if .Node.DREnabled}}
-        <form action="/nodes/{{.Node.ID}}/dr/run-now" method="POST" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn btn-outline-primary btn-sm" title="Trigger a DR backup on the next heartbeat"><i class="ti ti-player-play me-1"></i>DR Now</button>
-        </form>
+        <button type="button" class="btn btn-outline-primary btn-sm" title="Run DR backup immediately via SSH"
+                onclick="triggerDRNow({{.Node.ID}}, '{{.Node.Name}}')"><i class="ti ti-player-play me-1"></i>DR Now</button>
         <form action="/nodes/{{.Node.ID}}/dr/disable" method="POST" class="d-inline">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <button type="submit" class="btn btn-outline-warning btn-sm">Disable DR</button>
@@ -921,5 +919,72 @@ flatpickr('#filter-to', {
   altFormat: 'd M Y',
   maxDate: 'today',
 });
+
+// ── DR Now via SSH ──
+var drSshCreds = {};
+function triggerDRNow(nodeID, nodeName) {
+  var creds = drSshCreds[nodeID];
+  if (creds) { runDRNow(nodeID, nodeName, creds.username, creds.password); return; }
+  openDRSSHModal(nodeID, nodeName);
+}
+function runDRNow(nodeID, nodeName, user, pass) {
+  fetch('/nodes/' + nodeID + '/dr/run-now', {
+    method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: user, password: pass})
+  }).then(function(res) {
+    return res.json().then(function(d) {
+      if (res.status === 401) { delete drSshCreds[nodeID]; alert('SSH credentials rejected.'); return; }
+      if (d.error) { alert('DR backup failed: ' + d.error); return; }
+      alert('DR backup completed on ' + nodeName + '.');
+      location.reload();
+    });
+  }).catch(function(err) { alert('Error: ' + err.message); });
+}
+function openDRSSHModal(nodeID, nodeName) {
+  var m = document.getElementById('dr-ssh-modal');
+  if (!m) return;
+  document.getElementById('dr-ssh-node-name').textContent = nodeName;
+  document.getElementById('dr-ssh-user').value = '';
+  document.getElementById('dr-ssh-pass').value = '';
+  var btn = document.getElementById('dr-ssh-confirm');
+  var nb = btn.cloneNode(true); btn.parentNode.replaceChild(nb, btn);
+  var modal = window.bootstrap && window.bootstrap.Modal ? new window.bootstrap.Modal(m) : null;
+  nb.addEventListener('click', function() {
+    var u = document.getElementById('dr-ssh-user').value.trim();
+    var p = document.getElementById('dr-ssh-pass').value;
+    if (!u) return;
+    drSshCreds[nodeID] = {username: u, password: p};
+    if (modal) modal.hide();
+    runDRNow(nodeID, nodeName, u, p);
+  });
+  if (modal) modal.show(); else { m.classList.add('show'); m.style.display = 'block'; }
+}
 </script>
+
+<div class="modal modal-blur fade" id="dr-ssh-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-player-play me-1"></i> DR Backup on <span id="dr-ssh-node-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">SSH credentials needed to run the DR backup immediately on the node.</p>
+        <div class="mb-3">
+          <label class="form-label">SSH Username</label>
+          <input type="text" id="dr-ssh-user" class="form-control" placeholder="root">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">SSH Password</label>
+          <input type="password" id="dr-ssh-pass" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="dr-ssh-confirm" class="btn btn-primary"><i class="ti ti-player-play"></i> Run DR Now</button>
+      </div>
+    </div>
+  </div>
+</div>
 {{end}}

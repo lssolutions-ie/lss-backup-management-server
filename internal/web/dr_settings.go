@@ -1,11 +1,14 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
 	"github.com/lssolutions-ie/lss-management-server/internal/models"
 )
 
@@ -138,7 +141,8 @@ func (s *Server) HandleDRNodeAction(w http.ResponseWriter, r *http.Request, enab
 	http.Redirect(w, r, fmt.Sprintf("/nodes/%d", node.ID), http.StatusSeeOther)
 }
 
-// HandleDRRunNow sets the force_run flag so the node's next heartbeat triggers an immediate DR backup.
+// HandleDRRunNow SSHes to the node via tunnel and runs DR backup immediately.
+// Falls back to heartbeat flag if SSH creds aren't provided.
 func (s *Server) HandleDRRunNow(w http.ResponseWriter, r *http.Request) {
 	node, ok := s.nodeFromPath(w, r, "/nodes/")
 	if !ok {
@@ -151,19 +155,55 @@ func (s *Server) HandleDRRunNow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	// Try SSH-based instant execution (same pattern as CLI update)
+	if node.TunnelReady() {
+		body, _ := io.ReadAll(r.Body)
+		username, password := s.getRepoSSHCreds(r, node.ID, body)
+		if username == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "ssh_creds_required"})
+			return
+		}
+
+		cmd := fmt.Sprintf("%s --dr-run-now", cliPath(node.HwOS))
+		output, err := sshExecOnNodeSudo(node, username, password, cmd)
+		if err != nil {
+			logx.FromContext(r.Context()).Error("dr run-now failed",
+				"node_id", node.ID, "err", err.Error())
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":  "DR backup failed: " + err.Error(),
+				"output": string(output),
+			})
+			return
+		}
+
+		s.auditServer(r, "dr_run_now", "info", "dr_run", "node",
+			fmt.Sprintf("%d", node.ID),
+			"Immediate DR backup executed on "+node.Name, nil)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"ok":     "true",
+			"output": string(output),
+		})
+		return
+	}
+
+	// No tunnel — fall back to heartbeat flag
 	if !s.validateCSRF(r) {
 		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
-
 	if err := s.DB.SetNodeDRForceRun(node.ID); err != nil {
 		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
-
 	s.auditServer(r, "dr_node", "warn", "force_run", "node", fmt.Sprintf("%d", node.ID),
-		"DR force-run requested for node "+node.Name, nil)
-
-	http.SetCookie(w, &http.Cookie{Name: "flash", Value: "DR backup requested for " + node.Name + ". It will run on the next heartbeat.", Path: "/"})
+		"DR force-run requested for node "+node.Name+" (heartbeat)", nil)
+	setFlash(w, "DR backup requested for "+node.Name+". It will run on the next heartbeat.")
 	http.Redirect(w, r, fmt.Sprintf("/nodes/%d", node.ID), http.StatusSeeOther)
 }

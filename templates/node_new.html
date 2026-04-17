@@ -67,6 +67,42 @@
     </form>
   </div>
 </div>
+<div class="card mt-3">
+  <div class="card-header"><h3 class="card-title">Server-Assisted Install</h3></div>
+  <div class="card-body">
+    <p class="text-muted">Generate a one-liner that auto-configures a new node. The command downloads the CLI, sets up the management server connection, and starts the daemon — zero manual configuration needed.</p>
+    <div class="row g-3 align-items-end">
+      <div class="col-auto">
+        <label class="form-label">Client</label>
+        <select id="install-client" class="form-select">
+          {{range .Groups}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="button" id="install-generate" class="btn btn-primary"><i class="ti ti-terminal-2"></i> Generate Install Command</button>
+      </div>
+    </div>
+    <div id="install-result" class="mt-3" style="display:none;">
+      <label class="form-label">Copy and paste on the target node:</label>
+      <div class="mb-2">
+        <strong>Linux / macOS:</strong>
+        <div class="input-group">
+          <input type="text" id="install-cmd-unix" class="form-control font-monospace" readonly>
+          <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd-unix').value)"><i class="ti ti-copy"></i></button>
+        </div>
+      </div>
+      <div class="mb-2">
+        <strong>Windows (PowerShell):</strong>
+        <div class="input-group">
+          <input type="text" id="install-cmd-win" class="form-control font-monospace" readonly>
+          <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd-win').value)"><i class="ti ti-copy"></i></button>
+        </div>
+      </div>
+      <div class="text-muted small">Token expires in 24 hours. One-time use only.</div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   function syncColorPair(pickerId, hexId) {
@@ -81,6 +117,23 @@
   }
   syncColorPair('reg-color-bg', 'reg-color-bg-hex');
   syncColorPair('reg-color-text', 'reg-color-text-hex');
+
+  document.getElementById('install-generate').addEventListener('click', function(){
+    var clientID = document.getElementById('install-client').value;
+    if (!clientID) { alert('Select a client first.'); return; }
+    fetch('/nodes/generate-install-token', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'csrf_token={{.CSRFToken}}&client_group_id=' + clientID,
+      credentials: 'same-origin'
+    }).then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.error) { alert(d.error); return; }
+        document.getElementById('install-cmd-unix').value = d.unix_command;
+        document.getElementById('install-cmd-win').value = d.windows_command;
+        document.getElementById('install-result').style.display = 'block';
+      });
+  });
 })();
 </script>
 {{end}}

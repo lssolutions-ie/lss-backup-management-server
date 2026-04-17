@@ -110,6 +110,7 @@ func main() {
 
 	// Node API
 	mux.HandleFunc("/api/v1/status", apiHandler.HandleStatus)
+	mux.HandleFunc("/api/v1/install/", apiHandler.HandleInstall)
 
 	// Auth
 	mux.HandleFunc("/setup", webServer.HandleSetup)
@@ -129,6 +130,7 @@ func main() {
 
 	// Nodes
 	mux.HandleFunc("/nodes/new", webServer.RequireAuth(webServer.HandleNodeNew))
+	mux.HandleFunc("/nodes/generate-install-token", webServer.RequireManagerOrAbove(webServer.HandleGenerateInstallToken))
 	mux.HandleFunc("/nodes/", webServer.RequireAuth(nodeRouter(webServer)))
 
 	// Tags (node tags)

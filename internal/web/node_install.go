@@ -1,0 +1,141 @@
+package web
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-management-server/internal/models"
+)
+
+// HandleGenerateInstallToken creates a pending node + one-time install token.
+// POST /nodes/generate-install-token
+// Returns JSON with the install one-liners for Unix and Windows.
+func (s *Server) HandleGenerateInstallToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+
+	rlg := logx.FromContext(r.Context())
+
+	if !s.validateCSRF(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid CSRF token"}) //nolint:errcheck
+		return
+	}
+
+	clientGroupIDStr := r.FormValue("client_group_id")
+	if clientGroupIDStr == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Client group is required"}) //nolint:errcheck
+		return
+	}
+
+	clientGroupID, err := strconv.ParseUint(clientGroupIDStr, 10, 64)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid client group"}) //nolint:errcheck
+		return
+	}
+
+	// Generate random UID: lss-<8 hex chars>
+	uidBytes := make([]byte, 4)
+	if _, err := rand.Read(uidBytes); err != nil {
+		rlg.Error("generate uid failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal error"}) //nolint:errcheck
+		return
+	}
+	uid := fmt.Sprintf("lss-%s", hex.EncodeToString(uidBytes))
+
+	// Generate PSK using the same crypto function as manual registration
+	psk, err := crypto.GeneratePSK()
+	if err != nil {
+		rlg.Error("generate psk failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal error"}) //nolint:errcheck
+		return
+	}
+
+	// Encrypt PSK for storage
+	encrypted, err := crypto.EncryptPSK(psk, s.AppKey)
+	if err != nil {
+		rlg.Error("encrypt psk failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal error"}) //nolint:errcheck
+		return
+	}
+
+	// Create pending node
+	nodeID, err := s.DB.CreatePendingNode(uid, encrypted, clientGroupID)
+	if err != nil {
+		rlg.Error("create pending node failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Could not create node"}) //nolint:errcheck
+		return
+	}
+
+	// Generate random token: 32 bytes -> 64-char hex
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		rlg.Error("generate token failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal error"}) //nolint:errcheck
+		return
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	// Hash token for storage
+	hash := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	// Store with 24h expiry
+	expiresAt := time.Now().Add(24 * time.Hour)
+	user := r.Context().Value(ctxUser).(*models.User)
+	if err := s.DB.CreateInstallToken(tokenHash, nodeID, expiresAt, user.ID); err != nil {
+		rlg.Error("create install token failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Could not create token"}) //nolint:errcheck
+		return
+	}
+
+	// Build the install URL
+	scheme := r.Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+	installURL := fmt.Sprintf("%s/api/v1/install/%s", baseURL, token)
+
+	unixCmd := fmt.Sprintf("curl -fsSL '%s' | bash", installURL)
+	winCmd := fmt.Sprintf("irm '%s?os=windows' | iex", installURL)
+
+	// Audit
+	s.auditServer(r, "install_token_created", "info", "create", "node",
+		strconv.FormatUint(nodeID, 10),
+		"Generated install token for pending node "+uid,
+		map[string]string{"uid": uid, "client_group_id": clientGroupIDStr})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{ //nolint:errcheck
+		"unix_command":    unixCmd,
+		"windows_command": winCmd,
+	})
+}

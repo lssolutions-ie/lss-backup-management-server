@@ -70,6 +70,15 @@ Pair this file with `README.md` (convention) and `CLAUDE.md` § Database (the ta
 |---|------|-----|
 | 038 | `038_disaster_recovery.sql` | Server-controlled node config backup to S3. `dr_config` single-row table holds S3 endpoint, bucket, region, access key, secret key, restic password (secrets encrypted with AppKey) + default interval + config version. 8 new columns on `nodes` for per-node DR state (enabled, interval, last_backup_at, last_status, last_error, snapshot_count, force_run, config_version). Server pushes credentials to CLI via heartbeat response; CLI backs up, reports status via heartbeat payload. |
 
+## v1.16.x–v1.21.x — remote management + lifecycle
+
+| # | File | Why |
+|---|------|-----|
+| 039 | `039_cli_version_update.sql` | Remote CLI version tracking + update scheduling. `cli_version` + `cli_update_pending` on nodes. `latest_cli_version` cached on server_tuning from GitHub tags polling. Dashboard "Version" column auto-triggers updates when behind. |
+| 040 | `040_update_settings.sql` | Configurable update check interval (`update_check_interval_minutes`, default 30). Server version tracking (`latest_server_version` + checked_at). Powers the /settings/updates page. |
+| 041 | `041_install_tokens.sql` | One-time install tokens for server-assisted node deployment + recovery. Token hash stored (never plaintext), 24h expiry, linked to node_id. Used by both `/api/v1/install/{token}` (new nodes) and `/api/v1/recover/{token}` (existing nodes). |
+| 042 | `042_node_deletion.sql` | Graceful node deletion with secret export. `deletion_phase` tracks the multi-step flow (export_pending → export_received → uninstall_pending). `secrets_export_enc` stores the encrypted secrets blob. `deletion_retain_data` controls whether CLI destroys backup data on uninstall. |
+
 ## Maintaining this file
 
 - Add a row when you write a new `NNN_x.sql` migration. Keep it to one line.

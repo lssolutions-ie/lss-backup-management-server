@@ -11,8 +11,8 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.15.0
-**Paired CLI:** v2.7.1
+**Version:** v1.21.0
+**Paired CLI:** v2.10.2
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -195,7 +195,7 @@ Sample line:
 
 ## Database
 
-MySQL with 38 migrations:
+MySQL with 42 migrations:
 
 | Migration | Purpose |
 |-----------|---------|
@@ -237,6 +237,10 @@ MySQL with 38 migrations:
 | 036 | job_snapshots.snapshot_ids JSON + job_anomalies.prev_snapshot_id/curr_snapshot_id — forensics |
 | 037 | nodes.audit_chain_head — HMAC chain verification for audit tamper evidence |
 | 038 | dr_config table (S3 creds encrypted at rest) + 8 DR columns on nodes — server-controlled disaster recovery |
+| 039 | cli_version + cli_update_pending on nodes, latest_cli_version on server_tuning — remote CLI update |
+| 040 | update_check_interval_minutes + latest_server_version on server_tuning — configurable version checking |
+| 041 | node_install_tokens table — one-command node deployment + recovery tokens |
+| 042 | deletion_phase + secrets_export_enc + deletion_retain_data on nodes — graceful node deletion |
 
 ---
 
@@ -679,15 +683,53 @@ Server-controlled node config backup to S3 via restic. Every node's CLI configur
 
 ---
 
+## Remote CLI Update (v1.16.0–v1.19.2)
+
+Dashboard "Version" column shows each node's CLI version. Auto-update sends `update_cli: true` + `update_cli_url` (direct GitHub release binary URL) on every heartbeat when a node is behind the latest version. Manual "Update" button triggers immediate update via SSH. Version checker polls GitHub tags every N minutes (configurable in Server Tuning).
+
+---
+
+## One-Command Node Deployment (v1.18.0)
+
+`/nodes/new` → "Server-Assisted Install" card generates a one-liner with embedded credentials. Operator pastes on target machine → CLI auto-installs, configures, starts daemon → node appears on dashboard.
+
+- Token: one-time use, 24h expiry, SHA-256 hash stored in `node_install_tokens` table
+- Endpoint: `GET /api/v1/install/{token}` (unauthenticated — token IS the auth)
+- Script embeds `LSS_SERVER_URL`, `LSS_NODE_UID`, `LSS_PSK_KEY` as env vars
+- Pending nodes visible at `/settings/pending-nodes`, hidden from dashboard until first heartbeat
+
+---
+
+## Graceful Node Deletion (v1.20.0)
+
+Multi-step deletion flow with secret export:
+1. "Delete Node" → `export_pending` → CLI sends `secrets_export` (job creds, DR creds, SSH creds)
+2. Server stores encrypted, generates human-readable `.txt` credential report
+3. Operator downloads report, confirms "I have saved credentials", chooses retain/destroy data
+4. `uninstall_pending` → CLI stops daemon, removes binary/config, optionally destroys backup data
+
+---
+
+## One-Command Node Recovery (v1.21.0)
+
+"Recover" button on node detail generates a one-liner that reinstalls CLI on a replacement machine, restores job configs + secrets from DR backup, resumes operations with the original UID + PSK.
+
+- Endpoint: `GET /api/v1/recover/{token}` — reuses install token table
+- Script adds `LSS_RECOVERY_MODE=true` → CLI runs `--setup-recover` instead of `--setup-auto`
+- Recovery flow: install binary → heartbeat → get DR config → restic restore → selective copy (jobs + secrets) → new SSH creds → start daemon
+
+---
+
 ## Roadmap
 
-**All 16 of 17 agreed plan items are shipped + DR feature added.** Only remaining:
+Most features shipped. Remaining:
 
 1. **(LAST EVER)** Notification stack — SMTP, webhook, escalation.
 2. Run `install.sh` on a fresh Ubuntu 24.04 VM (code-reviewed, never executed).
 3. Off-server audit mirror (syslog emitter) — low priority with HMAC chain in place.
-4. Fix host audit journalctl worker — SSH unit name varies by Ubuntu version, currently spamming errors.
+4. Fix host audit journalctl worker — SSH unit name varies by Ubuntu version.
+5. Node decommission signal (soft delete before hard delete — CLI informed gracefully).
 
 ---
 
-_Last updated: 2026-04-16 (v1.15.0)_
+_Last updated: 2026-04-17 (v1.21.0)_

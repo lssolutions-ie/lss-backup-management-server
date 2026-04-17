@@ -87,11 +87,9 @@ func (h *Handler) HandleInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Derive server URL from request
-	scheme := r.Header.Get("X-Forwarded-Proto")
-	if scheme == "" {
-		scheme = "https"
-	}
-	serverURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+	// Always HTTPS — the server URL is embedded in the node's config and used
+	// for heartbeats carrying encrypted PSK payloads. Never HTTP.
+	serverURL := fmt.Sprintf("https://%s", r.Host)
 
 	// Detect platform
 	osParam := r.URL.Query().Get("os")

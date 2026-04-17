@@ -172,11 +172,8 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 7c. If the node reported a CLI version, persist it and clear update_pending if version changed.
+	// 7c. If the node reported a CLI version, persist it.
 	if status.CLIVersion != "" && status.CLIVersion != node.CLIVersion {
-		if node.CLIUpdatePending {
-			_ = h.DB.SetNodeCLIUpdatePending(node.ID, false)
-		}
 		_ = h.DB.UpdateNodeCLIVersion(node.ID, status.CLIVersion)
 	}
 
@@ -314,9 +311,13 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Signal the CLI to self-update when an operator has scheduled it.
-	if node.CLIUpdatePending {
-		resp["update_cli"] = true
+	// Auto-update: if the node's CLI version is behind the latest known version,
+	// signal it to self-update on every heartbeat until it reports the new version.
+	if tuning, err := h.DB.GetServerTuning(); err == nil && tuning != nil {
+		if node.CLIVersion != "" && tuning.LatestCLIVersion != "" &&
+			node.CLIVersion != tuning.LatestCLIVersion {
+			resp["update_cli"] = true
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

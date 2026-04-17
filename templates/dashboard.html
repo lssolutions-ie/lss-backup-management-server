@@ -221,14 +221,12 @@
             {{end}}
           </td>
           <td class="text-center" onclick="event.stopPropagation()">
-            {{if .CLIUpdatePending}}
-              <span class="text-muted small">Update<br>Scheduled</span>
-            {{else if and .CLIVersion (ne .CLIVersion "")}}
+            {{if and .CLIVersion (ne .CLIVersion "")}}
               {{if and $.LatestCLIVersion (versionLT .CLIVersion $.LatestCLIVersion)}}
-                <a href="#" class="text-warning small text-decoration-none"
-                   onclick="if(confirm('Schedule CLI update for {{.Name}}?')){fetch('/nodes/{{.ID}}/update-cli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'csrf_token={{$.CSRFToken}}',credentials:'same-origin'}).then(()=>location.reload())}; return false;">
-                  Update<br>Available
-                </a>
+                <code class="text-warning small">{{.CLIVersion}}</code>
+                <div><a href="#" class="text-warning small text-decoration-none"
+                   onclick="if(confirm('Force CLI update for {{.Name}}?')){fetch('/nodes/{{.ID}}/update-cli',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'csrf_token={{$.CSRFToken}}',credentials:'same-origin'}).then(()=>location.reload())}; return false;"
+                   title="Auto-update is active. Click to force immediate update.">Update</a></div>
               {{else}}
                 <code class="text-success small">{{.CLIVersion}}</code>
               {{end}}

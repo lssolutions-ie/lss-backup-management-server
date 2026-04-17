@@ -262,9 +262,11 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 				rlg.Warn("audit chain break",
 					"node_id", node.ID, "uid", node.UID,
 					"detail", chainDiag)
-				// Only insert an audit row on the FIRST break — check if we already
-				// have an unresolved chain_break for this node in the last hour.
-				// Prevents spam when a chain stays broken across multiple heartbeats.
+				// Reset chain head so TOFU re-establishes on the next heartbeat.
+				// Without this, the head stays stale and verification fails forever
+				// after any discontinuity (daemon restart, update, etc.).
+				_ = h.DB.SetNodeAuditChainHead(node.ID, "")
+				// Only insert an audit row on the FIRST break per hour.
 				var recentBreaks int
 				rows, _ := h.DB.RawQuery("SELECT COUNT(*) FROM audit_log WHERE category = 'audit_chain_break' AND source_node_id = ? AND ts > DATE_SUB(NOW(), INTERVAL 1 HOUR)", node.ID)
 				if rows != nil {
@@ -272,9 +274,9 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 					rows.Close()
 				}
 				if recentBreaks == 0 {
-					_ = h.DB.InsertServerAuditLog(0, "system", "", "audit_chain_break", "critical",
+					_ = h.DB.InsertServerAuditLog(0, "system", "", "audit_chain_break", "warn",
 						"detect", "node", fmt.Sprintf("%d", node.ID),
-						"HMAC chain break on node "+node.Name+" — possible tampering or PSK mismatch",
+						"HMAC chain break on node "+node.Name+" — chain reset, will re-establish on next heartbeat",
 						map[string]string{"node_id": fmt.Sprintf("%d", node.ID), "uid": node.UID})
 				}
 			} else {
@@ -591,9 +593,7 @@ func verifyAuditChain(psk string, chainHead string, events []models.AuditEvent) 
 
 func marshalEventForHMAC(e models.AuditEvent) ([]byte, error) {
 	// Build as a map to match the CLI's canonical form exactly.
-	// The CLI always includes "details" in the map (nil → "details":null),
-	// but Go's struct omitempty drops nil maps entirely. Using a map
-	// ensures both sides produce identical JSON.
+	// CLI OMITS details when nil/empty, INCLUDES when non-empty.
 	m := map[string]interface{}{
 		"seq":      e.Seq,
 		"ts":       e.TS,
@@ -601,7 +601,9 @@ func marshalEventForHMAC(e models.AuditEvent) ([]byte, error) {
 		"severity": e.Severity,
 		"actor":    e.Actor,
 		"message":  e.Message,
-		"details":  e.Details,
+	}
+	if len(e.Details) > 0 {
+		m["details"] = e.Details
 	}
 	return json.Marshal(m)
 }

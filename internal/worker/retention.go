@@ -69,4 +69,11 @@ func (w *RetentionWorker) tick() {
 	} else if n > 0 {
 		lg.Info("pruned session recordings", "count", n, "older_than_days", tuning.TerminalRecordingRetentionDays)
 	}
+	// Step 6: prune pending nodes whose install tokens expired 24h+ ago and
+	// never completed registration (first_seen_at IS NULL).
+	if n, err := w.db.PruneExpiredPendingNodes(); err != nil {
+		lg.Error("prune pending nodes failed", "err", err.Error())
+	} else if n > 0 {
+		lg.Info("pruned expired pending nodes", "count", n)
+	}
 }

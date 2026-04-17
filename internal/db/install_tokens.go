@@ -95,6 +95,29 @@ func (d *DB) ListInstallTokens(limit int) ([]*InstallToken, error) {
 	return tokens, rows.Err()
 }
 
+// PruneExpiredPendingNodes deletes nodes that were created via server-assisted
+// install but never completed registration (no heartbeat received), AND whose
+// install tokens have all expired. Runs hourly from the retention worker.
+func (d *DB) PruneExpiredPendingNodes() (int64, error) {
+	res, err := d.db.Exec(`
+		DELETE n FROM nodes n
+		WHERE n.first_seen_at IS NULL
+		  AND NOT EXISTS (
+		    SELECT 1 FROM node_install_tokens t
+		    WHERE t.node_id = n.id
+		      AND (t.used_at IS NULL AND t.expires_at > NOW())
+		  )
+		  AND EXISTS (
+		    SELECT 1 FROM node_install_tokens t2
+		    WHERE t2.node_id = n.id
+		  )
+		  AND n.created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // CreatePendingNode inserts a minimal node row for server-assisted deployment.
 // Name is set to the UID initially; the first heartbeat populates the real hostname.
 func (d *DB) CreatePendingNode(uid string, pskEncrypted string, clientGroupID uint64) (uint64, error) {

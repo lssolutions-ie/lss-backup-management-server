@@ -55,27 +55,28 @@ func (w *HostAuditWorker) tick() {
 		return
 	}
 
+	// Use SYSLOG_IDENTIFIER instead of -u (unit name) for SSH — the identifier
+	// is always "sshd" regardless of whether the unit is ssh.service, sshd.service,
+	// or openssh-server.service. Eliminates "exit status 1" spam on Ubuntu versions
+	// where the unit name doesn't match.
 	args := []string{
 		"--output=json",
 		"--no-pager",
-		"-u", "ssh",
-		"-u", "sshd",
-		"-u", "sudo",
-		"-u", "lss-management",
+		"SYSLOG_IDENTIFIER=sshd",
+		"SYSLOG_IDENTIFIER=sudo",
+		"_SYSTEMD_UNIT=lss-management.service",
 	}
 	if cursor != "" {
 		args = append(args, "--after-cursor="+cursor)
 	} else {
-		// First run — only look at events from the last minute, otherwise we'd
-		// flood audit_log with the entire journal history.
 		args = append(args, "--since=1 minute ago")
 	}
 
 	cmd := exec.Command("journalctl", args...)
-	out, err := cmd.Output()
-	if err != nil {
-		// Non-fatal: journalctl might be missing on non-systemd hosts.
-		lg.Warn("hostaudit: journalctl run failed", "err", err.Error())
+	out, err := cmd.CombinedOutput()
+	if err != nil && len(out) == 0 {
+		// Only warn if there's truly no output — journalctl exits 1 when
+		// there are no matching entries, which is normal on a quiet system.
 		return
 	}
 

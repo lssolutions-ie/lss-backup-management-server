@@ -129,6 +129,11 @@ func main() {
 	// Dashboard
 	mux.HandleFunc("/", webServer.RequireAuth(webServer.HandleDashboard))
 
+	// All Nodes page (exact match — must be before /nodes/ prefix)
+	mux.HandleFunc("/nodes", webServer.RequireAuth(webServer.HandleNodesList))
+	mux.HandleFunc("/nodes/bulk-update-cli", webServer.RequireManagerOrAbove(webServer.HandleBulkUpdateCLI))
+	mux.HandleFunc("/nodes/bulk-enable-dr", webServer.RequireSuperAdmin(webServer.HandleBulkEnableDR))
+
 	// Nodes
 	mux.HandleFunc("/nodes/new", webServer.RequireAuth(webServer.HandleNodeNew))
 	mux.HandleFunc("/nodes/generate-install-token", webServer.RequireManagerOrAbove(webServer.HandleGenerateInstallToken))

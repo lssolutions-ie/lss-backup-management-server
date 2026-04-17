@@ -1,0 +1,403 @@
+{{define "content"}}
+<div class="page-header mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <h2 class="page-title">All Nodes</h2>
+      <div class="text-muted">Manage all registered nodes.</div>
+    </div>
+    {{if .User.CanWrite}}
+    <div class="col-auto">
+      <a href="/nodes/new" class="btn btn-primary"><i class="ti ti-plus me-1"></i>Register Node</a>
+    </div>
+    {{end}}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">
+      Nodes
+      <span id="group-filter-label" class="ms-2 badge text-bg-primary" style="display: none;">
+        <span id="group-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearGroupFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
+      <span id="tag-filter-label" class="ms-2 badge" style="display: none;">
+        <span id="tag-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearTagFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
+      <span id="status-filter-label" class="ms-2 badge text-bg-secondary" style="display: none;">
+        <span id="status-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearStatusFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
+      <span id="online-filter-label" class="ms-2 badge text-bg-secondary" style="display: none;">
+        <span id="online-filter-name"></span>
+        <a href="javascript:void(0)" onclick="clearOnlineFilter()" class="ms-1 text-white" style="text-decoration: none;">&times;</a>
+      </span>
+    </h3>
+    <div class="card-actions d-flex gap-2 align-items-center flex-wrap">
+      {{if .AllTags}}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-tag"></i> Tag
+        </button>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByTag('__none__', '#adb5bd')">
+            <span class="badge me-1 text-bg-secondary">&nbsp;</span> No tags
+          </a>
+          <div class="dropdown-divider"></div>
+          {{range .AllTags}}
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByTag('{{.Name}}', '{{.Color}}')">
+            <span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}};">&nbsp;</span> {{.Name}}
+          </a>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-activity"></i> Status
+        </button>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('success')"><span class="badge text-bg-success me-1">&nbsp;</span> Success</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('warning')"><span class="badge text-bg-warning me-1">&nbsp;</span> Warning</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('failure')"><span class="badge text-bg-danger me-1">&nbsp;</span> Failure</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByStatus('never_run')"><span class="badge text-bg-secondary me-1">&nbsp;</span> Never run</a>
+        </div>
+      </div>
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-wifi"></i> Online
+        </button>
+        <div class="dropdown-menu">
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByOnline('online')"><span class="status status-green me-1"><span class="status-dot"></span></span> Online</a>
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByOnline('offline')"><span class="status status-red me-1"><span class="status-dot"></span></span> Offline</a>
+        </div>
+      </div>
+      {{if .Groups}}
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="ti ti-building"></i> Client
+        </button>
+        <div class="dropdown-menu">
+          {{range .Groups}}
+          <a class="dropdown-item" href="javascript:void(0)" onclick="filterByGroup('{{.Name}}')">{{.Name}}</a>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+      <input type="text" id="node-search" class="form-control form-control-sm" placeholder="Search nodes..." style="width: 200px;">
+    </div>
+  </div>
+
+  <!-- Bulk action bar -->
+  {{if .User.CanManageUsers}}
+  <div class="card-body py-2 border-bottom bg-light" id="bulk-bar" style="display: none;">
+    <div class="d-flex align-items-center gap-2">
+      <span class="text-muted small"><span id="sel-count">0</span> selected</span>
+      <button class="btn btn-sm btn-success" id="bulk-update-btn" onclick="bulkUpdateCLI()" disabled>
+        <i class="ti ti-refresh me-1"></i>Update CLI (<span id="bulk-update-count">0</span>)
+      </button>
+      {{if and .DRConfigured .User.IsSuperAdmin}}
+      <button class="btn btn-sm btn-primary" id="bulk-dr-btn" onclick="bulkEnableDR()" disabled>
+        <i class="ti ti-shield-check me-1"></i>Enable DR (<span id="bulk-dr-count">0</span>)
+      </button>
+      {{end}}
+      <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">Clear</button>
+    </div>
+  </div>
+  {{end}}
+
+  <div class="table-responsive">
+    <table class="table table-vcenter table-hover" id="node-table">
+      <thead>
+        <tr>
+          {{if .User.CanManageUsers}}
+          <th style="width: 40px;" class="text-center">
+            <input type="checkbox" class="form-check-input" id="select-all" onchange="toggleSelectAll(this)">
+          </th>
+          {{end}}
+          <th>Node Name</th>
+          <th>Client</th>
+          <th>Tags</th>
+          <th>Last Seen</th>
+          <th class="text-center" style="width:60px;">Jobs</th>
+          <th class="text-center" style="width:90px;">Job Status</th>
+          <th class="text-center" style="width:100px;">Node Status</th>
+          <th class="text-center" style="width:70px;">Version</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Nodes}}
+        <tr data-node-id="{{.ID}}" data-tags="{{range .Tags}}{{.Name}},{{end}}" data-status="{{.WorstStatus}}" data-online="{{if .IsOnline}}online{{else}}offline{{end}}" data-version="{{.CLIVersion}}">
+          {{if $.User.CanManageUsers}}
+          <td class="text-center" onclick="event.stopPropagation()">
+            <input type="checkbox" class="form-check-input node-check" value="{{.ID}}" onchange="updateSelection()">
+          </td>
+          {{end}}
+          <td><a href="/nodes/{{.ID}}" class="text-reset">{{.Name}}</a></td>
+          <td>{{.ClientGroup}}</td>
+          <td>{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
+          <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04"}}{{else}}<span class="text-muted">--</span>{{end}}</td>
+          <td class="text-center">{{.JobCount}}</td>
+          <td class="text-center">
+            {{if eq .WorstStatus "failure"}}
+            <span class="badge text-bg-danger">Failure</span>
+            {{else if eq .WorstStatus "warning"}}
+            <span class="badge text-bg-warning">Warning</span>
+            {{else if eq .WorstStatus "success"}}
+            <span class="badge text-bg-success">Success</span>
+            {{else if eq .WorstStatus "never_run"}}
+            <span class="badge text-bg-secondary">Never run</span>
+            {{else}}
+            <span class="badge text-bg-secondary">--</span>
+            {{end}}
+          </td>
+          <td class="text-center">
+            {{if .IsOnline}}
+            <span class="status status-green"><span class="status-dot status-dot-animated"></span> Online</span>
+            {{else}}
+            <span class="status status-red"><span class="status-dot"></span> Offline</span>
+            {{end}}
+          </td>
+          <td class="text-center">
+            {{if and .CLIVersion (ne .CLIVersion "")}}
+              {{if and $.LatestCLIVersion (versionLT .CLIVersion $.LatestCLIVersion)}}
+                <code class="text-warning small">{{.CLIVersion}}</code>
+              {{else}}
+                <code class="text-success small">{{.CLIVersion}}</code>
+              {{end}}
+            {{else}}
+              <span class="text-muted small">--</span>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="9" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function() {
+  var csrfToken = '{{.CSRFToken}}';
+  var latestCLI = '{{.LatestCLIVersion}}';
+  var input = document.getElementById('node-search');
+  var rows  = document.querySelectorAll('#node-table tbody tr');
+  if (input) input.addEventListener('input', applyFilters);
+
+  window._activeGroup = '';
+  window._activeTag = '';
+  window._activeStatus = '';
+  window._activeOnline = '';
+
+  window.filterByTag = function(tag, color) {
+    if (window._activeTag === tag) { clearTagFilter(); return; }
+    window._activeTag = tag;
+    var label = document.getElementById('tag-filter-label');
+    document.getElementById('tag-filter-name').textContent = tag === '__none__' ? 'No tags' : tag;
+    label.style.display = '';
+    label.style.backgroundColor = color;
+    applyFilters();
+  };
+  window.clearTagFilter = function() {
+    window._activeTag = '';
+    document.getElementById('tag-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  window.filterByGroup = function(group) {
+    if (window._activeGroup === group) { clearGroupFilter(); return; }
+    window._activeGroup = group;
+    document.getElementById('group-filter-label').style.display = '';
+    document.getElementById('group-filter-name').textContent = group;
+    applyFilters();
+  };
+  window.clearGroupFilter = function() {
+    window._activeGroup = '';
+    document.getElementById('group-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  window.filterByStatus = function(status) {
+    if (window._activeStatus === status) { clearStatusFilter(); return; }
+    window._activeStatus = status;
+    var label = document.getElementById('status-filter-label');
+    var names = {failure:'Failure', warning:'Warning', success:'Success', never_run:'Never run'};
+    var colors = {failure:'#d63939', warning:'#f76707', success:'#2fb344', never_run:'#667382'};
+    document.getElementById('status-filter-name').textContent = names[status] || status;
+    label.style.display = '';
+    label.style.backgroundColor = colors[status] || '#667382';
+    applyFilters();
+  };
+  window.clearStatusFilter = function() {
+    window._activeStatus = '';
+    document.getElementById('status-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  window.filterByOnline = function(val) {
+    if (window._activeOnline === val) { clearOnlineFilter(); return; }
+    window._activeOnline = val;
+    var label = document.getElementById('online-filter-label');
+    document.getElementById('online-filter-name').textContent = val === 'online' ? 'Online' : 'Offline';
+    label.style.display = '';
+    label.style.backgroundColor = val === 'online' ? '#2fb344' : '#d63939';
+    applyFilters();
+  };
+  window.clearOnlineFilter = function() {
+    window._activeOnline = '';
+    document.getElementById('online-filter-label').style.display = 'none';
+    applyFilters();
+  };
+
+  function applyFilters() {
+    var q = (input ? input.value : '').toLowerCase();
+    var group = window._activeGroup;
+    var tag = window._activeTag;
+    var status = window._activeStatus;
+    var online = window._activeOnline;
+    rows.forEach(function(row) {
+      var cells = row.querySelectorAll('td');
+      if (cells.length < 2) { row.style.display = ''; return; }
+      var text = row.textContent.toLowerCase();
+      // Client cell index depends on whether checkbox column exists
+      var clientIdx = row.querySelector('.node-check') ? 2 : 1;
+      var rowGroup = cells[clientIdx].textContent.trim();
+      var rowTags = (row.getAttribute('data-tags') || '');
+      var rowStatus = (row.getAttribute('data-status') || '');
+      var rowOnline = (row.getAttribute('data-online') || '');
+      var matchSearch = !q || text.indexOf(q) !== -1;
+      var matchGroup = !group || rowGroup === group;
+      var matchTag = !tag || (tag === '__none__' ? rowTags === '' : rowTags.indexOf(tag + ',') !== -1);
+      var matchStatus = !status || rowStatus === status;
+      var matchOnline = !online || rowOnline === online;
+      row.style.display = (matchSearch && matchGroup && matchTag && matchStatus && matchOnline) ? '' : 'none';
+    });
+    updateSelection();
+  }
+
+  // ── Multi-select ──
+  var selectedIDs = new Set();
+
+  window.toggleSelectAll = function(master) {
+    rows.forEach(function(row) {
+      if (row.style.display === 'none') return;
+      var cb = row.querySelector('.node-check');
+      if (!cb) return;
+      cb.checked = master.checked;
+      var id = cb.value;
+      if (master.checked) selectedIDs.add(id); else selectedIDs.delete(id);
+    });
+    refreshBulkBar();
+  };
+
+  window.updateSelection = function() {
+    selectedIDs.clear();
+    document.querySelectorAll('.node-check:checked').forEach(function(cb) {
+      if (cb.closest('tr').style.display !== 'none') {
+        selectedIDs.add(cb.value);
+      }
+    });
+    refreshBulkBar();
+  };
+
+  window.clearSelection = function() {
+    selectedIDs.clear();
+    document.querySelectorAll('.node-check').forEach(function(cb) { cb.checked = false; });
+    var master = document.getElementById('select-all');
+    if (master) master.checked = false;
+    refreshBulkBar();
+  };
+
+  function refreshBulkBar() {
+    var bar = document.getElementById('bulk-bar');
+    if (!bar) return;
+    var count = selectedIDs.size;
+    document.getElementById('sel-count').textContent = count;
+    bar.style.display = count > 0 ? '' : 'none';
+
+    // Count how many selected nodes are behind on CLI version
+    var behindCount = 0;
+    selectedIDs.forEach(function(id) {
+      var row = document.querySelector('tr[data-node-id="' + id + '"]');
+      if (row) {
+        var ver = row.getAttribute('data-version') || '';
+        if (ver && latestCLI && versionLT(ver, latestCLI)) behindCount++;
+      }
+    });
+
+    var updateBtn = document.getElementById('bulk-update-btn');
+    if (updateBtn) {
+      document.getElementById('bulk-update-count').textContent = behindCount;
+      updateBtn.disabled = behindCount === 0;
+    }
+
+    var drBtn = document.getElementById('bulk-dr-btn');
+    if (drBtn) {
+      document.getElementById('bulk-dr-count').textContent = count;
+      drBtn.disabled = count === 0;
+    }
+  }
+
+  // Simple semver comparison
+  function versionLT(a, b) {
+    a = a.replace(/^v/, ''); b = b.replace(/^v/, '');
+    var ap = a.split('.'), bp = b.split('.');
+    for (var i = 0; i < Math.max(ap.length, bp.length); i++) {
+      var ai = parseInt(ap[i] || '0', 10) || 0;
+      var bi = parseInt(bp[i] || '0', 10) || 0;
+      if (ai < bi) return true;
+      if (ai > bi) return false;
+    }
+    return false;
+  }
+
+  window.bulkUpdateCLI = function() {
+    var ids = Array.from(selectedIDs);
+    // Filter to only behind nodes
+    var behindIDs = ids.filter(function(id) {
+      var row = document.querySelector('tr[data-node-id="' + id + '"]');
+      if (!row) return false;
+      var ver = row.getAttribute('data-version') || '';
+      return ver && latestCLI && versionLT(ver, latestCLI);
+    });
+    if (behindIDs.length === 0) return;
+    if (!confirm('Schedule CLI update for ' + behindIDs.length + ' node(s) on their next heartbeat?')) return;
+
+    var body = new URLSearchParams();
+    body.set('ids', behindIDs.join(','));
+    body.set('csrf_token', csrfToken);
+    fetch('/nodes/bulk-update-cli', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    }).then(function(res) { return res.json(); }).then(function(d) {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      alert('CLI update scheduled for ' + d.count + ' node(s). They will update on their next heartbeat.');
+      location.reload();
+    }).catch(function(err) { alert('Error: ' + err.message); });
+  };
+
+  window.bulkEnableDR = function() {
+    var ids = Array.from(selectedIDs);
+    if (ids.length === 0) return;
+    if (!confirm('Enable Disaster Recovery for ' + ids.length + ' node(s)?')) return;
+
+    var body = new URLSearchParams();
+    body.set('ids', ids.join(','));
+    body.set('csrf_token', csrfToken);
+    fetch('/nodes/bulk-enable-dr', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    }).then(function(res) { return res.json(); }).then(function(d) {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      alert('DR enabled for ' + d.count + ' node(s).');
+      location.reload();
+    }).catch(function(err) { alert('Error: ' + err.message); });
+  };
+})();
+</script>
+{{end}}

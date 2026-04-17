@@ -270,10 +270,28 @@
       <input type="text" id="node-search" class="form-control form-control-sm" placeholder="Search nodes…" style="width: 200px;">
     </div>
   </div>
+  <!-- Dashboard bulk action bar -->
+  {{if .User.CanManageUsers}}
+  <div class="card-body py-2 border-bottom bg-light" id="dash-bulk-bar" style="display: none;">
+    <div class="d-flex align-items-center gap-2">
+      <span class="text-muted small"><span id="dash-sel-count">0</span> selected</span>
+      <button class="btn btn-sm btn-success" id="dash-bulk-update-btn" onclick="dashBulkUpdateCLI()" disabled>
+        <i class="ti ti-refresh me-1"></i>Update CLI (<span id="dash-bulk-update-count">0</span>)
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="dashClearSelection()">Clear</button>
+    </div>
+  </div>
+  {{end}}
+
   <div class="table-responsive">
     <table class="table table-vcenter table-hover" id="node-table">
       <thead>
         <tr>
+          {{if .User.CanManageUsers}}
+          <th style="width: 40px;" class="text-center">
+            <input type="checkbox" class="form-check-input" id="dash-select-all" onchange="dashToggleSelectAll(this)">
+          </th>
+          {{end}}
           <th>Node Name</th>
           <th>Client</th>
           <th>Tags</th>
@@ -286,7 +304,12 @@
       </thead>
       <tbody>
         {{range .Nodes}}
-        <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'" data-tags="{{range .Tags}}{{.Name}},{{end}}" data-status="{{.WorstStatus}}" data-online="{{if .IsOnline}}online{{else}}offline{{end}}">
+        <tr style="cursor:pointer" onclick="window.location='/nodes/{{.ID}}'" data-node-id="{{.ID}}" data-tags="{{range .Tags}}{{.Name}},{{end}}" data-status="{{.WorstStatus}}" data-online="{{if .IsOnline}}online{{else}}offline{{end}}" data-version="{{.CLIVersion}}">
+          {{if $.User.CanManageUsers}}
+          <td class="text-center" onclick="event.stopPropagation()">
+            <input type="checkbox" class="form-check-input dash-node-check" value="{{.ID}}" onchange="dashUpdateSelection()">
+          </td>
+          {{end}}
           <td>{{.Name}}</td>
           <td>{{.ClientGroup}}</td>
           <td onclick="event.stopPropagation()">{{range .Tags}}<span class="badge me-1" style="background-color: {{.Color}}; color: {{.TextColor}}; font-size: 0.75rem;">{{.Name}}</span>{{end}}</td>
@@ -328,7 +351,7 @@
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="8" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
+        <tr><td colspan="9" class="text-center text-muted">No nodes yet. <a href="/nodes/new">Register one</a>.</td></tr>
         {{end}}
       </tbody>
     </table>
@@ -422,7 +445,9 @@
       const cells = row.querySelectorAll('td');
       if (cells.length < 2) { row.style.display = ''; return; }
       const text = row.textContent.toLowerCase();
-      const rowGroup = cells[1].textContent.trim();
+      // Client cell index depends on whether checkbox column exists
+      const clientIdx = row.querySelector('.dash-node-check') ? 2 : 1;
+      const rowGroup = cells[clientIdx].textContent.trim();
       const rowTags = (row.getAttribute('data-tags') || '');
       const rowStatus = (row.getAttribute('data-status') || '');
       const rowOnline = (row.getAttribute('data-online') || '');
@@ -433,7 +458,103 @@
       const matchOnline = !online || rowOnline === online;
       row.style.display = (matchSearch && matchGroup && matchTag && matchStatus && matchOnline) ? '' : 'none';
     });
+    dashUpdateSelection();
   }
+})();
+
+// ── Dashboard Multi-Select ──
+(function() {
+  var dashCSRF = '{{.CSRFToken}}';
+  var dashLatestCLI = '{{.LatestCLIVersion}}';
+  var dashSelected = new Set();
+
+  function dashVersionLT(a, b) {
+    a = a.replace(/^v/, ''); b = b.replace(/^v/, '');
+    var ap = a.split('.'), bp = b.split('.');
+    for (var i = 0; i < Math.max(ap.length, bp.length); i++) {
+      var ai = parseInt(ap[i] || '0', 10) || 0;
+      var bi = parseInt(bp[i] || '0', 10) || 0;
+      if (ai < bi) return true;
+      if (ai > bi) return false;
+    }
+    return false;
+  }
+
+  window.dashToggleSelectAll = function(master) {
+    document.querySelectorAll('#node-table tbody tr').forEach(function(row) {
+      if (row.style.display === 'none') return;
+      var cb = row.querySelector('.dash-node-check');
+      if (!cb) return;
+      cb.checked = master.checked;
+      if (master.checked) dashSelected.add(cb.value); else dashSelected.delete(cb.value);
+    });
+    dashRefreshBar();
+  };
+
+  window.dashUpdateSelection = function() {
+    dashSelected.clear();
+    document.querySelectorAll('.dash-node-check:checked').forEach(function(cb) {
+      if (cb.closest('tr').style.display !== 'none') {
+        dashSelected.add(cb.value);
+      }
+    });
+    dashRefreshBar();
+  };
+
+  window.dashClearSelection = function() {
+    dashSelected.clear();
+    document.querySelectorAll('.dash-node-check').forEach(function(cb) { cb.checked = false; });
+    var master = document.getElementById('dash-select-all');
+    if (master) master.checked = false;
+    dashRefreshBar();
+  };
+
+  function dashRefreshBar() {
+    var bar = document.getElementById('dash-bulk-bar');
+    if (!bar) return;
+    var count = dashSelected.size;
+    document.getElementById('dash-sel-count').textContent = count;
+    bar.style.display = count > 0 ? '' : 'none';
+
+    var behindCount = 0;
+    dashSelected.forEach(function(id) {
+      var row = document.querySelector('#node-table tr[data-node-id="' + id + '"]');
+      if (row) {
+        var ver = row.getAttribute('data-version') || '';
+        if (ver && dashLatestCLI && dashVersionLT(ver, dashLatestCLI)) behindCount++;
+      }
+    });
+    var btn = document.getElementById('dash-bulk-update-btn');
+    if (btn) {
+      document.getElementById('dash-bulk-update-count').textContent = behindCount;
+      btn.disabled = behindCount === 0;
+    }
+  }
+
+  window.dashBulkUpdateCLI = function() {
+    var ids = Array.from(dashSelected);
+    var behindIDs = ids.filter(function(id) {
+      var row = document.querySelector('#node-table tr[data-node-id="' + id + '"]');
+      if (!row) return false;
+      var ver = row.getAttribute('data-version') || '';
+      return ver && dashLatestCLI && dashVersionLT(ver, dashLatestCLI);
+    });
+    if (behindIDs.length === 0) return;
+    if (!confirm('Schedule CLI update for ' + behindIDs.length + ' node(s) on their next heartbeat?')) return;
+
+    var body = new URLSearchParams();
+    body.set('ids', behindIDs.join(','));
+    body.set('csrf_token', dashCSRF);
+    fetch('/nodes/bulk-update-cli', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    }).then(function(res) { return res.json(); }).then(function(d) {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      alert('CLI update scheduled for ' + d.count + ' node(s). They will update on their next heartbeat.');
+      location.reload();
+    }).catch(function(err) { alert('Error: ' + err.message); });
+  };
 })();
 
 // ── CLI Update via SSH ──

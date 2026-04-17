@@ -54,23 +54,32 @@
     {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
     <div class="alert alert-danger mb-0">
       <div class="mb-3"><i class="ti ti-alert-triangle me-1"></i><strong>Before updating, ensure you have a working backup.</strong> If the update fails, you may need to restore from a snapshot.</div>
-      <form method="POST" action="/settings/updates/apply" id="update-form" onsubmit="if(!document.getElementById('backup-confirmed').checked){alert('Please confirm you have a backup.');return false;}return confirmAndUpdate();">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <label class="form-check mb-3">
-          <input class="form-check-input" type="checkbox" id="backup-confirmed">
-          <span class="form-check-label">I confirm that a server backup exists and I can restore if needed</span>
-        </label>
-        <button type="submit" class="btn btn-warning w-100" id="update-btn"><i class="ti ti-download me-1"></i>Update to {{.LatestServerVersion}}</button>
-      </form>
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" id="update-csrf">
+      <label class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="backup-confirmed">
+        <span class="form-check-label">I confirm that a server backup exists and I can restore if needed</span>
+      </label>
+      <button type="button" class="btn btn-warning w-100" id="update-btn" onclick="confirmAndUpdate()"><i class="ti ti-download me-1"></i>Update to {{.LatestServerVersion}}</button>
     </div>
     <script>
     function confirmAndUpdate() {
-      if (!confirm('This will download {{.LatestServerVersion}}, replace the server binary, and restart.\n\nThe dashboard will be briefly unavailable.\n\nContinue?')) return false;
+      if (!document.getElementById('backup-confirmed').checked) { alert('Please confirm you have a backup.'); return; }
+      if (!confirm('This will download {{.LatestServerVersion}}, replace the server binary, and restart.\n\nThe dashboard will be briefly unavailable.\n\nContinue?')) return;
       var btn = document.getElementById('update-btn');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating... page will reload automatically';
-      setTimeout(function(){ pollForRestart(); }, 3000);
-      return true;
+      var body = new URLSearchParams();
+      body.set('csrf_token', document.getElementById('update-csrf').value);
+      fetch('/settings/updates/apply', {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body.toString(),
+        redirect: 'manual'
+      }).then(function() {
+        setTimeout(pollForRestart, 3000);
+      }).catch(function() {
+        setTimeout(pollForRestart, 3000);
+      });
     }
     function pollForRestart() {
       var attempts = 0;
@@ -79,7 +88,10 @@
         fetch('/settings/updates', {credentials: 'same-origin', redirect: 'follow'})
           .then(function(r) { if (r.ok) { clearInterval(poll); location.reload(); } })
           .catch(function() {});
-        if (attempts > 30) clearInterval(poll);
+        if (attempts > 30) {
+          clearInterval(poll);
+          location.reload();
+        }
       }, 2000);
     }
     </script>

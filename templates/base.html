@@ -149,6 +149,22 @@
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/js/tabler.min.js" defer></script>
+<script>
+function copyBtn(btn, inputId) {
+  var text = document.getElementById(inputId).value;
+  navigator.clipboard.writeText(text).then(function() {
+    var orig = btn.innerHTML;
+    btn.innerHTML = '<i class="ti ti-check"></i> Copied';
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-success');
+    setTimeout(function() {
+      btn.innerHTML = orig;
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-outline-secondary');
+    }, 2000);
+  });
+}
+</script>
 </body>
 </html>
 {{end}}

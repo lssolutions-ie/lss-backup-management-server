@@ -88,14 +88,14 @@
         <strong>Linux / macOS:</strong>
         <div class="input-group">
           <input type="text" id="install-cmd-unix" class="form-control font-monospace" readonly>
-          <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd-unix').value)"><i class="ti ti-copy"></i></button>
+          <button type="button" class="btn btn-outline-secondary" onclick="copyBtn(this, 'install-cmd-unix')"><i class="ti ti-copy"></i></button>
         </div>
       </div>
       <div class="mb-2">
         <strong>Windows (PowerShell):</strong>
         <div class="input-group">
           <input type="text" id="install-cmd-win" class="form-control font-monospace" readonly>
-          <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd-win').value)"><i class="ti ti-copy"></i></button>
+          <button type="button" class="btn btn-outline-secondary" onclick="copyBtn(this, 'install-cmd-win')"><i class="ti ti-copy"></i></button>
         </div>
       </div>
       <div class="text-muted small">Token expires in 24 hours. One-time use only.</div>

@@ -1007,26 +1007,40 @@ function openDRSSHModal(nodeID, nodeName) {
           <strong>Linux / macOS:</strong>
           <div class="input-group">
             <input type="text" id="recovery-cmd-unix" class="form-control font-monospace" readonly>
-            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('recovery-cmd-unix').value)"><i class="ti ti-copy"></i></button>
+            <button class="btn btn-outline-secondary" onclick="copyBtn(this, 'recovery-cmd-unix')"><i class="ti ti-copy"></i></button>
           </div>
         </div>
         <div class="mb-3">
           <strong>Windows (PowerShell):</strong>
           <div class="input-group">
             <input type="text" id="recovery-cmd-win" class="form-control font-monospace" readonly>
-            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('recovery-cmd-win').value)"><i class="ti ti-copy"></i></button>
+            <button class="btn btn-outline-secondary" onclick="copyBtn(this, 'recovery-cmd-win')"><i class="ti ti-copy"></i></button>
           </div>
         </div>
         <div class="text-muted small">Token expires in 24 hours. One-time use only. The node's existing UID and PSK are reused — no re-registration needed.</div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-secondary" onclick="closeRecoveryModal()">Close</button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
+function closeRecoveryModal() {
+  var el = document.getElementById('recovery-modal');
+  if (window.bootstrap && window.bootstrap.Modal) {
+    window.bootstrap.Modal.getInstance(el)?.hide();
+  }
+  el.classList.remove('show');
+  el.style.display = 'none';
+  var backdrop = document.querySelector('.modal-backdrop');
+  if (backdrop) backdrop.remove();
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
+}
+
 function generateRecoveryToken(nodeID, nodeName) {
   fetch('/nodes/' + nodeID + '/generate-recovery-token', {
     method: 'POST',

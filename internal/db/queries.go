@@ -333,7 +333,8 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 		       n.dr_enabled, n.dr_interval_hours, n.dr_last_backup_at,
 		       n.dr_last_status, n.dr_last_error, n.dr_snapshot_count,
 		       n.dr_force_run, n.dr_config_version,
-		       n.cli_version, n.cli_update_pending
+		       n.cli_version, n.cli_update_pending,
+		       n.deletion_phase, n.secrets_export_enc, n.deletion_retain_data
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.uid = ?`, uid).
@@ -346,7 +347,8 @@ func (d *DB) GetNodeByUID(uid string) (*models.Node, error) {
 			&n.DREnabled, &n.DRIntervalHours, &n.DRLastBackupAt,
 			&n.DRLastStatus, &n.DRLastError, &n.DRSnapshotCount,
 			&n.DRForceRun, &n.DRConfigVersion,
-			&n.CLIVersion, &n.CLIUpdatePending)
+			&n.CLIVersion, &n.CLIUpdatePending,
+			&n.DeletionPhase, &n.SecretsExportEnc, &n.DeletionRetainData)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -368,7 +370,8 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 		       n.dr_enabled, n.dr_interval_hours, n.dr_last_backup_at,
 		       n.dr_last_status, n.dr_last_error, n.dr_snapshot_count,
 		       n.dr_force_run, n.dr_config_version,
-		       n.cli_version, n.cli_update_pending
+		       n.cli_version, n.cli_update_pending,
+		       n.deletion_phase, n.secrets_export_enc, n.deletion_retain_data
 		FROM nodes n
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		WHERE n.id = ?`, id).
@@ -381,7 +384,8 @@ func (d *DB) GetNodeByID(id uint64) (*models.Node, error) {
 			&n.DREnabled, &n.DRIntervalHours, &n.DRLastBackupAt,
 			&n.DRLastStatus, &n.DRLastError, &n.DRSnapshotCount,
 			&n.DRForceRun, &n.DRConfigVersion,
-			&n.CLIVersion, &n.CLIUpdatePending)
+			&n.CLIVersion, &n.CLIUpdatePending,
+			&n.DeletionPhase, &n.SecretsExportEnc, &n.DeletionRetainData)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

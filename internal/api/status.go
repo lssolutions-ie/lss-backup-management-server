@@ -332,6 +332,24 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Graceful deletion flow — multi-step via heartbeat.
+	switch node.DeletionPhase {
+	case "export_pending":
+		resp["export_secrets"] = true
+	case "uninstall_pending":
+		resp["uninstall_node"] = map[string]bool{"retain_data": node.DeletionRetainData}
+	}
+
+	// Secrets export ingest — CLI sends secrets during graceful deletion.
+	if len(status.SecretsExport) > 0 && node.DeletionPhase == "export_pending" {
+		encrypted, err := crypto.EncryptPSK(string(status.SecretsExport), h.AppKey)
+		if err == nil {
+			_ = h.DB.StoreNodeSecretsExport(node.ID, encrypted)
+			_ = h.DB.SetNodeDeletionPhase(node.ID, "export_received")
+			rlg.Info("secrets export received", "node_id", node.ID)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck

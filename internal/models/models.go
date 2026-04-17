@@ -145,6 +145,11 @@ type Node struct {
 	DRSnapshotCount uint32
 	DRForceRun      bool
 	DRConfigVersion uint32
+
+	// Graceful deletion flow
+	DeletionPhase      string // "" | "export_pending" | "export_received" | "uninstall_pending"
+	SecretsExportEnc   string // AES-encrypted JSON blob of exported secrets
+	DeletionRetainData bool   // if true, CLI keeps backup data on disk during uninstall
 }
 
 // TunnelReady returns true if the server can dial 127.0.0.1:TunnelPort and expect to reach the node.
@@ -289,9 +294,10 @@ type NodeStatus struct {
 	Jobs           []JobStatus   `json:"jobs"`
 	Tunnel         *TunnelInfo   `json:"tunnel,omitempty"`
 	Hardware       *HardwareInfo `json:"hardware,omitempty"`
-	CLIVersion     string        `json:"cli_version,omitempty"`
-	AuditEvents    []AuditEvent  `json:"audit_events,omitempty"` // v3+
-	DRStatus       *DRStatus     `json:"dr_status,omitempty"`
+	CLIVersion     string          `json:"cli_version,omitempty"`
+	AuditEvents    []AuditEvent    `json:"audit_events,omitempty"` // v3+
+	DRStatus       *DRStatus       `json:"dr_status,omitempty"`
+	SecretsExport  json.RawMessage `json:"secrets_export,omitempty"` // opaque blob from CLI during graceful deletion
 }
 
 // DRConfig is the single-row global DR configuration.

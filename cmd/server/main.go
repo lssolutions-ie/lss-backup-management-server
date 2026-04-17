@@ -309,6 +309,23 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleResetAuditChain(w, r)
 			return
 		}
+		// Graceful deletion flow: /nodes/{id}/delete/{action}
+		if strings.HasPrefix(parts[1], "delete/") {
+			action := strings.TrimPrefix(parts[1], "delete/")
+			switch action {
+			case "initiate":
+				s.HandleInitiateNodeDeletion(w, r)
+			case "report":
+				s.HandleDownloadCredentialReport(w, r)
+			case "confirm":
+				s.HandleConfirmNodeDeletion(w, r)
+			case "cancel":
+				s.HandleCancelNodeDeletion(w, r)
+			default:
+				http.NotFound(w, r)
+			}
+			return
+		}
 		// DR actions: /nodes/{id}/dr/{action}
 		if strings.HasPrefix(parts[1], "dr/") {
 			action := strings.TrimPrefix(parts[1], "dr/")

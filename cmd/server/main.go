@@ -352,6 +352,10 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 				s.HandleDRNodeAction(w, r, false)
 			case "run-now":
 				s.HandleDRRunNow(w, r)
+			case "snapshots":
+				s.HandleDRNodeSnapshots(w, r)
+			case "restore-snapshot":
+				s.HandleDRNodeRestore(w, r)
 			default:
 				http.NotFound(w, r)
 			}

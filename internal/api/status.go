@@ -268,7 +268,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 				_ = h.DB.SetNodeAuditChainHead(node.ID, "")
 				// Only insert an audit row on the FIRST break per hour.
 				var recentBreaks int
-				rows, _ := h.DB.RawQuery("SELECT COUNT(*) FROM audit_log WHERE category = 'audit_chain_break' AND source_node_id = ? AND ts > DATE_SUB(NOW(), INTERVAL 1 HOUR)", node.ID)
+				rows, _ := h.DB.RawQuery("SELECT COUNT(*) FROM audit_log WHERE category = 'audit_chain_break' AND entity_id = ? AND ts > DATE_SUB(NOW(), INTERVAL 1 HOUR)", fmt.Sprintf("%d", node.ID))
 				if rows != nil {
 					if rows.Next() { rows.Scan(&recentBreaks) }
 					rows.Close()
@@ -294,11 +294,22 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 			}
 			resp["audit_ack_seq"] = newAck
 		} else {
-			// Chain break — insert events but don't advance ack.
+			// Chain break — insert events for forensics.
 			for _, e := range status.AuditEvents {
 				h.DB.InsertNodeAuditIgnoreErr(node.ID, e)
 			}
-			resp["audit_ack_seq"] = prevAck
+			// Force-advance ack to the highest seq in the batch so the CLI
+			// stops resending the same problematic events forever.
+			maxSeq := prevAck
+			for _, e := range status.AuditEvents {
+				if e.Seq > maxSeq {
+					maxSeq = e.Seq
+				}
+			}
+			if maxSeq > prevAck {
+				_ = h.DB.SetNodeAuditAckSeq(node.ID, maxSeq)
+			}
+			resp["audit_ack_seq"] = maxSeq
 		}
 	} else {
 		// Always return current ack seq so CLI can reconcile if it lost local state.

@@ -186,6 +186,12 @@ func (d *DB) GetNodeAuditAckSeq(nodeID uint64) (uint64, error) {
 	return n, err
 }
 
+// SetNodeAuditAckSeq force-sets the ack seq for a node (used on chain break to skip past problematic events).
+func (d *DB) SetNodeAuditAckSeq(nodeID, seq uint64) error {
+	_, err := d.db.Exec("UPDATE nodes SET audit_ack_seq = ? WHERE id = ?", seq, nodeID)
+	return err
+}
+
 // EnrichedAuditLog is an audit row decorated with node/client display names.
 type EnrichedAuditLog struct {
 	*models.AuditLog

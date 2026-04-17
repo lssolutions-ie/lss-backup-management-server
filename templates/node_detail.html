@@ -52,6 +52,7 @@
             <div class="dropdown-divider"></div>
             {{if .Node.DREnabled}}
             <button type="button" class="dropdown-item" onclick="triggerDRNow({{.Node.ID}}, '{{.Node.Name}}')"><i class="ti ti-player-play me-2"></i>Run DR Now</button>
+            <button type="button" class="dropdown-item" onclick="loadNodeDRSnapshots()"><i class="ti ti-history me-2"></i>Restore from Snapshot</button>
             <form action="/nodes/{{.Node.ID}}/dr/disable" method="POST">
               <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
               <button type="submit" class="dropdown-item text-warning"><i class="ti ti-shield-off me-2"></i>Disable DR</button>
@@ -1025,6 +1026,179 @@ function openDRSSHModal(nodeID, nodeName) {
     </div>
   </div>
 </div>
+
+<!-- DR Snapshot Restore Modal -->
+<div class="modal modal-blur fade" id="dr-restore-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-history me-1"></i> Restore from DR Snapshot</h5>
+        <button type="button" class="btn-close" onclick="closeDRRestoreModal()" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="dr-restore-step-1">
+        <div id="dr-snap-loading" class="text-center text-muted py-4">Loading snapshots...</div>
+        <div id="dr-snap-error" class="alert alert-danger" style="display:none;"></div>
+        <div class="table-responsive" id="dr-snap-table-wrap" style="display:none;">
+          <table class="table table-vcenter table-hover">
+            <thead><tr><th style="width:40px;"></th><th>Snapshot ID</th><th>Date</th><th>Hostname</th></tr></thead>
+            <tbody id="dr-snap-tbody"></tbody>
+          </table>
+        </div>
+        <div id="dr-snap-empty" class="text-muted text-center py-3" style="display:none;">No snapshots found.</div>
+      </div>
+      <div class="modal-body border-top" id="dr-restore-step-2" style="display:none;">
+        <div class="alert alert-danger mb-3">
+          <i class="ti ti-alert-triangle me-1"></i><strong>This will overwrite the node's current configuration with snapshot <code id="dr-restore-snap-label"></code>.</strong>
+          This cannot be undone.
+        </div>
+        <p class="text-muted small">SSH credentials are required to push the restore command to the node immediately.</p>
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">SSH Username</label>
+            <input type="text" id="dr-restore-user" class="form-control" placeholder="root">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">SSH Password</label>
+            <input type="password" id="dr-restore-pass" class="form-control">
+          </div>
+        </div>
+        <label class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" id="dr-restore-confirm-check">
+          <span class="form-check-label">I understand this will overwrite the node's configuration</span>
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary" onclick="closeDRRestoreModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="dr-restore-next-btn" style="display:none;" onclick="drRestoreShowCreds()">Next</button>
+        <button type="button" class="btn btn-danger" id="dr-restore-execute-btn" style="display:none;" onclick="drRestoreExecute()"><i class="ti ti-arrow-back-up me-1"></i>Restore Now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var __drRestoreSnapshotID = '';
+
+function closeDRRestoreModal() {
+  var el = document.getElementById('dr-restore-modal');
+  if (window.bootstrap && window.bootstrap.Modal) {
+    var inst = window.bootstrap.Modal.getInstance(el);
+    if (inst) inst.hide();
+  }
+  el.classList.remove('show'); el.style.display = 'none';
+  var bd = document.querySelector('.modal-backdrop'); if (bd) bd.remove();
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
+}
+
+function loadNodeDRSnapshots() {
+  __drRestoreSnapshotID = '';
+  document.getElementById('dr-restore-step-1').style.display = '';
+  document.getElementById('dr-restore-step-2').style.display = 'none';
+  document.getElementById('dr-restore-next-btn').style.display = 'none';
+  document.getElementById('dr-restore-execute-btn').style.display = 'none';
+  document.getElementById('dr-snap-loading').style.display = '';
+  document.getElementById('dr-snap-error').style.display = 'none';
+  document.getElementById('dr-snap-table-wrap').style.display = 'none';
+  document.getElementById('dr-snap-empty').style.display = 'none';
+
+  var modal = document.getElementById('dr-restore-modal');
+  if (window.bootstrap && window.bootstrap.Modal) {
+    new window.bootstrap.Modal(modal).show();
+  } else { modal.classList.add('show'); modal.style.display = 'block'; }
+
+  fetch('/nodes/' + __nodeID + '/dr/snapshots', { credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('dr-snap-loading').style.display = 'none';
+      if (data.error) {
+        document.getElementById('dr-snap-error').textContent = data.error;
+        document.getElementById('dr-snap-error').style.display = '';
+        return;
+      }
+      var snaps = data.snapshots || [];
+      if (snaps.length === 0) {
+        document.getElementById('dr-snap-empty').style.display = '';
+        return;
+      }
+      snaps.sort(function(a, b) { return b.time.localeCompare(a.time); });
+      var tbody = document.getElementById('dr-snap-tbody');
+      tbody.innerHTML = '';
+      snaps.forEach(function(s) {
+        var tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.onclick = function() { selectDRSnap(s.short_id || s.id, tr); };
+        var d = new Date(s.time);
+        var dateStr = d.toLocaleDateString(undefined, {year:'numeric',month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit'});
+        tr.innerHTML = '<td class="text-center"><input type="radio" name="dr_snap_select" class="form-check-input" value="' + (s.short_id || s.id) + '"></td>' +
+          '<td><code>' + (s.short_id || s.id) + '</code></td>' +
+          '<td>' + dateStr + '</td>' +
+          '<td>' + (s.hostname || '\u2014') + '</td>';
+        tbody.appendChild(tr);
+      });
+      document.getElementById('dr-snap-table-wrap').style.display = '';
+    })
+    .catch(function(err) {
+      document.getElementById('dr-snap-loading').style.display = 'none';
+      document.getElementById('dr-snap-error').textContent = 'Failed: ' + err.message;
+      document.getElementById('dr-snap-error').style.display = '';
+    });
+}
+
+function selectDRSnap(id, row) {
+  __drRestoreSnapshotID = id;
+  document.querySelectorAll('#dr-snap-tbody tr').forEach(function(tr) { tr.classList.remove('table-primary'); });
+  row.classList.add('table-primary');
+  var radio = row.querySelector('input[type="radio"]');
+  if (radio) radio.checked = true;
+  document.getElementById('dr-restore-next-btn').style.display = '';
+}
+
+function drRestoreShowCreds() {
+  if (!__drRestoreSnapshotID) return;
+  document.getElementById('dr-restore-step-1').style.display = 'none';
+  document.getElementById('dr-restore-step-2').style.display = '';
+  document.getElementById('dr-restore-next-btn').style.display = 'none';
+  document.getElementById('dr-restore-execute-btn').style.display = '';
+  document.getElementById('dr-restore-snap-label').textContent = __drRestoreSnapshotID;
+  document.getElementById('dr-restore-user').value = '';
+  document.getElementById('dr-restore-pass').value = '';
+  document.getElementById('dr-restore-confirm-check').checked = false;
+}
+
+function drRestoreExecute() {
+  if (!document.getElementById('dr-restore-confirm-check').checked) {
+    alert('Please confirm you understand this will overwrite the node configuration.');
+    return;
+  }
+  var user = document.getElementById('dr-restore-user').value.trim();
+  var pass = document.getElementById('dr-restore-pass').value;
+  if (!user) { alert('SSH username is required.'); return; }
+
+  var btn = document.getElementById('dr-restore-execute-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Restoring...';
+
+  fetch('/nodes/' + __nodeID + '/dr/restore-snapshot', {
+    method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({snapshot_id: __drRestoreSnapshotID, username: user, password: pass})
+  }).then(function(res) {
+    return res.json().then(function(d) {
+      if (res.status === 401) { alert('SSH credentials rejected.'); btn.disabled = false; btn.innerHTML = '<i class="ti ti-arrow-back-up me-1"></i>Restore Now'; return; }
+      if (d.error) { alert('Restore failed: ' + d.error); btn.disabled = false; btn.innerHTML = '<i class="ti ti-arrow-back-up me-1"></i>Restore Now'; return; }
+      alert('Restore initiated from snapshot ' + __drRestoreSnapshotID + '. The node will restart its daemon when complete. Check back in a few minutes.');
+      closeDRRestoreModal();
+      location.reload();
+    });
+  }).catch(function(err) {
+    alert('Error: ' + err.message);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-arrow-back-up me-1"></i>Restore Now';
+  });
+}
+</script>
 
 {{if and .User.IsSuperAdmin (not .Node.NeverSeen)}}
 <div class="modal modal-blur fade" id="recovery-modal" tabindex="-1" aria-hidden="true">

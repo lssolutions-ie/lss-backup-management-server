@@ -133,6 +133,10 @@ echo "  Node ID: $LSS_NODE_UID"
 	}
 
 	rlg.Info("install token redeemed", "node_id", node.ID, "uid", node.UID, "os", osParam)
+	_ = h.DB.InsertServerAuditLog(0, "system", r.RemoteAddr, "install_token_redeemed", "critical",
+		"redeem", "node", fmt.Sprintf("%d", node.ID),
+		"Install token redeemed for node "+node.UID+" — CLI credentials served",
+		map[string]string{"uid": node.UID, "os": osParam})
 }
 
 // HandleRecover serves a one-time recovery script with embedded credentials.
@@ -257,4 +261,8 @@ echo "  Node ID: $LSS_NODE_UID"
 	}
 
 	rlg.Info("recovery token redeemed", "node_id", node.ID, "uid", node.UID, "name", node.Name, "os", osParam)
+	_ = h.DB.InsertServerAuditLog(0, "system", r.RemoteAddr, "recovery_token_redeemed", "critical",
+		"redeem", "node", fmt.Sprintf("%d", node.ID),
+		"CRITICAL: Recovery token redeemed for node "+node.UID+" ("+node.Name+") — disaster recovery credentials served",
+		map[string]string{"uid": node.UID, "node_name": node.Name, "os": osParam})
 }

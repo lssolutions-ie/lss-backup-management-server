@@ -1353,9 +1353,9 @@ func (d *DB) ListGroupsWithStats(groupIDs []uint64) ([]*models.GroupWithStats, e
 		       COALESCE(SUM(js.last_status = 'success'), 0) AS success_jobs,
 		       COALESCE(SUM(js.last_status = 'failure'), 0) AS failure_jobs,
 		       COALESCE(SUM(js.last_status = 'warning'), 0) AS warning_jobs,
-		       COALESCE(SUM(js.last_status = '' OR js.last_status IS NULL), 0) AS never_run_jobs
+		       COALESCE(SUM(js.id IS NOT NULL AND js.last_status = ''), 0) AS never_run_jobs
 		FROM client_groups cg
-		LEFT JOIN nodes n          ON n.client_group_id = cg.id
+		LEFT JOIN nodes n          ON n.client_group_id = cg.id AND n.first_seen_at IS NOT NULL
 		LEFT JOIN job_snapshots js ON js.node_id = n.id`
 	args := []interface{}{}
 	if len(groupIDs) > 0 {

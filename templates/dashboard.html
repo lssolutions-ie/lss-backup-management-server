@@ -157,34 +157,52 @@
 <div class="row row-deck row-cards mb-3">
   {{range .Groups}}
   <div class="col-sm-6 col-lg-4">
-    <div class="card group-card" data-group="{{.Name}}" style="cursor: pointer; transition: box-shadow 0.15s;" onclick="filterByGroup('{{.Name}}', this)">
+    <div class="card group-card" data-group="{{.Name}}"
+         style="cursor:pointer; transition: box-shadow 0.2s, transform 0.2s;"
+         onclick="filterByGroup('{{.Name}}', this)"
+         onmouseenter="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.12)'; this.style.transform='translateY(-2px)';"
+         onmouseleave="this.style.boxShadow=''; this.style.transform='';">
       <div class="card-body">
-        <div class="d-flex align-items-center">
-          <div class="flex-grow-1">
-            <h3 class="card-title mt-0 mb-1 d-flex align-items-center"><span style="font-size: 2em;">{{.Name}}</span> {{if $.User.IsSuperAdmin}}<span class="badge ms-2" style="background-color: {{.RankColor}}; color: #333; font-size: 0.7rem;">{{.RankLabel}}</span>{{end}}</h3>
-            <div class="text-muted mb-1 mt-3">{{.NodeCount}} nodes · {{.TotalJobs}} jobs</div>
-            <div style="font-size: 0.8rem;">
-              {{if gt .TotalJobs 0}}
-              <span class="text-success">{{.SuccessJobs}} success</span> · <span class="text-warning">{{.WarningJobs}} warn</span> · <span class="text-danger">{{.FailureJobs}} failed</span> · <span class="text-muted">{{.NeverRunJobs}} pending</span>
-              {{else}}
-              <span class="text-muted">No jobs</span>
-              {{end}}
+        <div class="d-flex align-items-start">
+          <div class="flex-grow-1 min-width-0">
+            <!-- Header row -->
+            <div class="d-flex align-items-center mb-1">
+              <h3 class="card-title mt-0 mb-0" style="font-size:1.25rem;">{{.Name}}</h3>
+              {{if $.User.IsSuperAdmin}}<span class="badge ms-2" style="background-color: {{.RankColor}}; color: #333; font-size: 0.65rem;">{{.RankLabel}}</span>{{end}}
             </div>
+            <!-- Node count + jobs -->
+            <div class="text-muted small mb-2">{{.NodeCount}} nodes · {{.TotalJobs}} jobs</div>
+            {{if gt .TotalJobs 0}}
+            <!-- Progress bar -->
+            <div class="progress mb-2" style="height: 6px;">
+              {{if gt .SuccessJobs 0}}<div class="progress-bar bg-success" style="width: {{.SuccessRate}}%"></div>{{end}}
+              {{if gt .WarningJobs 0}}<div class="progress-bar bg-warning" style="width: {{.WarningJobs | printf "%d"}}{{/* approximate % */}}"></div>{{end}}
+              {{if gt .FailureJobs 0}}<div class="progress-bar bg-danger" style="width: {{.FailureJobs | printf "%d"}}{{/* approximate % */}}"></div>{{end}}
+            </div>
+            <div class="d-flex gap-3" style="font-size: 0.75rem;">
+              <span class="text-success"><i class="ti ti-check"></i> {{.SuccessJobs}}</span>
+              <span class="text-warning"><i class="ti ti-alert-triangle"></i> {{.WarningJobs}}</span>
+              <span class="text-danger"><i class="ti ti-x"></i> {{.FailureJobs}}</span>
+              {{if gt .NeverRunJobs 0}}<span class="text-muted"><i class="ti ti-clock"></i> {{.NeverRunJobs}}</span>{{end}}
+            </div>
+            {{else}}
+            <div class="text-muted small">No jobs configured</div>
+            {{end}}
           </div>
+          <!-- Donut -->
           {{if gt .TotalJobs 0}}
-          <div class="ms-3 text-center">
-            <div class="text-muted" style="font-size: 0.65rem; margin-bottom: 6px;">Success Rate</div>
-            <div style="position: relative; width: 60px; height: 60px; margin: 0 auto;">
-            <svg viewBox="0 0 36 36" width="60" height="60">
-              <circle cx="18" cy="18" r="14" fill="none" stroke="#e9ecef" stroke-width="4"/>
-              {{if gt .SuccessJobs 0}}
-              <circle cx="18" cy="18" r="14" fill="none" stroke="#2fb344" stroke-width="4"
-                stroke-dasharray="{{.SuccessRate}} 100" stroke-dashoffset="25"
-                stroke-linecap="round" transform="rotate(-90 18 18)"/>
-              {{end}}
-            </svg>
-            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.7rem; font-weight: 700;">{{.SuccessRate}}%</div>
-          </div>
+          <div class="ms-3 text-center flex-shrink-0">
+            <div style="position: relative; width: 56px; height: 56px;">
+              <svg viewBox="0 0 36 36" width="56" height="56">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#e9ecef" stroke-width="3.5"/>
+                {{if gt .SuccessJobs 0}}
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#2fb344" stroke-width="3.5"
+                  stroke-dasharray="{{.SuccessRate}} 100" stroke-dashoffset="25"
+                  stroke-linecap="round" transform="rotate(-90 18 18)"/>
+                {{end}}
+              </svg>
+              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:0.7rem; font-weight:700;">{{.SuccessRate}}%</div>
+            </div>
           </div>
           {{end}}
         </div>

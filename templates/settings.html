@@ -48,6 +48,16 @@
     </div>
     {{end}}
 
+    {{if or .User.IsSuperAdmin .User.IsManager}}
+    <div class="card mb-3">
+      <div class="card-header"><h3 class="card-title">Pending Nodes</h3></div>
+      <div class="card-body">
+        <p class="text-muted">Nodes created via server-assisted install that haven't completed registration yet.</p>
+        <a href="/settings/pending-nodes" class="btn btn-outline-secondary w-100"><i class="ti ti-clock me-1"></i> Pending Nodes</a>
+      </div>
+    </div>
+    {{end}}
+
     <div class="card flex-grow-1">
       <div class="card-header"><h3 class="card-title">Two-Factor Authentication</h3></div>
       <div class="card-body d-flex flex-column">

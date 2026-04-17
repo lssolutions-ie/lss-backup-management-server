@@ -574,12 +574,17 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 		JOIN client_groups cg ON cg.id = n.client_group_id
 		LEFT JOIN job_snapshots js ON js.node_id = n.id`
 	args := []interface{}{}
+	// Only show registered nodes (first heartbeat received). Pending nodes
+	// from server-assisted install live on /settings/pending-nodes until
+	// their first heartbeat completes registration.
+	whereParts := []string{"n.first_seen_at IS NOT NULL"}
 	if len(groupIDs) > 0 {
-		query += " WHERE n.client_group_id IN (" + placeholders(len(groupIDs)) + ")"
+		whereParts = append(whereParts, "n.client_group_id IN ("+placeholders(len(groupIDs))+")")
 		for _, id := range groupIDs {
 			args = append(args, id)
 		}
 	}
+	query += " WHERE " + strings.Join(whereParts, " AND ")
 	query += ` GROUP BY n.id, n.uid, n.name, n.client_group_id, cg.name,
 	                    n.psk_encrypted, n.first_seen_at, n.last_seen_at,
 	                    n.tunnel_port, n.tunnel_connected, n.tunnel_public_key,

@@ -107,7 +107,7 @@ $env:LSS_NODE_UID = "%s"
 $env:LSS_PSK_KEY = "%s"
 
 Write-Host "Downloading LSS Backup CLI installer..."
-irm https://raw.githubusercontent.com/lssolutions-ie/lss-backup-cli/main/install/install-cli.ps1 | iex
+irm https://raw.githubusercontent.com/lssolutions-ie/lss-backup-cli/main/v2/install-cli.ps1 | iex
 
 Write-Host ""
 Write-Host "Node registered with management server."
@@ -125,7 +125,7 @@ export LSS_NODE_UID="%s"
 export LSS_PSK_KEY="%s"
 
 echo "Downloading LSS Backup CLI installer..."
-curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-cli/main/install/install-cli.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-cli/main/v2/install-cli.sh | bash
 
 echo ""
 echo "Node registered with management server."

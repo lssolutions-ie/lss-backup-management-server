@@ -139,3 +139,90 @@ func (s *Server) HandleGenerateInstallToken(w http.ResponseWriter, r *http.Reque
 		"windows_command": winCmd,
 	})
 }
+
+// HandleGenerateRecoveryToken creates a one-time recovery token for an existing registered node.
+// POST /nodes/{id}/generate-recovery-token
+// Returns JSON with recovery one-liners for Unix and Windows.
+func (s *Server) HandleGenerateRecoveryToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+
+	rlg := logx.FromContext(r.Context())
+
+	if !s.validateCSRF(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid CSRF token"}) //nolint:errcheck
+		return
+	}
+
+	// Extract node from URL: /nodes/{id}/generate-recovery-token
+	node, ok := s.nodeFromPath(w, r, "/nodes/")
+	if !ok {
+		return
+	}
+
+	// Must be a registered node (not pending)
+	if node.FirstSeenAt == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Cannot recover a pending node"}) //nolint:errcheck
+		return
+	}
+
+	// Validate that the PSK can be decrypted (it will be served at the recover endpoint)
+	if _, err := crypto.DecryptPSK(node.PSKEncrypted, s.AppKey); err != nil {
+		rlg.Error("recovery token: decrypt psk failed", "node_id", node.ID, "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal error"}) //nolint:errcheck
+		return
+	}
+
+	// Generate random token: 32 bytes -> 64-char hex
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		rlg.Error("recovery token: generate token failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal error"}) //nolint:errcheck
+		return
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	// Hash token for storage
+	hash := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	// Store with 24h expiry, linked to the EXISTING node
+	expiresAt := time.Now().Add(24 * time.Hour)
+	user := r.Context().Value(ctxUser).(*models.User)
+	if err := s.DB.CreateInstallToken(tokenHash, node.ID, expiresAt, user.ID); err != nil {
+		rlg.Error("recovery token: create token failed", "err", err.Error())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Could not create token"}) //nolint:errcheck
+		return
+	}
+
+	// Build recovery URL (always HTTPS)
+	baseURL := fmt.Sprintf("https://%s", r.Host)
+	recoverURL := fmt.Sprintf("%s/api/v1/recover/%s", baseURL, token)
+
+	unixCmd := fmt.Sprintf("curl -fsSL '%s' | bash", recoverURL)
+	winCmd := fmt.Sprintf("irm '%s?os=windows' | iex", recoverURL)
+
+	// Audit
+	s.auditServer(r, "recovery_token_created", "critical", "create", "node",
+		strconv.FormatUint(node.ID, 10),
+		"Generated recovery token for node "+node.UID+" ("+node.Name+")",
+		map[string]string{"uid": node.UID, "node_name": node.Name})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{ //nolint:errcheck
+		"unix_command":    unixCmd,
+		"windows_command": winCmd,
+	})
+}

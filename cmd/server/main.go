@@ -111,6 +111,7 @@ func main() {
 	// Node API
 	mux.HandleFunc("/api/v1/status", apiHandler.HandleStatus)
 	mux.HandleFunc("/api/v1/install/", apiHandler.HandleInstall)
+	mux.HandleFunc("/api/v1/recover/", apiHandler.HandleRecover)
 
 	// Auth
 	mux.HandleFunc("/setup", webServer.HandleSetup)
@@ -348,6 +349,8 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodeDelete(w, r)
 		case "regenerate-psk":
 			s.HandleNodeRegeneratePSK(w, r)
+		case "generate-recovery-token":
+			s.HandleGenerateRecoveryToken(w, r)
 		case "psk":
 			s.HandleNodePSK(w, r)
 		case "update-cli":

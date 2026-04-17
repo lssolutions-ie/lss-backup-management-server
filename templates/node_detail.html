@@ -64,6 +64,11 @@
           <button type="submit" class="btn btn-outline-success btn-sm">Enable DR</button>
         </form>
         {{end}}
+        {{if not .Node.NeverSeen}}
+        <button type="button" class="btn btn-outline-warning btn-sm" onclick="generateRecoveryToken({{.Node.ID}}, '{{.Node.Name}}')" title="Generate recovery command for this node">
+          <i class="ti ti-restore me-1"></i>Recover
+        </button>
+        {{end}}
         {{end}}
       </div>
     </div>
@@ -987,4 +992,55 @@ function openDRSSHModal(nodeID, nodeName) {
     </div>
   </div>
 </div>
+
+{{if and .User.IsSuperAdmin (not .Node.NeverSeen)}}
+<div class="modal modal-blur fade" id="recovery-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-restore me-1"></i> Recover Node</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Copy and paste on the replacement machine. The CLI will install, restore job configs + secrets from the DR backup, and resume operations.</p>
+        <div class="mb-3">
+          <strong>Linux / macOS:</strong>
+          <div class="input-group">
+            <input type="text" id="recovery-cmd-unix" class="form-control font-monospace" readonly>
+            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('recovery-cmd-unix').value)"><i class="ti ti-copy"></i></button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <strong>Windows (PowerShell):</strong>
+          <div class="input-group">
+            <input type="text" id="recovery-cmd-win" class="form-control font-monospace" readonly>
+            <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('recovery-cmd-win').value)"><i class="ti ti-copy"></i></button>
+          </div>
+        </div>
+        <div class="text-muted small">Token expires in 24 hours. One-time use only. The node's existing UID and PSK are reused — no re-registration needed.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function generateRecoveryToken(nodeID, nodeName) {
+  fetch('/nodes/' + nodeID + '/generate-recovery-token', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'csrf_token=' + encodeURIComponent(__csrf),
+    credentials: 'same-origin'
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { alert(d.error); return; }
+    document.getElementById('recovery-cmd-unix').value = d.unix_command;
+    document.getElementById('recovery-cmd-win').value = d.windows_command;
+    var modal = new bootstrap.Modal(document.getElementById('recovery-modal'));
+    modal.show();
+  }).catch(function(e) { alert('Failed to generate recovery token: ' + e); });
+}
+</script>
+{{end}}
 {{end}}

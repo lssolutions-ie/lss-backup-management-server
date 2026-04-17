@@ -333,6 +333,35 @@ func (d *DB) FireSilentNodeAlerts(thresholdMinutes uint32) error {
 	return err
 }
 
+// FireNodeOfflineAudit inserts one audit_log row when a node transitions to offline.
+// Dedup: skips if a node_offline row already exists for this node since its last_seen_at.
+func (d *DB) FireNodeOfflineAudit(nodeID uint64, nodeName, nodeUID string, lastSeen time.Time) {
+	var count int
+	rows, err := d.db.Query(
+		"SELECT COUNT(*) FROM audit_log WHERE category = 'node_offline' AND source_node_id = ? AND ts > ?",
+		nodeID, lastSeen)
+	if err == nil && rows.Next() {
+		rows.Scan(&count)
+		rows.Close()
+	}
+	if count > 0 {
+		return
+	}
+	_ = d.InsertServerAuditLog(0, "system", "", "node_offline", "critical",
+		"detect", "node", fmt.Sprintf("%d", nodeID),
+		"Node "+nodeName+" ("+nodeUID+") went offline — last seen "+lastSeen.Format("2006-01-02 15:04:05"),
+		map[string]string{"node_id": fmt.Sprintf("%d", nodeID), "uid": nodeUID})
+}
+
+// FireNodeBackOnlineAudit inserts one audit_log row when a previously-offline node
+// sends its first heartbeat. Called from the heartbeat handler.
+func (d *DB) FireNodeBackOnlineAudit(nodeID uint64, nodeName, nodeUID string) {
+	_ = d.InsertServerAuditLog(0, "system", "", "node_online", "info",
+		"detect", "node", fmt.Sprintf("%d", nodeID),
+		"Node "+nodeName+" ("+nodeUID+") is back online",
+		map[string]string{"node_id": fmt.Sprintf("%d", nodeID), "uid": nodeUID})
+}
+
 // PruneAuditLog deletes rows older than N days. Safe no-op if days == 0 (forever).
 func (d *DB) PruneAuditLog(days uint32) (int64, error) {
 	if days == 0 {

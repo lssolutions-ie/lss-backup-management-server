@@ -54,5 +54,7 @@ func (c *OfflineChecker) check() {
 		if err := c.notifier.NotifyNodeOffline(*node, lastSeen); err != nil {
 			lg.Error("notify offline failed", "uid", node.UID, "err", err.Error())
 		}
+		// Audit: fire once per offline transition (dedup against last_seen_at)
+		c.db.FireNodeOfflineAudit(node.ID, node.Name, node.UID, lastSeen)
 	}
 }

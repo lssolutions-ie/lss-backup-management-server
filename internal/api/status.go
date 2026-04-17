@@ -153,6 +153,15 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 7. Update last_seen_at (and first_seen_at if first check-in)
+	// Detect "back online" transition — node was offline (last_seen > threshold ago)
+	if node.LastSeenAt != nil {
+		if tuning, err := h.DB.GetServerTuning(); err == nil && tuning != nil {
+			offlineAge := time.Duration(tuning.OfflineThresholdMinutes) * time.Minute
+			if now.Sub(*node.LastSeenAt) > offlineAge {
+				h.DB.FireNodeBackOnlineAudit(node.ID, node.Name, node.UID)
+			}
+		}
+	}
 	if err := h.DB.UpdateNodeSeen(node.ID, now, node.FirstSeenAt == nil); err != nil {
 		rlg.Error("update seen failed", "node_id", node.ID, "err", err.Error())
 	}

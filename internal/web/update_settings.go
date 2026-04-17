@@ -26,8 +26,10 @@ func (s *Server) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	upd := s.newPageData(r)
+	upd.SettingsTab = "updates"
 	s.render(w, r, http.StatusOK, "update_settings.html", updateSettingsPageData{
-		PageData:                     s.newPageData(r),
+		PageData:                     upd,
 		LatestCLIVersion:             t.LatestCLIVersion,
 		LatestCLIVersionCheckedAt:    t.LatestCLIVersionCheckedAt,
 		ServerVersion:                ServerVersion,

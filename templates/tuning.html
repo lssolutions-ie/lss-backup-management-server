@@ -1,187 +1,195 @@
 {{define "content"}}
-<div class="page-header mb-3">
-  <h2 class="page-title">Server Tuning</h2>
-  <div class="text-muted">Global knobs for background workers, retention, and reporting cadence.</div>
-</div>
+<div class="page-header mb-3"><h2 class="page-title"><i class="ti ti-settings me-1"></i> Settings</h2></div>
 
 {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
 
-<form method="POST" action="/settings/tuning">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-
-  <div class="row row-cards">
-    <div class="col-md-6">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Repository statistics</h3></div>
-        <div class="card-body">
-          <div class="mb-3">
-            <label class="form-label">Reconcile interval (seconds)</label>
-            <input type="number" name="repo_stats_interval_seconds" class="form-control" min="60" value="{{.Tuning.RepoStatsIntervalSeconds}}">
-            <small class="form-hint">How often the CLI runs <code>restic stats</code> per job. Default <strong>86400</strong> (24h). Set per-job overrides on the job edit page.</small>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Stats call timeout (seconds)</label>
-            <input type="number" name="repo_stats_timeout_seconds" class="form-control" min="30" value="{{.Tuning.RepoStatsTimeoutSeconds}}">
-            <small class="form-hint">CLI aborts the stats call after this many seconds.</small>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Data retention</h3></div>
-        <div class="card-body">
-          <div class="mb-3">
-            <label class="form-label">Keep raw reports (days)</label>
-            <input type="number" name="retention_raw_days" class="form-control" min="1" value="{{.Tuning.RetentionRawDays}}">
-            <small class="form-hint">Full detail kept this long. Older reports get heartbeats pruned and rolled into daily aggregates.</small>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Keep post-run reports (days)</label>
-            <input type="number" name="retention_post_run_days" class="form-control" min="1" value="{{.Tuning.RetentionPostRunDays}}">
-            <small class="form-hint">Beyond this age, only daily aggregates survive.</small>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Keep audit log entries (days)</label>
-            <input type="number" name="audit_retention_days" class="form-control" min="0" value="{{.Tuning.AuditRetentionDays}}">
-            <small class="form-hint"><strong>0</strong> = keep forever. Applies to both server-originated and node-originated audit rows.</small>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Offline detection</h3></div>
-        <div class="card-body">
-          <div class="mb-3">
-            <label class="form-label">Offline threshold (minutes)</label>
-            <input type="number" name="offline_threshold_minutes" class="form-control" min="1" value="{{.Tuning.OfflineThresholdMinutes}}">
-            <small class="form-hint">Nodes not checking in for this long are marked offline.</small>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Check interval (minutes)</label>
-            <input type="number" name="offline_check_interval_minutes" class="form-control" min="1" value="{{.Tuning.OfflineCheckIntervalMinutes}}">
-            <small class="form-hint">How often the worker scans for offline nodes.</small>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Silent-node alert threshold (minutes)</label>
-            <input type="number" name="silent_alert_threshold_minutes" class="form-control" min="0" value="{{.Tuning.SilentAlertThresholdMinutes}}">
-            <small class="form-hint">Aggressive "node went silent" detector — fires a <code>node_silent</code> audit-log warn if a node misses its heartbeat for this long. Set lower than the offline threshold so attacker-stopped daemons get flagged within minutes. <strong>0</strong> disables. Default <strong>7</strong>.</small>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Alerts</h3></div>
-        <div class="card-body">
-          <div class="mb-3">
-            <label class="form-label">Default silence duration (seconds)</label>
-            <input type="number" name="default_silence_seconds" class="form-control" min="60" value="{{.Tuning.DefaultSilenceSeconds}}">
-            <small class="form-hint">Used when users silence an alert without picking a duration.</small>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-12">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Terminal Session Recording</h3></div>
-        <div class="card-body">
-          <p class="text-muted small">Every SSH session opened from the dashboard is recorded end-to-end (keystrokes + output) in asciinema v2 format. Superadmins can replay from the <a href="/audit">audit log</a>. Warning: anything typed or printed is captured including pasted secrets.</p>
-          <div class="row">
-            <div class="col-md-6 mb-3">
-              <label class="form-label d-block">Record terminal sessions</label>
-              <label class="form-check form-switch">
-                <input type="hidden" name="terminal_recording_enabled" value="0">
-                <input type="checkbox" name="terminal_recording_enabled" value="1" class="form-check-input" {{if .Tuning.TerminalRecordingEnabled}}checked{{end}}>
-                <span class="form-check-label">{{if .Tuning.TerminalRecordingEnabled}}Enabled{{else}}Disabled{{end}}</span>
-              </label>
-              <small class="form-hint">A red banner appears on the terminal page while recording is active.</small>
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Keep recordings (days)</label>
-              <input type="number" name="terminal_recording_retention_days" class="form-control" min="0" value="{{.Tuning.TerminalRecordingRetentionDays}}">
-              <small class="form-hint"><strong>0</strong> = keep forever. Older <code>.cast</code> files are pruned from disk hourly.</small>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-12">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Anomaly Tuning</h3></div>
-        <div class="card-body">
-          <p class="text-muted small">Controls the global Security &mdash; Anomalies page: thresholds for what fires, plus how long acknowledged rows stay on the live view before moving to the archive.</p>
-          <div class="row">
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Keep acknowledged anomalies on live page (days)</label>
-              <input type="number" name="anomaly_ack_retention_days" class="form-control" min="1" value="{{.Tuning.AnomalyAckRetentionDays}}">
-              <small class="form-hint">After this many days, acknowledged anomalies disappear from <code>/anomalies</code> but remain forever on <code>/anomalies/archive</code>. Default <strong>30</strong>.</small>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-12">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Anomaly Thresholds</h3></div>
-        <div class="card-body">
-          <p class="text-muted small">Triggers when a backup run shows unexpected drops vs. the previous run — possible signs of source deletion, ransomware, or repo tampering. Each anomaly is logged for forensics.</p>
-          <div class="row">
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Snapshot count drop &gt;</label>
-              <input type="number" name="anomaly_snapshot_drop_threshold" class="form-control" min="1" value="{{.Tuning.AnomalySnapshotDropThreshold}}">
-              <small class="form-hint">Alert when the restic repo loses more than this many snapshots between two reports. Default <strong>1</strong>.</small>
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Files drop ≥ %</label>
-              <input type="number" name="anomaly_files_drop_pct" class="form-control" min="1" max="100" value="{{.Tuning.AnomalyFilesDropPct}}">
-              <small class="form-hint">% drop in source file count to flag.</small>
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">… AND drop ≥ N files</label>
-              <input type="number" name="anomaly_files_drop_min" class="form-control" min="1" value="{{.Tuning.AnomalyFilesDropMin}}">
-              <small class="form-hint">Both the % AND minimum-count must be exceeded to alert.</small>
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Bytes drop ≥ %</label>
-              <input type="number" name="anomaly_bytes_drop_pct" class="form-control" min="1" max="100" value="{{.Tuning.AnomalyBytesDropPct}}">
-              <small class="form-hint">% drop in source byte total to flag.</small>
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label">… AND drop ≥ N MB</label>
-              <input type="number" name="anomaly_bytes_drop_min_mb" class="form-control" min="1" value="{{.Tuning.AnomalyBytesDropMinMB}}">
-              <small class="form-hint">Suppresses noise from tiny dataset shrinkage.</small>
-            </div>
-          </div>
-        </div>
-      </div>
+<div class="row">
+  <div class="col-lg-3 mb-3">
+    <div class="card">
+      {{template "settings_sidebar" .}}
     </div>
   </div>
 
-    <div class="col-md-6">
-      <div class="card mb-3">
-        <div class="card-header"><h3 class="card-title">Software Updates</h3></div>
-        <div class="card-body">
-          <div class="mb-3">
-            <label class="form-label">Check for updates every (minutes)</label>
-            <input type="number" name="update_check_interval_minutes" class="form-control" min="5" value="{{.Tuning.UpdateCheckIntervalMinutes}}">
-            <small class="form-hint">How often the server polls GitHub for new CLI and server releases. Default <strong>30</strong>.</small>
+  <div class="col-lg-9">
+    <h3 class="mb-3">Server Tuning</h3>
+    <div class="text-muted mb-3">Global knobs for background workers, retention, and reporting cadence.</div>
+
+    <form method="POST" action="/settings/tuning">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="row row-cards">
+        <div class="col-md-6">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Repository statistics</h3></div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Reconcile interval (seconds)</label>
+                <input type="number" name="repo_stats_interval_seconds" class="form-control" min="60" value="{{.Tuning.RepoStatsIntervalSeconds}}">
+                <small class="form-hint">How often the CLI runs <code>restic stats</code> per job. Default <strong>86400</strong> (24h). Set per-job overrides on the job edit page.</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Stats call timeout (seconds)</label>
+                <input type="number" name="repo_stats_timeout_seconds" class="form-control" min="30" value="{{.Tuning.RepoStatsTimeoutSeconds}}">
+                <small class="form-hint">CLI aborts the stats call after this many seconds.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Data retention</h3></div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Keep raw reports (days)</label>
+                <input type="number" name="retention_raw_days" class="form-control" min="1" value="{{.Tuning.RetentionRawDays}}">
+                <small class="form-hint">Full detail kept this long. Older reports get heartbeats pruned and rolled into daily aggregates.</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Keep post-run reports (days)</label>
+                <input type="number" name="retention_post_run_days" class="form-control" min="1" value="{{.Tuning.RetentionPostRunDays}}">
+                <small class="form-hint">Beyond this age, only daily aggregates survive.</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Keep audit log entries (days)</label>
+                <input type="number" name="audit_retention_days" class="form-control" min="0" value="{{.Tuning.AuditRetentionDays}}">
+                <small class="form-hint"><strong>0</strong> = keep forever. Applies to both server-originated and node-originated audit rows.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Offline detection</h3></div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Offline threshold (minutes)</label>
+                <input type="number" name="offline_threshold_minutes" class="form-control" min="1" value="{{.Tuning.OfflineThresholdMinutes}}">
+                <small class="form-hint">Nodes not checking in for this long are marked offline.</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Check interval (minutes)</label>
+                <input type="number" name="offline_check_interval_minutes" class="form-control" min="1" value="{{.Tuning.OfflineCheckIntervalMinutes}}">
+                <small class="form-hint">How often the worker scans for offline nodes.</small>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Silent-node alert threshold (minutes)</label>
+                <input type="number" name="silent_alert_threshold_minutes" class="form-control" min="0" value="{{.Tuning.SilentAlertThresholdMinutes}}">
+                <small class="form-hint">Aggressive "node went silent" detector — fires a <code>node_silent</code> audit-log warn if a node misses its heartbeat for this long. Set lower than the offline threshold so attacker-stopped daemons get flagged within minutes. <strong>0</strong> disables. Default <strong>7</strong>.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Alerts</h3></div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Default silence duration (seconds)</label>
+                <input type="number" name="default_silence_seconds" class="form-control" min="60" value="{{.Tuning.DefaultSilenceSeconds}}">
+                <small class="form-hint">Used when users silence an alert without picking a duration.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-12">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Terminal Session Recording</h3></div>
+            <div class="card-body">
+              <p class="text-muted small">Every SSH session opened from the dashboard is recorded end-to-end (keystrokes + output) in asciinema v2 format. Superadmins can replay from the <a href="/audit">audit log</a>. Warning: anything typed or printed is captured including pasted secrets.</p>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label class="form-label d-block">Record terminal sessions</label>
+                  <label class="form-check form-switch">
+                    <input type="hidden" name="terminal_recording_enabled" value="0">
+                    <input type="checkbox" name="terminal_recording_enabled" value="1" class="form-check-input" {{if .Tuning.TerminalRecordingEnabled}}checked{{end}}>
+                    <span class="form-check-label">{{if .Tuning.TerminalRecordingEnabled}}Enabled{{else}}Disabled{{end}}</span>
+                  </label>
+                  <small class="form-hint">A red banner appears on the terminal page while recording is active.</small>
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label class="form-label">Keep recordings (days)</label>
+                  <input type="number" name="terminal_recording_retention_days" class="form-control" min="0" value="{{.Tuning.TerminalRecordingRetentionDays}}">
+                  <small class="form-hint"><strong>0</strong> = keep forever. Older <code>.cast</code> files are pruned from disk hourly.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-12">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Anomaly Tuning</h3></div>
+            <div class="card-body">
+              <p class="text-muted small">Controls the global Security &mdash; Anomalies page: thresholds for what fires, plus how long acknowledged rows stay on the live view before moving to the archive.</p>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label class="form-label">Keep acknowledged anomalies on live page (days)</label>
+                  <input type="number" name="anomaly_ack_retention_days" class="form-control" min="1" value="{{.Tuning.AnomalyAckRetentionDays}}">
+                  <small class="form-hint">After this many days, acknowledged anomalies disappear from <code>/anomalies</code> but remain forever on <code>/anomalies/archive</code>. Default <strong>30</strong>.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-12">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Anomaly Thresholds</h3></div>
+            <div class="card-body">
+              <p class="text-muted small">Triggers when a backup run shows unexpected drops vs. the previous run — possible signs of source deletion, ransomware, or repo tampering. Each anomaly is logged for forensics.</p>
+              <div class="row">
+                <div class="col-md-4 mb-3">
+                  <label class="form-label">Snapshot count drop &gt;</label>
+                  <input type="number" name="anomaly_snapshot_drop_threshold" class="form-control" min="1" value="{{.Tuning.AnomalySnapshotDropThreshold}}">
+                  <small class="form-hint">Alert when the restic repo loses more than this many snapshots between two reports. Default <strong>1</strong>.</small>
+                </div>
+                <div class="col-md-4 mb-3">
+                  <label class="form-label">Files drop ≥ %</label>
+                  <input type="number" name="anomaly_files_drop_pct" class="form-control" min="1" max="100" value="{{.Tuning.AnomalyFilesDropPct}}">
+                  <small class="form-hint">% drop in source file count to flag.</small>
+                </div>
+                <div class="col-md-4 mb-3">
+                  <label class="form-label">... AND drop ≥ N files</label>
+                  <input type="number" name="anomaly_files_drop_min" class="form-control" min="1" value="{{.Tuning.AnomalyFilesDropMin}}">
+                  <small class="form-hint">Both the % AND minimum-count must be exceeded to alert.</small>
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label class="form-label">Bytes drop ≥ %</label>
+                  <input type="number" name="anomaly_bytes_drop_pct" class="form-control" min="1" max="100" value="{{.Tuning.AnomalyBytesDropPct}}">
+                  <small class="form-hint">% drop in source byte total to flag.</small>
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label class="form-label">... AND drop ≥ N MB</label>
+                  <input type="number" name="anomaly_bytes_drop_min_mb" class="form-control" min="1" value="{{.Tuning.AnomalyBytesDropMinMB}}">
+                  <small class="form-hint">Suppresses noise from tiny dataset shrinkage.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title">Software Updates</h3></div>
+            <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label">Check for updates every (minutes)</label>
+                <input type="number" name="update_check_interval_minutes" class="form-control" min="5" value="{{.Tuning.UpdateCheckIntervalMinutes}}">
+                <small class="form-hint">How often the server polls GitHub for new CLI and server releases. Default <strong>30</strong>.</small>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <div class="d-flex gap-2">
-    <button type="submit" class="btn btn-primary">Save Changes</button>
-    <a href="/settings" class="btn">Cancel</a>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
   </div>
-</form>
+</div>
 {{end}}

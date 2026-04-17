@@ -24,12 +24,24 @@ type settingsPageData struct {
 	Success string
 }
 
+func (s *Server) settingsPage(r *http.Request) PageData {
+	pd := s.newPageData(r)
+	pd.SettingsTab = "account"
+	return pd
+}
+
+func (s *Server) smtpPage(r *http.Request) PageData {
+	pd := s.newPageData(r)
+	pd.SettingsTab = "smtp"
+	return pd
+}
+
 func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(ctxUser).(*models.User)
 
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "settings.html", settingsPageData{
-			PageData: s.newPageData(r),
+			PageData: s.settingsPage(r),
 		})
 		return
 	}
@@ -45,21 +57,21 @@ func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 
 	if current == "" || newPw == "" {
 		s.render(w, r, http.StatusUnprocessableEntity, "settings.html", settingsPageData{
-			PageData: s.newPageData(r),
+			PageData: s.settingsPage(r),
 			Error:    "All fields are required.",
 		})
 		return
 	}
 	if newPw != confirm {
 		s.render(w, r, http.StatusUnprocessableEntity, "settings.html", settingsPageData{
-			PageData: s.newPageData(r),
+			PageData: s.settingsPage(r),
 			Error:    "New passwords do not match.",
 		})
 		return
 	}
 	if len(newPw) < 8 {
 		s.render(w, r, http.StatusUnprocessableEntity, "settings.html", settingsPageData{
-			PageData: s.newPageData(r),
+			PageData: s.settingsPage(r),
 			Error:    "New password must be at least 8 characters.",
 		})
 		return
@@ -67,7 +79,7 @@ func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(current)) != nil {
 		s.render(w, r, http.StatusUnauthorized, "settings.html", settingsPageData{
-			PageData: s.newPageData(r),
+			PageData: s.settingsPage(r),
 			Error:    "Current password is incorrect.",
 		})
 		return
@@ -89,7 +101,7 @@ func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 		map[string]string{"username": user.Username})
 
 	s.render(w, r, http.StatusOK, "settings.html", settingsPageData{
-		PageData: s.newPageData(r),
+		PageData: s.settingsPage(r),
 		Success:  "Password updated successfully.",
 	})
 }
@@ -200,7 +212,7 @@ func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet {
 		s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
-			PageData: s.newPageData(r),
+			PageData: s.smtpPage(r),
 			SMTP:     cfg,
 		})
 		return
@@ -247,7 +259,7 @@ func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 	if err := s.DB.SaveSMTPConfig(cfg); err != nil {
 		logx.FromContext(r.Context()).Error("save smtp config failed", "err", err.Error())
 		s.render(w, r, http.StatusInternalServerError, "smtp_settings.html", smtpPageData{
-			PageData: s.newPageData(r),
+			PageData: s.smtpPage(r),
 			SMTP:     cfg,
 			Error:    "Failed to save configuration.",
 		})
@@ -267,7 +279,7 @@ func (s *Server) HandleSMTPSettings(w http.ResponseWriter, r *http.Request) {
 
 	logx.FromContext(r.Context()).Info("smtp config updated")
 	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
-		PageData: s.newPageData(r),
+		PageData: s.smtpPage(r),
 		SMTP:     cfg,
 		Success:  "SMTP configuration saved.",
 	})
@@ -290,7 +302,7 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 	cfg, err := s.DB.GetSMTPConfig()
 	if err != nil || cfg.Host == "" {
 		s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
-			PageData: s.newPageData(r),
+			PageData: s.smtpPage(r),
 			SMTP:     cfg,
 			Error:    "SMTP is not configured. Save configuration first.",
 		})
@@ -360,7 +372,7 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 			"SMTP test email failed",
 			map[string]string{"to": to, "error": sendErr.Error()})
 		s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
-			PageData: s.newPageData(r),
+			PageData: s.smtpPage(r),
 			SMTP:     cfg,
 			Error:    "Test email failed: " + sendErr.Error(),
 		})
@@ -373,7 +385,7 @@ func (s *Server) HandleSMTPTest(w http.ResponseWriter, r *http.Request) {
 
 	logx.FromContext(r.Context()).Info("smtp test sent", "to", to)
 	s.render(w, r, http.StatusOK, "smtp_settings.html", smtpPageData{
-		PageData: s.newPageData(r),
+		PageData: s.smtpPage(r),
 		SMTP:     cfg,
 		Success:  "Test email sent to " + to,
 	})

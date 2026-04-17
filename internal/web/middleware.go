@@ -46,10 +46,11 @@ type Server struct {
 
 // PageData is passed to every authenticated template.
 type PageData struct {
-	User      *models.User
-	CSRFToken string
-	Flash     string
-	Version   string
+	User        *models.User
+	CSRFToken   string
+	Flash       string
+	Version     string
+	SettingsTab string // active sidebar item on settings pages
 }
 
 // ServerVersion is set at startup from main.Version.
@@ -215,7 +216,14 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 		},
 	}
 
-	tmpl, err := template.New("base.html").Funcs(funcs).ParseFiles("templates/base.html", "templates/"+name)
+	parseFiles := []string{"templates/base.html", "templates/" + name}
+	// Include the settings sidebar partial for settings-related pages.
+	if strings.HasPrefix(name, "settings") || name == "tuning.html" || name == "backup.html" ||
+		name == "smtp_settings.html" || name == "dr_settings.html" || name == "update_settings.html" ||
+		name == "pending_nodes.html" {
+		parseFiles = append(parseFiles, "templates/settings_sidebar.html")
+	}
+	tmpl, err := template.New("base.html").Funcs(funcs).ParseFiles(parseFiles...)
 	if err != nil {
 		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return

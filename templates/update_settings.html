@@ -1,73 +1,83 @@
 {{define "content"}}
-<div class="page-header mb-3">
-  <h2 class="page-title"><i class="ti ti-refresh me-1"></i> Software Updates</h2>
-  <div class="text-muted">Monitor and manage CLI and server versions.</div>
-</div>
+<div class="page-header mb-3"><h2 class="page-title"><i class="ti ti-settings me-1"></i> Settings</h2></div>
 
-<!-- CLI Updates card -->
-<div class="card mb-3">
-  <div class="card-header"><h3 class="card-title">CLI Updates</h3></div>
-  <div class="card-body">
-    <div class="row align-items-center">
-      <div class="col-md-8">
-        <div class="mb-2"><strong>Latest CLI version:</strong>
-          {{if .LatestCLIVersion}}
-            <code>{{.LatestCLIVersion}}</code>
-          {{else}}
-            <span class="text-muted">Not checked yet</span>
-          {{end}}
-        </div>
-        <div class="mb-2 text-muted small">Last checked: {{formatTime .LatestCLIVersionCheckedAt}}</div>
-      </div>
-      <div class="col-md-4 text-end">
-        <form method="POST" action="/settings/updates/check-cli" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn btn-outline-primary btn-sm"><i class="ti ti-refresh me-1"></i> Check Now</button>
-        </form>
-      </div>
+<div class="row">
+  <div class="col-lg-3 mb-3">
+    <div class="card">
+      {{template "settings_sidebar" .}}
     </div>
-    <div class="text-muted small mt-2">Nodes with older versions show "Update Available" on the dashboard. Click to schedule a remote update via the next heartbeat.</div>
   </div>
-</div>
 
-<!-- Server Updates card -->
-<div class="card mb-3">
-  <div class="card-header"><h3 class="card-title">Server Updates</h3></div>
-  <div class="card-body">
-    <div class="row align-items-center">
-      <div class="col-md-8">
-        <div class="mb-2"><strong>Current version:</strong> <code>{{.ServerVersion}}</code></div>
-        <div class="mb-2"><strong>Latest version:</strong>
-          {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
-            <code class="text-warning">{{.LatestServerVersion}}</code> <span class="badge text-bg-warning">Update Available</span>
-          {{else if .LatestServerVersion}}
-            <code class="text-success">{{.LatestServerVersion}}</code> <span class="badge text-bg-success">Up to date</span>
-          {{else}}
-            <span class="text-muted">Not checked yet</span>
-          {{end}}
+  <div class="col-lg-9">
+    <h3 class="mb-3">Software Updates</h3>
+    <div class="text-muted mb-3">Monitor and manage CLI and server versions.</div>
+
+    <!-- CLI Updates card -->
+    <div class="card mb-3">
+      <div class="card-header"><h3 class="card-title">CLI Updates</h3></div>
+      <div class="card-body">
+        <div class="row align-items-center">
+          <div class="col-md-8">
+            <div class="mb-2"><strong>Latest CLI version:</strong>
+              {{if .LatestCLIVersion}}
+                <code>{{.LatestCLIVersion}}</code>
+              {{else}}
+                <span class="text-muted">Not checked yet</span>
+              {{end}}
+            </div>
+            <div class="mb-2 text-muted small">Last checked: {{formatTime .LatestCLIVersionCheckedAt}}</div>
+          </div>
+          <div class="col-md-4 text-end">
+            <form method="POST" action="/settings/updates/check-cli" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="btn btn-outline-primary btn-sm"><i class="ti ti-refresh me-1"></i> Check Now</button>
+            </form>
+          </div>
         </div>
-        <div class="mb-2 text-muted small">Last checked: {{formatTime .LatestServerVersionCheckedAt}}</div>
-      </div>
-      <div class="col-md-4 text-end">
-        <form method="POST" action="/settings/updates/check-server" class="d-inline">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn btn-outline-primary btn-sm"><i class="ti ti-refresh me-1"></i> Check Now</button>
-        </form>
+        <div class="text-muted small mt-2">Nodes with older versions show "Update Available" on the dashboard. Click to schedule a remote update via the next heartbeat.</div>
       </div>
     </div>
-    {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
-    <div class="alert alert-warning mt-3 mb-0">
-      <strong>To update the server:</strong>
-      <pre class="mb-0 mt-1">cd /path/to/lss-backup-management-server
+
+    <!-- Server Updates card -->
+    <div class="card mb-3">
+      <div class="card-header"><h3 class="card-title">Server Updates</h3></div>
+      <div class="card-body">
+        <div class="row align-items-center">
+          <div class="col-md-8">
+            <div class="mb-2"><strong>Current version:</strong> <code>{{.ServerVersion}}</code></div>
+            <div class="mb-2"><strong>Latest version:</strong>
+              {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
+                <code class="text-warning">{{.LatestServerVersion}}</code> <span class="badge text-bg-warning">Update Available</span>
+              {{else if .LatestServerVersion}}
+                <code class="text-success">{{.LatestServerVersion}}</code> <span class="badge text-bg-success">Up to date</span>
+              {{else}}
+                <span class="text-muted">Not checked yet</span>
+              {{end}}
+            </div>
+            <div class="mb-2 text-muted small">Last checked: {{formatTime .LatestServerVersionCheckedAt}}</div>
+          </div>
+          <div class="col-md-4 text-end">
+            <form method="POST" action="/settings/updates/check-server" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <button type="submit" class="btn btn-outline-primary btn-sm"><i class="ti ti-refresh me-1"></i> Check Now</button>
+            </form>
+          </div>
+        </div>
+        {{if and .LatestServerVersion (versionLT .ServerVersion .LatestServerVersion)}}
+        <div class="alert alert-warning mt-3 mb-0">
+          <strong>To update the server:</strong>
+          <pre class="mb-0 mt-1">cd /path/to/lss-backup-management-server
 git pull
 sudo bash install/install.sh</pre>
+        </div>
+        {{end}}
+      </div>
     </div>
-    {{end}}
-  </div>
-</div>
 
-<!-- Check interval info -->
-<div class="text-muted small">
-  Checking every <strong>{{.UpdateCheckInterval}}</strong> minutes. <a href="/settings/tuning">Change in Server Tuning</a>.
+    <!-- Check interval info -->
+    <div class="text-muted small">
+      Checking every <strong>{{.UpdateCheckInterval}}</strong> minutes. <a href="/settings/tuning">Change in Server Tuning</a>.
+    </div>
+  </div>
 </div>
 {{end}}

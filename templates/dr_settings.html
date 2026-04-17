@@ -81,7 +81,10 @@
           <small class="form-hint">Keep one snapshot per day for this many days. Older daily snapshots are pruned.</small>
         </div>
       </div>
-      <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i>Save Server Backup Settings</button>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i>Save Server Backup Settings</button>
+        <button type="button" class="btn btn-outline-warning" onclick="loadServerSnapshots()"><i class="ti ti-history me-1"></i>Restore From Snapshot</button>
+      </div>
     </form>
   </div>
 </div>
@@ -120,7 +123,124 @@
   </div>
 </div>
 
+<div class="modal modal-blur fade" id="snapshot-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-history me-1"></i> Server Backup Snapshots</h5>
+        <button type="button" class="btn-close" onclick="closeSnapshotModal()" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="snapshot-loading" class="text-center text-muted py-4">Loading snapshots...</div>
+        <div id="snapshot-error" class="alert alert-danger" style="display:none;"></div>
+        <div class="table-responsive" id="snapshot-table-wrap" style="display:none;">
+          <table class="table table-vcenter table-hover">
+            <thead>
+              <tr>
+                <th style="width:40px;"></th>
+                <th>Snapshot ID</th>
+                <th>Date</th>
+                <th>Hostname</th>
+              </tr>
+            </thead>
+            <tbody id="snapshot-tbody"></tbody>
+          </table>
+        </div>
+        <div id="snapshot-empty" class="text-muted text-center py-3" style="display:none;">No snapshots found. The server backup may not have run yet.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary" onclick="closeSnapshotModal()">Cancel</button>
+        <form action="/settings/dr/server-restore" method="POST" id="restore-form" onsubmit="return confirmRestore();">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="snapshot_id" id="restore-snapshot-id" value="">
+          <button type="submit" class="btn btn-danger" id="restore-btn" disabled><i class="ti ti-arrow-back-up me-1"></i>Restore Selected Snapshot</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+function closeSnapshotModal() {
+  var el = document.getElementById('snapshot-modal');
+  if (window.bootstrap && window.bootstrap.Modal) {
+    var inst = window.bootstrap.Modal.getInstance(el);
+    if (inst) inst.hide();
+  }
+  el.classList.remove('show');
+  el.style.display = 'none';
+  var backdrop = document.querySelector('.modal-backdrop');
+  if (backdrop) backdrop.remove();
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
+}
+
+function loadServerSnapshots() {
+  var modal = document.getElementById('snapshot-modal');
+  document.getElementById('snapshot-loading').style.display = '';
+  document.getElementById('snapshot-error').style.display = 'none';
+  document.getElementById('snapshot-table-wrap').style.display = 'none';
+  document.getElementById('snapshot-empty').style.display = 'none';
+  document.getElementById('restore-snapshot-id').value = '';
+  document.getElementById('restore-btn').disabled = true;
+  if (window.bootstrap && window.bootstrap.Modal) {
+    new window.bootstrap.Modal(modal).show();
+  } else { modal.classList.add('show'); modal.style.display = 'block'; }
+
+  fetch('/settings/dr/server-snapshots', { credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('snapshot-loading').style.display = 'none';
+      if (data.error) {
+        document.getElementById('snapshot-error').textContent = data.error;
+        document.getElementById('snapshot-error').style.display = '';
+        return;
+      }
+      var snaps = data.snapshots || [];
+      if (snaps.length === 0) {
+        document.getElementById('snapshot-empty').style.display = '';
+        return;
+      }
+      snaps.sort(function(a, b) { return b.time.localeCompare(a.time); });
+      var tbody = document.getElementById('snapshot-tbody');
+      tbody.innerHTML = '';
+      snaps.forEach(function(s) {
+        var tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.onclick = function() { selectSnapshot(s.short_id || s.id, tr); };
+        var d = new Date(s.time);
+        var dateStr = d.toLocaleDateString(undefined, {year:'numeric',month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit'});
+        tr.innerHTML = '<td class="text-center"><input type="radio" name="snap_select" class="form-check-input" value="' + (s.short_id || s.id) + '"></td>' +
+          '<td><code>' + (s.short_id || s.id) + '</code></td>' +
+          '<td>' + dateStr + '</td>' +
+          '<td>' + (s.hostname || '—') + '</td>';
+        tbody.appendChild(tr);
+      });
+      document.getElementById('snapshot-table-wrap').style.display = '';
+    })
+    .catch(function(err) {
+      document.getElementById('snapshot-loading').style.display = 'none';
+      document.getElementById('snapshot-error').textContent = 'Failed to load snapshots: ' + err.message;
+      document.getElementById('snapshot-error').style.display = '';
+    });
+}
+
+function selectSnapshot(id, row) {
+  document.getElementById('restore-snapshot-id').value = id;
+  document.getElementById('restore-btn').disabled = false;
+  document.querySelectorAll('#snapshot-tbody tr').forEach(function(tr) { tr.classList.remove('table-primary'); });
+  row.classList.add('table-primary');
+  var radio = row.querySelector('input[type="radio"]');
+  if (radio) radio.checked = true;
+}
+
+function confirmRestore() {
+  var id = document.getElementById('restore-snapshot-id').value;
+  if (!id) return false;
+  return confirm('WARNING: This will restore the entire server database, encryption keys, and session recordings from snapshot ' + id + '.\n\nAll current data will be overwritten.\nAll sessions will be terminated.\nYou will need to set a new password.\n\nThis cannot be undone. Continue?');
+}
+
 function confirmS3Change(form) {
   var origEndpoint = form.querySelector('[name="original_endpoint"]').value;
   var origBucket = form.querySelector('[name="original_bucket"]').value;

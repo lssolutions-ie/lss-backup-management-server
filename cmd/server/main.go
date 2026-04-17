@@ -218,6 +218,8 @@ func main() {
 	mux.HandleFunc("/settings/dr/save-s3", webServer.RequireSuperAdmin(webServer.HandleDRSaveS3))
 	mux.HandleFunc("/settings/dr/save-server", webServer.RequireSuperAdmin(webServer.HandleDRSaveServer))
 	mux.HandleFunc("/settings/dr/save-node", webServer.RequireSuperAdmin(webServer.HandleDRSaveNode))
+	mux.HandleFunc("/settings/dr/server-snapshots", webServer.RequireSuperAdmin(webServer.HandleDRServerSnapshots))
+	mux.HandleFunc("/settings/dr/server-restore", webServer.RequireSuperAdmin(webServer.HandleDRServerRestore))
 	mux.HandleFunc("/settings/updates", webServer.RequireSuperAdmin(webServer.HandleUpdateSettings))
 	mux.HandleFunc("/settings/updates/check-cli", webServer.RequireSuperAdmin(webServer.HandleCheckCLIVersion))
 	mux.HandleFunc("/settings/updates/check-server", webServer.RequireSuperAdmin(webServer.HandleCheckServerVersion))

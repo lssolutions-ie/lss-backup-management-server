@@ -242,14 +242,24 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 				rlg.Error("audit chain verify error", "node_id", node.ID, "err", err.Error())
 			}
 			if !chainOK {
-				rlg.Error("audit chain break",
+				rlg.Warn("audit chain break",
 					"node_id", node.ID, "uid", node.UID,
 					"detail", chainDiag)
-				// Insert a critical audit row so the chain break is visible on /audit.
-				_ = h.DB.InsertServerAuditLog(0, "system", "", "audit_chain_break", "critical",
-					"detect", "node", fmt.Sprintf("%d", node.ID),
-					"HMAC chain break on node "+node.Name+" — possible tampering or PSK mismatch",
-					map[string]string{"node_id": fmt.Sprintf("%d", node.ID), "uid": node.UID})
+				// Only insert an audit row on the FIRST break — check if we already
+				// have an unresolved chain_break for this node in the last hour.
+				// Prevents spam when a chain stays broken across multiple heartbeats.
+				var recentBreaks int
+				rows, _ := h.DB.RawQuery("SELECT COUNT(*) FROM audit_log WHERE category = 'audit_chain_break' AND source_node_id = ? AND ts > DATE_SUB(NOW(), INTERVAL 1 HOUR)", node.ID)
+				if rows != nil {
+					if rows.Next() { rows.Scan(&recentBreaks) }
+					rows.Close()
+				}
+				if recentBreaks == 0 {
+					_ = h.DB.InsertServerAuditLog(0, "system", "", "audit_chain_break", "critical",
+						"detect", "node", fmt.Sprintf("%d", node.ID),
+						"HMAC chain break on node "+node.Name+" — possible tampering or PSK mismatch",
+						map[string]string{"node_id": fmt.Sprintf("%d", node.ID), "uid": node.UID})
+				}
 			} else {
 				// Chain verified — persist the new head.
 				_ = h.DB.SetNodeAuditChainHead(node.ID, chainHead)

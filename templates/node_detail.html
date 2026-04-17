@@ -1037,8 +1037,12 @@ function generateRecoveryToken(nodeID, nodeName) {
     if (d.error) { alert(d.error); return; }
     document.getElementById('recovery-cmd-unix').value = d.unix_command;
     document.getElementById('recovery-cmd-win').value = d.windows_command;
-    var modal = new bootstrap.Modal(document.getElementById('recovery-modal'));
-    modal.show();
+    var el = document.getElementById('recovery-modal');
+    if (window.bootstrap && window.bootstrap.Modal) {
+      new window.bootstrap.Modal(el).show();
+    } else {
+      el.classList.add('show'); el.style.display = 'block';
+    }
   }).catch(function(e) { alert('Failed to generate recovery token: ' + e); });
 }
 </script>

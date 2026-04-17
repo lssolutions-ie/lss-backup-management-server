@@ -158,7 +158,15 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		if tuning, err := h.DB.GetServerTuning(); err == nil && tuning != nil {
 			offlineAge := time.Duration(tuning.OfflineThresholdMinutes) * time.Minute
 			if now.Sub(*node.LastSeenAt) > offlineAge {
-				h.DB.FireNodeBackOnlineAudit(node.ID, node.Name, node.UID)
+				// Check if this is a RECOVERY (recovery token redeemed recently)
+				if h.DB.WasNodeRecoveredRecently(node.ID) {
+					_ = h.DB.InsertServerAuditLog(0, "system", "", "node_recovered", "critical",
+						"recover", "node", fmt.Sprintf("%d", node.ID),
+						"CRITICAL: Node "+node.Name+" ("+node.UID+") has been recovered — first heartbeat after disaster recovery",
+						map[string]string{"node_id": fmt.Sprintf("%d", node.ID), "uid": node.UID, "cli_version": status.CLIVersion})
+				} else {
+					h.DB.FireNodeBackOnlineAudit(node.ID, node.Name, node.UID)
+				}
 			}
 		}
 	}

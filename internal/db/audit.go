@@ -362,6 +362,27 @@ func (d *DB) FireNodeBackOnlineAudit(nodeID uint64, nodeName, nodeUID string) {
 		map[string]string{"node_id": fmt.Sprintf("%d", nodeID), "uid": nodeUID})
 }
 
+// WasNodeRecoveredRecently checks if a recovery token for this node was redeemed
+// in the last 24 hours. Used to distinguish "node recovered from disaster" from
+// "node came back after a network blip" in the audit trail.
+func (d *DB) WasNodeRecoveredRecently(nodeID uint64) bool {
+	var count int
+	rows, err := d.db.Query(
+		`SELECT COUNT(*) FROM audit_log
+		 WHERE category = 'recovery_token_created'
+		   AND entity_id = ?
+		   AND ts > DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
+		fmt.Sprintf("%d", nodeID))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	if rows.Next() {
+		rows.Scan(&count)
+	}
+	return count > 0
+}
+
 // PruneAuditLog deletes rows older than N days. Safe no-op if days == 0 (forever).
 func (d *DB) PruneAuditLog(days uint32) (int64, error) {
 	if days == 0 {

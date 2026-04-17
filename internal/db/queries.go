@@ -567,6 +567,7 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 		       n.hw_ram_bytes, n.hw_lan_ip, n.hw_public_ip, n.hw_storage_json,
 		       n.created_at,
 		       n.cli_version, n.cli_update_pending,
+		       n.dr_enabled,
 		       COUNT(js.id) AS job_count,
 		       CASE
 		         WHEN SUM(js.last_status = 'failure') > 0 THEN 'failure'
@@ -616,6 +617,7 @@ func (d *DB) ListNodesWithStatus(groupIDs []uint64) ([]*models.NodeWithStatus, e
 			&ns.HwRAMBytes, &ns.HwLANIP, &ns.HwPublicIP, &ns.HwStorageJSON,
 			&ns.CreatedAt,
 			&ns.CLIVersion, &ns.CLIUpdatePending,
+			&ns.DREnabled,
 			&ns.JobCount, &ns.WorstStatus,
 		); err != nil {
 			return nil, err
@@ -1667,7 +1669,9 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 		       silent_alert_threshold_minutes,
 		       latest_cli_version, latest_cli_version_checked_at,
 		       update_check_interval_minutes,
-		       latest_server_version, latest_server_version_checked_at
+		       latest_server_version, latest_server_version_checked_at,
+		       server_backup_enabled, server_backup_interval_hours,
+		       server_backup_last_at, server_backup_last_status, COALESCE(server_backup_last_error, '')
 		FROM server_tuning WHERE id = 1`).
 		Scan(&t.RepoStatsIntervalSeconds, &t.RepoStatsTimeoutSeconds,
 			&t.RetentionRawDays, &t.RetentionPostRunDays,
@@ -1680,7 +1684,9 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			&t.SilentAlertThresholdMinutes,
 			&t.LatestCLIVersion, &t.LatestCLIVersionCheckedAt,
 			&t.UpdateCheckIntervalMinutes,
-			&t.LatestServerVersion, &t.LatestServerVersionCheckedAt)
+			&t.LatestServerVersion, &t.LatestServerVersionCheckedAt,
+			&t.ServerBackupEnabled, &t.ServerBackupIntervalHours,
+			&t.ServerBackupLastAt, &t.ServerBackupLastStatus, &t.ServerBackupLastError)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &models.ServerTuning{
 			RepoStatsIntervalSeconds:     86400,
@@ -1701,6 +1707,8 @@ func (d *DB) GetServerTuning() (*models.ServerTuning, error) {
 			TerminalRecordingRetentionDays: 30,
 			SilentAlertThresholdMinutes:    7,
 			UpdateCheckIntervalMinutes:     30,
+			ServerBackupEnabled:            true,
+			ServerBackupIntervalHours:      24,
 		}, nil
 	}
 	return t, err

@@ -156,6 +156,44 @@ func (s *Server) HandleBulkEnableDR(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": count})
 }
 
+// HandleBulkDRRunNow sets force_run on selected DR-enabled nodes so they run DR on next heartbeat.
+// POST /nodes/bulk-dr-run-now — body: ids=1,2,3
+func (s *Server) HandleBulkDRRunNow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	ids := parseIDList(r.FormValue("ids"))
+	if len(ids) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "no node IDs provided"})
+		return
+	}
+
+	count := 0
+	for _, id := range ids {
+		node, err := s.DB.GetNodeByID(id)
+		if err != nil || node == nil || !node.DREnabled {
+			continue
+		}
+		if err := s.DB.SetNodeDRForceRun(id); err == nil {
+			count++
+		}
+	}
+
+	s.auditServer(r, "bulk_dr_run_now", "warn", "bulk_force_run", "node", "",
+		fmt.Sprintf("Bulk DR run-now triggered for %d nodes", count), nil)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": count})
+}
+
 // parseIDList splits a comma-separated string of numeric IDs.
 func parseIDList(s string) []uint64 {
 	if s == "" {

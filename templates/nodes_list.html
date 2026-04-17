@@ -101,6 +101,9 @@
       <button class="btn btn-sm btn-primary" id="bulk-dr-btn" onclick="bulkEnableDR()" disabled>
         <i class="ti ti-shield-check me-1"></i>Enable DR (<span id="bulk-dr-count">0</span>)
       </button>
+      <button class="btn btn-sm btn-outline-primary" id="bulk-dr-now-btn" onclick="bulkDRRunNow()" disabled>
+        <i class="ti ti-player-play me-1"></i>Run DR Now (<span id="bulk-dr-now-count">0</span>)
+      </button>
       {{end}}
       <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">Clear</button>
     </div>
@@ -128,7 +131,7 @@
       </thead>
       <tbody>
         {{range .Nodes}}
-        <tr data-node-id="{{.ID}}" data-tags="{{range .Tags}}{{.Name}},{{end}}" data-status="{{.WorstStatus}}" data-online="{{if .IsOnline}}online{{else}}offline{{end}}" data-version="{{.CLIVersion}}">
+        <tr data-node-id="{{.ID}}" data-tags="{{range .Tags}}{{.Name}},{{end}}" data-status="{{.WorstStatus}}" data-online="{{if .IsOnline}}online{{else}}offline{{end}}" data-version="{{.CLIVersion}}" data-dr-enabled="{{if .DREnabled}}1{{else}}0{{end}}">
           {{if $.User.CanManageUsers}}
           <td class="text-center" onclick="event.stopPropagation()">
             <input type="checkbox" class="form-check-input node-check" value="{{.ID}}" onchange="updateSelection()">
@@ -342,6 +345,17 @@
       document.getElementById('bulk-dr-count').textContent = count;
       drBtn.disabled = count === 0;
     }
+
+    var drNowCount = 0;
+    selectedIDs.forEach(function(id) {
+      var row = document.querySelector('tr[data-node-id="' + id + '"]');
+      if (row && row.getAttribute('data-dr-enabled') === '1') drNowCount++;
+    });
+    var drNowBtn = document.getElementById('bulk-dr-now-btn');
+    if (drNowBtn) {
+      document.getElementById('bulk-dr-now-count').textContent = drNowCount;
+      drNowBtn.disabled = drNowCount === 0;
+    }
   }
 
   // Simple semver comparison
@@ -398,6 +412,27 @@
     }).then(function(res) { return res.json(); }).then(function(d) {
       if (d.error) { alert('Error: ' + d.error); return; }
       alert('DR enabled for ' + d.count + ' node(s).');
+      location.reload();
+    }).catch(function(err) { alert('Error: ' + err.message); });
+  };
+  window.bulkDRRunNow = function() {
+    var ids = Array.from(selectedIDs).filter(function(id) {
+      var row = document.querySelector('tr[data-node-id="' + id + '"]');
+      return row && row.getAttribute('data-dr-enabled') === '1';
+    });
+    if (ids.length === 0) return;
+    if (!confirm('Trigger DR backup on next heartbeat for ' + ids.length + ' node(s)?')) return;
+
+    var body = new URLSearchParams();
+    body.set('ids', ids.join(','));
+    body.set('csrf_token', csrfToken);
+    fetch('/nodes/bulk-dr-run-now', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    }).then(function(res) { return res.json(); }).then(function(d) {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      alert('DR run-now triggered for ' + d.count + ' node(s). They will run DR on their next heartbeat.');
       location.reload();
     }).catch(function(err) { alert('Error: ' + err.message); });
   };

@@ -332,7 +332,7 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 					"s3_access_key":   drCfg.S3AccessKey,
 					"s3_secret_key":   drCfg.S3SecretKey,
 					"restic_password": drCfg.ResticPassword,
-					"node_folder":     node.UID,
+					"node_folder":     "client-nodes/" + node.ClientGroup + "/" + node.UID,
 					"interval_hours":  effectiveDRInterval(node, drCfg),
 					"force_run":       node.DRForceRun,
 				}

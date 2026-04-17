@@ -14,94 +14,153 @@ import (
 
 type drSettingsPageData struct {
 	PageData
-	Config  *models.DRConfig
-	Error   string
-	Success string
-	// Masked display helpers
-	SecretKeyMask    string // e.g. "****abcd" or ""
-	ResticPWStatus   string // "configured" | "not set"
+	Config *models.DRConfig
+	Tuning *models.ServerTuning
+	Error  string
 }
 
-// HandleDRSettings renders and processes the Disaster Recovery configuration form (superadmin only).
 func (s *Server) HandleDRSettings(w http.ResponseWriter, r *http.Request) {
 	cfg, err := s.DB.GetDRConfig(s.AppKey)
 	if err != nil {
 		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
 	}
+	tuning, _ := s.DB.GetServerTuning()
 
-	maskSecret := func(val string) string {
-		if val == "" {
-			return ""
-		}
-		if len(val) <= 4 {
-			return "****"
-		}
-		return "****" + val[len(val)-4:]
-	}
-	resticStatus := "not set"
-	if cfg.ResticPassword != "" {
-		resticStatus = "configured"
-	}
+	s.render(w, r, http.StatusOK, "dr_settings.html", drSettingsPageData{
+		PageData: s.newPageData(r),
+		Config:   cfg,
+		Tuning:   tuning,
+	})
+}
 
-	if r.Method == http.MethodGet {
-		s.render(w, r, http.StatusOK, "dr_settings.html", drSettingsPageData{
-			PageData:       s.newPageData(r),
-			Config:         cfg,
-			SecretKeyMask:  maskSecret(cfg.S3SecretKey),
-			ResticPWStatus: resticStatus,
-		})
+// HandleDRSaveS3 saves the global S3 configuration.
+func (s *Server) HandleDRSaveS3(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	// POST
 	if !s.validateCSRF(r) {
 		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
 
-	interval, _ := strconv.ParseUint(r.FormValue("default_interval_hours"), 10, 32)
+	cfg, _ := s.DB.GetDRConfig(s.AppKey)
+
+	endpoint := strings.TrimSpace(r.FormValue("s3_endpoint"))
+	bucket := strings.TrimSpace(r.FormValue("s3_bucket"))
+	region := strings.TrimSpace(r.FormValue("s3_region"))
+	accessKey := strings.TrimSpace(r.FormValue("s3_access_key"))
+	secretKey := r.FormValue("s3_secret_key")
+
+	if accessKey == "" {
+		accessKey = cfg.S3AccessKey
+	}
+	if secretKey == "" {
+		secretKey = cfg.S3SecretKey
+	}
+
+	if err := s.DB.SaveDRS3Config(endpoint, bucket, region, accessKey, secretKey, s.AppKey); err != nil {
+		logx.FromContext(r.Context()).Error("save DR S3 config failed", "err", err.Error())
+		setFlash(w, "Failed to save S3 configuration.")
+		http.Redirect(w, r, "/settings/node-disaster-recovery", http.StatusSeeOther)
+		return
+	}
+
+	s.auditServer(r, "dr_s3_config_saved", "warn", "save", "dr_config", "",
+		"DR S3 configuration updated", map[string]string{
+			"endpoint": endpoint, "bucket": bucket, "region": region,
+		})
+	setFlash(w, "S3 configuration saved. All nodes will pick up the new config on their next heartbeat.")
+	http.Redirect(w, r, "/settings/node-disaster-recovery", http.StatusSeeOther)
+}
+
+// HandleDRSaveServer saves server backup restic password and retention.
+func (s *Server) HandleDRSaveServer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	cfg, _ := s.DB.GetDRConfig(s.AppKey)
+
+	password := r.FormValue("server_restic_password")
+	if password == "" {
+		password = cfg.ServerResticPassword
+	}
+	keepLast, _ := strconv.ParseUint(r.FormValue("server_keep_last"), 10, 32)
+	keepDaily, _ := strconv.ParseUint(r.FormValue("server_keep_daily"), 10, 32)
+	interval, _ := strconv.ParseUint(r.FormValue("server_backup_interval_hours"), 10, 32)
+	if keepLast == 0 {
+		keepLast = 7
+	}
+	if keepDaily == 0 {
+		keepDaily = 30
+	}
 	if interval == 0 {
 		interval = 24
 	}
 
-	// Build config from form. Keep existing secrets when fields are left blank.
-	newCfg := &models.DRConfig{
-		S3Endpoint:           strings.TrimSpace(r.FormValue("s3_endpoint")),
-		S3Bucket:             strings.TrimSpace(r.FormValue("s3_bucket")),
-		S3Region:             strings.TrimSpace(r.FormValue("s3_region")),
-		S3AccessKey:          strings.TrimSpace(r.FormValue("s3_access_key")),
-		S3SecretKey:          r.FormValue("s3_secret_key"),
-		ResticPassword:       r.FormValue("restic_password"),
-		DefaultIntervalHours: uint32(interval),
-	}
-
-	// Keep existing secrets if the form field is blank (user didn't change them).
-	if newCfg.S3AccessKey == "" {
-		newCfg.S3AccessKey = cfg.S3AccessKey
-	}
-	if newCfg.S3SecretKey == "" {
-		newCfg.S3SecretKey = cfg.S3SecretKey
-	}
-	if newCfg.ResticPassword == "" {
-		newCfg.ResticPassword = cfg.ResticPassword
-	}
-
-	if err := s.DB.SaveDRConfig(newCfg, s.AppKey); err != nil {
-		s.render(w, r, http.StatusOK, "dr_settings.html", drSettingsPageData{
-			PageData:       s.newPageData(r),
-			Config:         newCfg,
-			SecretKeyMask:  maskSecret(newCfg.S3SecretKey),
-			ResticPWStatus: resticStatus,
-			Error:          "Failed to save configuration: " + err.Error(),
-		})
+	if err := s.DB.SaveDRServerConfig(password, uint32(keepLast), uint32(keepDaily), s.AppKey); err != nil {
+		logx.FromContext(r.Context()).Error("save DR server config failed", "err", err.Error())
+		setFlash(w, "Failed to save server backup configuration.")
+		http.Redirect(w, r, "/settings/node-disaster-recovery", http.StatusSeeOther)
 		return
 	}
 
-	s.auditServer(r, "dr_config_saved", "warn", "save", "dr_config", "",
-		"Disaster Recovery configuration updated", nil)
+	// Update interval in server_tuning
+	s.DB.RawExec("UPDATE server_tuning SET server_backup_interval_hours = ? WHERE id = 1", uint32(interval))
 
-	http.SetCookie(w, &http.Cookie{Name: "flash", Value: "DR configuration saved.", Path: "/"})
+	s.auditServer(r, "dr_server_config_saved", "warn", "save", "dr_config", "",
+		"Server backup configuration updated", nil)
+	setFlash(w, "Server backup configuration saved.")
+	http.Redirect(w, r, "/settings/node-disaster-recovery", http.StatusSeeOther)
+}
+
+// HandleDRSaveNode saves node backup restic password, interval, and retention.
+func (s *Server) HandleDRSaveNode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.validateCSRF(r) {
+		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
+	cfg, _ := s.DB.GetDRConfig(s.AppKey)
+
+	password := r.FormValue("node_restic_password")
+	if password == "" {
+		password = cfg.ResticPassword
+	}
+	interval, _ := strconv.ParseUint(r.FormValue("default_interval_hours"), 10, 32)
+	keepLast, _ := strconv.ParseUint(r.FormValue("node_keep_last"), 10, 32)
+	keepDaily, _ := strconv.ParseUint(r.FormValue("node_keep_daily"), 10, 32)
+	if interval == 0 {
+		interval = 24
+	}
+	if keepLast == 0 {
+		keepLast = 7
+	}
+	if keepDaily == 0 {
+		keepDaily = 30
+	}
+
+	if err := s.DB.SaveDRNodeConfig(password, uint32(interval), uint32(keepLast), uint32(keepDaily), s.AppKey); err != nil {
+		logx.FromContext(r.Context()).Error("save DR node config failed", "err", err.Error())
+		setFlash(w, "Failed to save node backup configuration.")
+		http.Redirect(w, r, "/settings/node-disaster-recovery", http.StatusSeeOther)
+		return
+	}
+
+	s.auditServer(r, "dr_node_config_saved", "warn", "save", "dr_config", "",
+		"Node backup configuration updated", nil)
+	setFlash(w, "Node backup configuration saved. Nodes will pick up changes on next heartbeat.")
 	http.Redirect(w, r, "/settings/node-disaster-recovery", http.StatusSeeOther)
 }
 

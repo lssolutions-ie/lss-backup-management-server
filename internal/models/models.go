@@ -302,14 +302,19 @@ type NodeStatus struct {
 
 // DRConfig is the single-row global DR configuration.
 type DRConfig struct {
-	S3Endpoint           string
-	S3Bucket             string
-	S3Region             string
-	S3AccessKey          string // decrypted
-	S3SecretKey          string // decrypted
-	ResticPassword       string // decrypted
-	DefaultIntervalHours uint32
-	ConfigVersion        uint32
+	S3Endpoint            string
+	S3Bucket              string
+	S3Region              string
+	S3AccessKey           string // decrypted
+	S3SecretKey           string // decrypted
+	ResticPassword        string // decrypted — node restic password
+	ServerResticPassword  string // decrypted — server restic password
+	DefaultIntervalHours  uint32
+	ConfigVersion         uint32
+	ServerKeepLast        uint32
+	ServerKeepDaily       uint32
+	NodeKeepLast          uint32
+	NodeKeepDaily         uint32
 }
 
 // DRStatus is what the CLI reports in each heartbeat.
@@ -449,6 +454,11 @@ type ServerTuning struct {
 	UpdateCheckIntervalMinutes     uint32
 	LatestServerVersion            string
 	LatestServerVersionCheckedAt   *time.Time
+	ServerBackupEnabled            bool
+	ServerBackupIntervalHours      uint32
+	ServerBackupLastAt             *time.Time
+	ServerBackupLastStatus         string
+	ServerBackupLastError          string
 }
 
 // AuditEvent is the wire format CLI nodes send inside the heartbeat payload.

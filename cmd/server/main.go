@@ -72,6 +72,8 @@ func main() {
 	retentionWorker.Start()
 	versionChecker := worker.NewVersionChecker(database)
 	versionChecker.Start()
+	serverBackupWorker := worker.NewServerBackupWorker(database, appKey, cfg.Database.DSN, cfg.Security.SecretKeyFile, configPath, cfg.Terminal.SessionsDir)
+	serverBackupWorker.Start()
 
 	web.ServerVersion = Version
 
@@ -133,6 +135,7 @@ func main() {
 	mux.HandleFunc("/nodes", webServer.RequireAuth(webServer.HandleNodesList))
 	mux.HandleFunc("/nodes/bulk-update-cli", webServer.RequireManagerOrAbove(webServer.HandleBulkUpdateCLI))
 	mux.HandleFunc("/nodes/bulk-enable-dr", webServer.RequireSuperAdmin(webServer.HandleBulkEnableDR))
+	mux.HandleFunc("/nodes/bulk-dr-run-now", webServer.RequireSuperAdmin(webServer.HandleBulkDRRunNow))
 
 	// Nodes
 	mux.HandleFunc("/nodes/new", webServer.RequireAuth(webServer.HandleNodeNew))
@@ -212,6 +215,9 @@ func main() {
 	mux.HandleFunc("/settings/tuning", webServer.RequireSuperAdmin(webServer.HandleServerTuning))
 	mux.HandleFunc("/settings/intelligence", webServer.RequireSuperAdmin(webServer.HandleIntelligenceTuning))
 	mux.HandleFunc("/settings/node-disaster-recovery", webServer.RequireSuperAdmin(webServer.HandleDRSettings))
+	mux.HandleFunc("/settings/dr/save-s3", webServer.RequireSuperAdmin(webServer.HandleDRSaveS3))
+	mux.HandleFunc("/settings/dr/save-server", webServer.RequireSuperAdmin(webServer.HandleDRSaveServer))
+	mux.HandleFunc("/settings/dr/save-node", webServer.RequireSuperAdmin(webServer.HandleDRSaveNode))
 	mux.HandleFunc("/settings/updates", webServer.RequireSuperAdmin(webServer.HandleUpdateSettings))
 	mux.HandleFunc("/settings/updates/check-cli", webServer.RequireSuperAdmin(webServer.HandleCheckCLIVersion))
 	mux.HandleFunc("/settings/updates/check-server", webServer.RequireSuperAdmin(webServer.HandleCheckServerVersion))

@@ -60,15 +60,18 @@ func (s *Server) HandleGenerateInstallToken(w http.ResponseWriter, r *http.Reque
 	}
 	uid := fmt.Sprintf("lss-%s", hex.EncodeToString(uidBytes))
 
-	// Generate PSK using the same crypto function as manual registration
-	psk, err := crypto.GeneratePSK()
-	if err != nil {
+	// Generate PSK as hex-only (not full printable ASCII) so it's safe to embed
+	// in a bash/powershell script without escaping issues. Full-ASCII PSKs from
+	// crypto.GeneratePSK() contain ()$"\! which break shell embedding.
+	pskBytes := make([]byte, 64) // 64 bytes = 128 hex chars
+	if _, err := rand.Read(pskBytes); err != nil {
 		rlg.Error("generate psk failed", "err", err.Error())
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Internal error"}) //nolint:errcheck
 		return
 	}
+	psk := hex.EncodeToString(pskBytes)
 
 	// Encrypt PSK for storage
 	encrypted, err := crypto.EncryptPSK(psk, s.AppKey)

@@ -8,11 +8,12 @@ import (
 
 type dashboardPageData struct {
 	PageData
-	Stats          *models.DashboardStats
-	Groups         []*models.GroupWithStats
-	Nodes          []*models.NodeWithStatus
-	AllTags        []*models.Tag
-	AnomalyCount   int
+	Stats            *models.DashboardStats
+	Groups           []*models.GroupWithStats
+	Nodes            []*models.NodeWithStatus
+	AllTags          []*models.Tag
+	AnomalyCount     int
+	LatestCLIVersion string
 }
 
 func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -77,12 +78,18 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	allTags, _ := s.DB.ListTags()
 	anomalyCount, _ := s.DB.CountUnackedAnomalies()
 
+	var latestCLI string
+	if tuning, err := s.DB.GetServerTuning(); err == nil {
+		latestCLI = tuning.LatestCLIVersion
+	}
+
 	s.render(w, r, http.StatusOK, "dashboard.html", dashboardPageData{
-		PageData:     pd,
-		Stats:        stats,
-		Groups:       groups,
-		Nodes:        nodes,
-		AllTags:      allTags,
-		AnomalyCount: anomalyCount,
+		PageData:         pd,
+		Stats:            stats,
+		Groups:           groups,
+		Nodes:            nodes,
+		AllTags:          allTags,
+		AnomalyCount:     anomalyCount,
+		LatestCLIVersion: latestCLI,
 	})
 }

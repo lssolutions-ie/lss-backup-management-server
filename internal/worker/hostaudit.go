@@ -10,7 +10,7 @@ import (
 )
 
 // HostAuditWorker polls the local systemd journal for events on units we care
-// about (sshd, sudo, lss-backup.service) and writes them into audit_log
+// about (sshd, sudo, lss-backup-server.service) and writes them into audit_log
 // with source='host'. Resumable via a persisted journal cursor so we never
 // re-emit a row we've already seen.
 //
@@ -60,14 +60,14 @@ func (w *HostAuditWorker) tick() {
 	// or openssh-server.service. Eliminates "exit status 1" spam on Ubuntu versions
 	// where the unit name doesn't match.
 	// journalctl uses AND between different field types. Use "+" separator
-	// to create OR groups: (sshd OR sudo) OR (lss-backup.service).
+	// to create OR groups: (sshd OR sudo) OR (lss-backup-server.service).
 	args := []string{
 		"--output=json",
 		"--no-pager",
 		"SYSLOG_IDENTIFIER=sshd",
 		"SYSLOG_IDENTIFIER=sudo",
 		"+",
-		"_SYSTEMD_UNIT=lss-backup.service",
+		"_SYSTEMD_UNIT=lss-backup-server.service",
 	}
 	if cursor != "" {
 		args = append(args, "--after-cursor="+cursor)
@@ -144,16 +144,16 @@ func classifyJournalEntry(e journalEntry) (cat, sev, actor, msg string, details 
 		}
 	}
 
-	// lss-backup.service lifecycle
-	if strings.Contains(unit, "lss-backup") {
+	// lss-backup-server.service lifecycle
+	if strings.Contains(unit, "lss-backup-server") {
 		switch {
-		case strings.Contains(e.Message, "Started lss-backup"):
+		case strings.Contains(e.Message, "Started lss-backup-server"):
 			return "host_service_started", "info", "system", e.Message, nil
-		case strings.Contains(e.Message, "Stopping lss-backup"),
-			strings.Contains(e.Message, "Stopped lss-backup"):
+		case strings.Contains(e.Message, "Stopping lss-backup-server"),
+			strings.Contains(e.Message, "Stopped lss-backup-server"):
 			return "host_service_stopped", "warn", "system", e.Message, nil
-		case strings.Contains(e.Message, "lss-backup.service: Failed"),
-			strings.Contains(e.Message, "lss-backup.service: Main process exited"):
+		case strings.Contains(e.Message, "lss-backup-server.service: Failed"),
+			strings.Contains(e.Message, "lss-backup-server.service: Main process exited"):
 			return "host_service_failed", "critical", "system", e.Message, nil
 		}
 	}
@@ -214,7 +214,7 @@ func parseSSHFailed(msg string) (user, ip string) {
 }
 
 // parseSudoLine handles classic sudo log lines:
-//   ladia : TTY=pts/0 ; PWD=/home/ladia ; USER=root ; COMMAND=/usr/bin/systemctl restart lss-backup
+//   ladia : TTY=pts/0 ; PWD=/home/ladia ; USER=root ; COMMAND=/usr/bin/systemctl restart lss-backup-server
 func parseSudoLine(msg string) (user, command string) {
 	if i := strings.Index(msg, " : "); i > 0 {
 		user = strings.TrimSpace(msg[:i])

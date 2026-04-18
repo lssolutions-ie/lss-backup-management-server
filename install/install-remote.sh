@@ -73,17 +73,17 @@ step() { echo; echo "${C_BLUE}[STEP $1/$TOTAL_STEPS]${C_RESET} $2"; }
 info "Install mode: ${C_YELLOW}${MODE}${C_RESET}"
 
 # ─── Constants ───────────────────────────────────────────────────────────────
-SERVICE_USER="lss-backup"
-CONFIG_DIR="/etc/lss-backup"
-STATE_DIR="/var/lib/lss-backup"
-LOG_DIR="/var/log/lss-backup"
+SERVICE_USER="lss-backup-server"
+CONFIG_DIR="/etc/lss-backup-server"
+STATE_DIR="/var/lib/lss-backup-server"
+LOG_DIR="/var/log/lss-backup-server"
 SECRET_KEY_FILE="$CONFIG_DIR/secret.key"
 DB_PASSWORD_FILE="$CONFIG_DIR/db.password"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 BINARY_PATH="/usr/local/bin/lss-backup-server"
-SYSTEMD_UNIT="/etc/systemd/system/lss-backup.service"
-NGINX_AVAILABLE="/etc/nginx/sites-available/lss-backup"
-NGINX_ENABLED="/etc/nginx/sites-enabled/lss-backup"
+SYSTEMD_UNIT="/etc/systemd/system/lss-backup-server.service"
+NGINX_AVAILABLE="/etc/nginx/sites-available/lss-backup-server"
+NGINX_ENABLED="/etc/nginx/sites-enabled/lss-backup-server"
 TUNNEL_USER="lss-tunnel"
 TUNNEL_AUTHKEYS_FILE="$STATE_DIR/tunnel_authorized_keys"
 TUNNEL_AUTHKEYS_SCRIPT="/usr/local/bin/lss-tunnel-authkeys.sh"
@@ -161,14 +161,14 @@ systemctl enable mysql --quiet
 info "MySQL service started and enabled"
 
 user_exists="$(mysql -N -B -e \
-    "SELECT COUNT(*) FROM mysql.user WHERE user='lss_mgmt' AND host='localhost';")"
+    "SELECT COUNT(*) FROM mysql.user WHERE user='lss_backup_server' AND host='localhost';")"
 
 if [[ "$user_exists" == "0" ]]; then
     DB_PASSWORD="$(openssl rand -base64 24)"
     mysql <<SQL
-CREATE USER IF NOT EXISTS 'lss_mgmt'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
-CREATE DATABASE IF NOT EXISTS lss_backup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-GRANT ALL PRIVILEGES ON lss_backup.* TO 'lss_mgmt'@'localhost';
+CREATE USER IF NOT EXISTS 'lss_backup_server'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+CREATE DATABASE IF NOT EXISTS lss_backup_server CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON lss_backup_server.* TO 'lss_backup_server'@'localhost';
 FLUSH PRIVILEGES;
 SQL
     umask 077
@@ -180,10 +180,10 @@ SQL
 else
     info "MySQL user already exists — skipping"
     if [[ ! -f "$DB_PASSWORD_FILE" ]]; then
-        die "lss_mgmt exists but $DB_PASSWORD_FILE is missing."
+        die "lss_backup_server exists but $DB_PASSWORD_FILE is missing."
     fi
     DB_PASSWORD="$(cat "$DB_PASSWORD_FILE")"
-    mysql -e "CREATE DATABASE IF NOT EXISTS lss_backup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    mysql -e "CREATE DATABASE IF NOT EXISTS lss_backup_server CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -232,7 +232,7 @@ cat > "$TUNNEL_AUTHKEYS_SCRIPT" <<'SCRIPT'
 if [[ "$1" != "lss-tunnel" ]]; then
     exit 0
 fi
-cat /var/lib/lss-backup/tunnel_authorized_keys 2>/dev/null
+cat /var/lib/lss-backup-server/tunnel_authorized_keys 2>/dev/null
 SCRIPT
 chown root:root "$TUNNEL_AUTHKEYS_SCRIPT"
 chmod 0755 "$TUNNEL_AUTHKEYS_SCRIPT"
@@ -308,7 +308,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 listen_addr = "127.0.0.1:8080"
 
 [database]
-dsn = "lss_mgmt:${DB_PASSWORD}@tcp(localhost:3306)/lss_backup?parseTime=true&loc=Local"
+dsn = "lss_backup_server:${DB_PASSWORD}@tcp(localhost:3306)/lss_backup_server?parseTime=true&loc=Local"
 
 [security]
 secret_key_file = "$SECRET_KEY_FILE"
@@ -340,22 +340,22 @@ Requires=mysql.service
 
 [Service]
 Type=simple
-User=lss-backup
-Group=lss-backup
+User=lss-backup-server
+Group=lss-backup-server
 ExecStart=/usr/local/bin/lss-backup-server
-WorkingDirectory=/etc/lss-backup
+WorkingDirectory=/etc/lss-backup-server
 Environment=LSS_ENV=production
-Environment=LSS_CONFIG=/etc/lss-backup/config.toml
+Environment=LSS_CONFIG=/etc/lss-backup-server/config.toml
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=lss-backup
+SyslogIdentifier=lss-backup-server
 
 # Hardening
 NoNewPrivileges=false
 PrivateTmp=true
-ReadWritePaths=/etc/lss-backup /var/log/lss-backup /var/lib/lss-backup
+ReadWritePaths=/etc/lss-backup-server /var/log/lss-backup-server /var/lib/lss-backup-server
 
 [Install]
 WantedBy=multi-user.target
@@ -363,7 +363,7 @@ EOF
 chown root:root "$SYSTEMD_UNIT"
 chmod 644 "$SYSTEMD_UNIT"
 systemctl daemon-reload
-systemctl enable lss-backup --quiet
+systemctl enable lss-backup-server --quiet
 info "systemd unit installed"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -426,25 +426,25 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 11 — Start/restart service
 # ═════════════════════════════════════════════════════════════════════════════
-step 11 "Starting lss-backup service"
+step 11 "Starting lss-backup-server service"
 
-if systemctl is-active --quiet lss-backup; then
-    systemctl restart lss-backup
+if systemctl is-active --quiet lss-backup-server; then
+    systemctl restart lss-backup-server
     info "Service restarted"
 else
-    systemctl start lss-backup
+    systemctl start lss-backup-server
     info "Service started"
 fi
 
 for i in {1..30}; do
-    systemctl is-active --quiet lss-backup && break
+    systemctl is-active --quiet lss-backup-server && break
     sleep 1
 done
 
-if systemctl is-active --quiet lss-backup; then
+if systemctl is-active --quiet lss-backup-server; then
     info "${C_GREEN}Service is running${C_RESET}"
 else
-    die "Service failed to start. Run: journalctl -u lss-backup -n 50"
+    die "Service failed to start. Run: journalctl -u lss-backup-server -n 50"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -454,7 +454,7 @@ step 12 "Installing update helper and backup cron"
 
 cat > "$UPDATE_SCRIPT" <<'UPDATESCRIPT'
 #!/bin/bash
-STAGED="/var/lib/lss-backup/update-staging"
+STAGED="/var/lib/lss-backup-server/update-staging"
 TARGET="/usr/local/bin/lss-backup-server"
 if [ ! -f "$STAGED" ]; then
   echo "No staged update found"
@@ -462,12 +462,12 @@ if [ ! -f "$STAGED" ]; then
 fi
 systemd-run --unit=lss-update --description="LSS server update" bash -c '
   sleep 1
-  systemctl stop lss-backup
-  cp /var/lib/lss-backup/update-staging /usr/local/bin/lss-backup-server
+  systemctl stop lss-backup-server
+  cp /var/lib/lss-backup-server/update-staging /usr/local/bin/lss-backup-server
   chmod 755 /usr/local/bin/lss-backup-server
-  rm -f /var/lib/lss-backup/update-staging
-  systemctl start lss-backup
-  echo "Update applied at $(date)" >> /var/log/lss-backup/update.log
+  rm -f /var/lib/lss-backup-server/update-staging
+  systemctl start lss-backup-server
+  echo "Update applied at $(date)" >> /var/log/lss-backup-server/update.log
 '
 UPDATESCRIPT
 chown root:root "$UPDATE_SCRIPT"
@@ -476,36 +476,36 @@ echo "$SERVICE_USER ALL=(root) NOPASSWD: $UPDATE_SCRIPT" > /etc/sudoers.d/lss-up
 chmod 440 /etc/sudoers.d/lss-update
 info "Update helper installed"
 
-cat > /usr/local/bin/lss-mgmt-backup.sh <<'BACKUPSCRIPT'
+cat > /usr/local/bin/lss-backup-server-db.sh <<'BACKUPSCRIPT'
 #!/bin/bash
 set -euo pipefail
-[[ -f /etc/default/lss-mgmt-backup ]] && . /etc/default/lss-mgmt-backup
-BACKUP_DIR="${LSS_BACKUP_DIR:-/var/backups/lss-mgmt}"
-DB_NAME="${LSS_BACKUP_DB:-lss_backup}"
-DB_USER="${LSS_BACKUP_USER:-lss_mgmt}"
+[[ -f /etc/default/lss-backup-server-db ]] && . /etc/default/lss-backup-server-db
+BACKUP_DIR="${LSS_BACKUP_DIR:-/var/backups/lss-backup-server-db}"
+DB_NAME="${LSS_BACKUP_DB:-lss_backup_server}"
+DB_USER="${LSS_BACKUP_USER:-lss_backup_server}"
 DB_PASS="${LSS_BACKUP_PASS:-}"
 KEEP="${LSS_BACKUP_KEEP:-14}"
 [[ -z "$DB_PASS" ]] && { echo "[$(date -Is)] ERROR: LSS_BACKUP_PASS not set" >&2; exit 1; }
 mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="$BACKUP_DIR/lss_backup-$STAMP.sql.gz"
+OUT="$BACKUP_DIR/lss_backup_server-$STAMP.sql.gz"
 mysqldump --user="$DB_USER" --password="$DB_PASS" --single-transaction --routines --triggers --hex-blob --default-character-set=utf8mb4 "$DB_NAME" | gzip -9 > "$OUT"
 chmod 600 "$OUT"
-ls -1t "$BACKUP_DIR"/lss_backup-*.sql.gz 2>/dev/null | tail -n +"$((KEEP + 1))" | xargs -r rm -f --
+ls -1t "$BACKUP_DIR"/lss_backup_server-*.sql.gz 2>/dev/null | tail -n +"$((KEEP + 1))" | xargs -r rm -f --
 echo "[$(date -Is)] backup ok ($(stat -c %s "$OUT") bytes)"
 BACKUPSCRIPT
-chown root:root /usr/local/bin/lss-mgmt-backup.sh
-chmod 750 /usr/local/bin/lss-mgmt-backup.sh
+chown root:root /usr/local/bin/lss-backup-server-db.sh
+chmod 750 /usr/local/bin/lss-backup-server-db.sh
 
-if [[ ! -f /etc/default/lss-mgmt-backup ]]; then
+if [[ ! -f /etc/default/lss-backup-server-db ]]; then
     umask 077
-    printf 'LSS_BACKUP_PASS="%s"\n' "$DB_PASSWORD" > /etc/default/lss-mgmt-backup
+    printf 'LSS_BACKUP_PASS="%s"\n' "$DB_PASSWORD" > /etc/default/lss-backup-server-db
     umask 022
-    chmod 600 /etc/default/lss-mgmt-backup
+    chmod 600 /etc/default/lss-backup-server-db
 fi
 
-CRONLINE='30 3 * * * /usr/local/bin/lss-mgmt-backup.sh >> /var/log/lss-mgmt-backup.log 2>&1'
-if ! (crontab -u root -l 2>/dev/null || true) | grep -qF "lss-mgmt-backup.sh"; then
+CRONLINE='30 3 * * * /usr/local/bin/lss-backup-server-db.sh >> /var/log/lss-backup-server-db.log 2>&1'
+if ! (crontab -u root -l 2>/dev/null || true) | grep -qF "lss-backup-server-db.sh"; then
     ( (crontab -u root -l 2>/dev/null || true); echo "$CRONLINE" ) | crontab -u root -
     info "Backup cron installed (03:30 daily)"
 else
@@ -679,10 +679,10 @@ cat <<SUMMARY
 ============================================================
  Version:    $VERSION
  Mode:       $MODE
- Service:    lss-backup (systemd, enabled)
+ Service:    lss-backup-server (systemd, enabled)
  Binary:     $BINARY_PATH
  Config:     $CONFIG_FILE
- Logs:       journalctl -u lss-backup -f
+ Logs:       journalctl -u lss-backup-server -f
 
  Next steps:
    1. Visit ${PROTOCOL}://$DISPLAY_DOMAIN/setup to create your superadmin account.

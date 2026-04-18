@@ -114,10 +114,10 @@ sudo bash install/install.sh
 ## Service Management
 
 ```bash
-systemctl status lss-backup     # Status
-journalctl -u lss-backup -f     # Live logs
-systemctl restart lss-backup    # Restart
-systemctl stop lss-backup       # Stop
+systemctl status lss-backup-server     # Status
+journalctl -u lss-backup-server -f     # Live logs
+systemctl restart lss-backup-server    # Restart
+systemctl stop lss-backup-server       # Stop
 ```
 
 ## Backup & Restore
@@ -139,26 +139,26 @@ Restore by uploading the zip on a fresh install via the same page.
 
 | File | Impact if lost |
 |------|----------------|
-| `/etc/lss-backup/secret.key` | All PSK keys unreadable — every node must be re-registered |
-| `/etc/lss-backup/config.toml` | Recoverable — recreate or restore from backup |
-| MySQL `lss_backup` database | All history lost without a backup |
+| `/etc/lss-backup-server/secret.key` | All PSK keys unreadable — every node must be re-registered |
+| `/etc/lss-backup-server/config.toml` | Recoverable — recreate or restore from backup |
+| MySQL `lss_backup_server` database | All history lost without a backup |
 
 ## Troubleshooting
 
 **Service won't start:**
 ```bash
-journalctl -u lss-backup -n 100
+journalctl -u lss-backup-server -n 100
 ```
 
 **Node not appearing in dashboard:**
 - Check the node's CLI activity log for HTTP errors
 - Verify nginx: `systemctl status nginx`
-- Check server log: `journalctl -u lss-backup -n 50`
+- Check server log: `journalctl -u lss-backup-server -n 50`
 
 **Forgot superadmin password:**
 ```bash
-mysql lss_backup -e "UPDATE users SET force_setup = 1, totp_secret = '', totp_enabled = 0 WHERE role = 'superadmin';"
-mysql lss_backup -e "DELETE FROM sessions;"
+mysql lss_backup_server -e "UPDATE users SET force_setup = 1, totp_secret = '', totp_enabled = 0 WHERE role = 'superadmin';"
+mysql lss_backup_server -e "DELETE FROM sessions;"
 ```
 Then log in with `lssbackuppassword` and you'll be prompted to set a new password + 2FA.
 

@@ -70,7 +70,7 @@ func (s *Server) HandleBackupDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run mysqldump to a temp file (avoid buffering the entire dump in memory).
-	tmpDump, err := os.CreateTemp("", "lss-backup-dump-*.sql")
+	tmpDump, err := os.CreateTemp("", "lss-backup-server-dump-*.sql")
 	if err != nil {
 		s.Fail(w, r, http.StatusInternalServerError, err, "Internal Server Error")
 		return
@@ -126,7 +126,7 @@ func (s *Server) HandleBackupDownload(w http.ResponseWriter, r *http.Request) {
 	metaJSON, _ := json.MarshalIndent(metadata, "", "  ")
 
 	// Set response headers for zip download.
-	filename := fmt.Sprintf("lss-backup-%s.zip", now.Format("20060102-150405"))
+	filename := fmt.Sprintf("lss-backup-server-%s.zip", now.Format("20060102-150405"))
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 

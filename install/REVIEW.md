@@ -4,10 +4,10 @@ Read of `install.sh` against a fresh Ubuntu 24.04 mental model. Captures the gap
 
 ## Fixes applied in this commit
 
-- **Sessions dir was missing.** Terminal recording writes to `/var/lib/lss-backup/sessions/`. install.sh didn't create it → first SSH session would log `recorder init failed`. Now created with `750` perms in step 3.
+- **Sessions dir was missing.** Terminal recording writes to `/var/lib/lss-backup-server/sessions/`. install.sh didn't create it → first SSH session would log `recorder init failed`. Now created with `750` perms in step 3.
 - **`terminal.sessions_dir`** was missing from the generated `config.toml`. Added in step 8.
 - **Step counter said `11`** but we now have 12 steps. Fixed.
-- **MySQL backup script** wasn't installed. Now copies `lss-mgmt-backup.sh` to `/usr/local/bin/`, writes `/etc/default/lss-mgmt-backup` with the DB password (mode 600), and registers a daily cron entry.
+- **MySQL backup script** wasn't installed. Now copies `lss-backup-server-db.sh` to `/usr/local/bin/`, writes `/etc/default/lss-backup-server-db` with the DB password (mode 600), and registers a daily cron entry.
 - **First-run wait too short.** Was `sleep 3` — first start applies 35 migrations, can easily take >3s. Now polls `systemctl is-active` for up to 30 s.
 - **`Include /etc/ssh/sshd_config.d/*.conf` check.** Default on Ubuntu 22.04+ but absent on hardened images. Now warns if missing.
 - **Error trap added.** `trap 'error "Install failed at line $LINENO"; exit 1' ERR` so failures point at the line, not just `set -e` exit.
@@ -40,18 +40,18 @@ sudo bash install/install.sh
 
 Watch for:
 - All 12 steps print `→` lines, no `⚠` lines except the documented "back up your secret key" prompt.
-- `systemctl status lss-backup` shows `active (running)`.
-- `journalctl -u lss-backup -n 30 --no-pager -o cat` shows the JSON `starting server` line followed by migration logs ending around `applied migration 035_host_audit.sql`.
+- `systemctl status lss-backup-server` shows `active (running)`.
+- `journalctl -u lss-backup-server -n 30 --no-pager -o cat` shows the JSON `starting server` line followed by migration logs ending around `applied migration 035_host_audit.sql`.
 - `curl -sI http://127.0.0.1:8080/login` returns `HTTP/1.1 200 OK`.
-- `ls -la /var/lib/lss-backup/sessions/` exists with `lss-backup:lss-backup` ownership.
-- `crontab -u root -l | grep lss-mgmt-backup` shows the daily entry.
+- `ls -la /var/lib/lss-backup-server/sessions/` exists with `lss-backup-server:lss-backup-server` ownership.
+- `crontab -u root -l | grep lss-backup-server-backup` shows the daily entry.
 
 ## Things to validate end-to-end after install
 
-- Node registration: register a CLI node, watch a heartbeat land in `journalctl -u lss-backup -f`.
+- Node registration: register a CLI node, watch a heartbeat land in `journalctl -u lss-backup-server -f`.
 - Audit log: log into the dashboard, ack an anomaly (or just log out / log back in), see the row appear at `/audit`.
 - Terminal recording: if you have a node, open a terminal, type a few commands, log out, replay from `/audit`.
-- Backup: run `sudo /usr/local/bin/lss-mgmt-backup.sh` and confirm a `.sql.gz` lands in `/var/backups/lss-mgmt/`.
+- Backup: run `sudo /usr/local/bin/lss-backup-server-db.sh` and confirm a `.sql.gz` lands in `/var/backups/lss-backup-server-db/`.
 
 ## Pre-flight: what install.sh DOESN'T do
 

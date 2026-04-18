@@ -116,7 +116,7 @@ func (s *Server) HandleServerUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stagingPath := "/var/lib/lss-backup/update-staging"
+	stagingPath := "/var/lib/lss-backup-server/update-staging"
 	staged, err := os.OpenFile(stagingPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
 		lg.Error("server update: create staging file failed", "err", err.Error())

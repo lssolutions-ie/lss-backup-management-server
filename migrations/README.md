@@ -4,7 +4,7 @@ SQL migrations applied automatically at server startup, in lexicographic order.
 
 ## Convention
 
-Every new migration `NNN_short_name.sql` MUST have a paired `NNN_short_name.down.sql` that exactly reverses it. This is a hard rule — without it, rollback is "restore from backup we don't have" (see `install/lss-mgmt-backup.sh`).
+Every new migration `NNN_short_name.sql` MUST have a paired `NNN_short_name.down.sql` that exactly reverses it. This is a hard rule — without it, rollback is "restore from backup we don't have" (see `install/lss-backup-server-db.sh`).
 
 The migration runner does NOT auto-apply down files. They exist as a contract:
 

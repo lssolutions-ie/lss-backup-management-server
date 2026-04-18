@@ -83,7 +83,7 @@ func (s *Server) HandleRegenerateAllCredentials(w http.ResponseWriter, r *http.R
 	case "darwin":
 		configPath = "/Library/Application Support/LSS Backup/config.toml"
 	default:
-		configPath = "/etc/lss-backup/config.toml"
+		configPath = "/etc/lss-backup-server/config.toml"
 	}
 
 	var updatePSKCmd string

@@ -55,7 +55,7 @@ func Init() {
 		level = slog.LevelInfo
 	}
 	h := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})
-	logger := slog.New(h).With("service", "lss-mgmt")
+	logger := slog.New(h).With("service", "lss-backup-server")
 	slog.SetDefault(logger)
 
 	// Route legacy log.Printf through slog at INFO so mixed callers still

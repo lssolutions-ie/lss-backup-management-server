@@ -29,23 +29,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ─── Constants ───────────────────────────────────────────────────────────────
-SERVICE_USER="lss-backup"
-CONFIG_DIR="/etc/lss-backup"
-STATE_DIR="/var/lib/lss-backup"
-LOG_DIR="/var/log/lss-backup"
+SERVICE_USER="lss-backup-server"
+CONFIG_DIR="/etc/lss-backup-server"
+STATE_DIR="/var/lib/lss-backup-server"
+LOG_DIR="/var/log/lss-backup-server"
 SECRET_KEY_FILE="$CONFIG_DIR/secret.key"
 DB_PASSWORD_FILE="$CONFIG_DIR/db.password"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 BINARY_PATH="/usr/local/bin/lss-backup-server"
-SYSTEMD_UNIT="/etc/systemd/system/lss-backup.service"
-NGINX_AVAILABLE="/etc/nginx/sites-available/lss-backup"
-NGINX_ENABLED="/etc/nginx/sites-enabled/lss-backup"
+SYSTEMD_UNIT="/etc/systemd/system/lss-backup-server.service"
+NGINX_AVAILABLE="/etc/nginx/sites-available/lss-backup-server"
+NGINX_ENABLED="/etc/nginx/sites-enabled/lss-backup-server"
 TUNNEL_USER="lss-tunnel"
 TUNNEL_AUTHKEYS_FILE="$STATE_DIR/tunnel_authorized_keys"
 TUNNEL_AUTHKEYS_SCRIPT="/usr/local/bin/lss-tunnel-authkeys.sh"
 SSHD_DROPIN="/etc/ssh/sshd_config.d/lss-tunnel.conf"
 SESSIONS_DIR="$STATE_DIR/sessions"
-BACKUP_SCRIPT_PATH="/usr/local/bin/lss-mgmt-backup.sh"
+BACKUP_SCRIPT_PATH="/usr/local/bin/lss-backup-server-db.sh"
 GO_MIN_VERSION="1.22"
 
 # trap any error with a line number — easier to triage mid-install failures
@@ -187,16 +187,16 @@ systemctl enable mysql --quiet
 info "MySQL service started and enabled"
 
 user_exists="$(mysql -N -B -e \
-    "SELECT COUNT(*) FROM mysql.user WHERE user='lss_mgmt' AND host='localhost';")"
+    "SELECT COUNT(*) FROM mysql.user WHERE user='lss_backup_server' AND host='localhost';")"
 
 if [[ "$user_exists" == "0" ]]; then
-    info "Creating MySQL user lss_mgmt and database lss_backup"
+    info "Creating MySQL user lss_backup_server and database lss_backup_server"
     DB_PASSWORD="$(openssl rand -base64 24)"
 
     mysql <<SQL
-CREATE USER IF NOT EXISTS 'lss_mgmt'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
-CREATE DATABASE IF NOT EXISTS lss_backup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-GRANT ALL PRIVILEGES ON lss_backup.* TO 'lss_mgmt'@'localhost';
+CREATE USER IF NOT EXISTS 'lss_backup_server'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+CREATE DATABASE IF NOT EXISTS lss_backup_server CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON lss_backup_server.* TO 'lss_backup_server'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 
@@ -207,13 +207,13 @@ SQL
     chmod 600 "$DB_PASSWORD_FILE"
     info "MySQL configured. Credentials saved to $DB_PASSWORD_FILE"
 else
-    info "MySQL user lss_mgmt already exists — skipping"
+    info "MySQL user lss_backup_server already exists — skipping"
     if [[ ! -f "$DB_PASSWORD_FILE" ]]; then
-        die "lss_mgmt exists but $DB_PASSWORD_FILE is missing. Cannot recover password automatically. Reset with: ALTER USER 'lss_mgmt'@'localhost' IDENTIFIED BY 'new-password';"
+        die "lss_backup_server exists but $DB_PASSWORD_FILE is missing. Cannot recover password automatically. Reset with: ALTER USER 'lss_backup_server'@'localhost' IDENTIFIED BY 'new-password';"
     fi
     DB_PASSWORD="$(cat "$DB_PASSWORD_FILE")"
     # Ensure the database exists (idempotent)
-    mysql -e "CREATE DATABASE IF NOT EXISTS lss_backup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    mysql -e "CREATE DATABASE IF NOT EXISTS lss_backup_server CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -273,7 +273,7 @@ chmod 700 "$TUNNEL_HOME/.ssh"
 chown "$TUNNEL_USER:$TUNNEL_USER" "$TUNNEL_HOME/.ssh/authorized_keys"
 chmod 600 "$TUNNEL_HOME/.ssh/authorized_keys"
 
-# authorized_keys file maintained by lss-backup.
+# authorized_keys file maintained by lss-backup-server.
 touch "$TUNNEL_AUTHKEYS_FILE"
 chown "$SERVICE_USER:$SERVICE_USER" "$TUNNEL_AUTHKEYS_FILE"
 chmod 644 "$TUNNEL_AUTHKEYS_FILE"
@@ -282,11 +282,11 @@ chmod 644 "$TUNNEL_AUTHKEYS_FILE"
 cat > "$TUNNEL_AUTHKEYS_SCRIPT" <<'SCRIPT'
 #!/bin/bash
 # Invoked by sshd for the lss-tunnel user. Emits the current authorized_keys
-# contents from the file maintained by the lss-backup service.
+# contents from the file maintained by the lss-backup-server service.
 if [[ "$1" != "lss-tunnel" ]]; then
     exit 0
 fi
-cat /var/lib/lss-backup/tunnel_authorized_keys 2>/dev/null
+cat /var/lib/lss-backup-server/tunnel_authorized_keys 2>/dev/null
 SCRIPT
 chown root:root "$TUNNEL_AUTHKEYS_SCRIPT"
 chmod 0755 "$TUNNEL_AUTHKEYS_SCRIPT"
@@ -342,7 +342,7 @@ chmod 755 "$BINARY_PATH"
 info "Binary installed at $BINARY_PATH"
 
 # Install runtime assets (templates, migrations, static) into the working dir.
-# The Go server reads these relative to its WorkingDirectory (/etc/lss-backup).
+# The Go server reads these relative to its WorkingDirectory (/etc/lss-backup-server).
 info "Installing runtime assets to $CONFIG_DIR"
 for asset in templates migrations static; do
     if [[ -d "$REPO_ROOT/$asset" ]]; then
@@ -365,7 +365,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 listen_addr = "127.0.0.1:8080"
 
 [database]
-dsn = "lss_mgmt:${DB_PASSWORD}@tcp(localhost:3306)/lss_backup?parseTime=true&loc=Local"
+dsn = "lss_backup_server:${DB_PASSWORD}@tcp(localhost:3306)/lss_backup_server?parseTime=true&loc=Local"
 
 [security]
 secret_key_file = "$SECRET_KEY_FILE"
@@ -389,12 +389,12 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 step 9 "Installing systemd unit"
 
-cp "$REPO_ROOT/install/lss-backup.service" "$SYSTEMD_UNIT"
+cp "$REPO_ROOT/install/lss-backup-server.service" "$SYSTEMD_UNIT"
 chown root:root "$SYSTEMD_UNIT"
 chmod 644 "$SYSTEMD_UNIT"
 
 systemctl daemon-reload
-systemctl enable lss-backup --quiet
+systemctl enable lss-backup-server --quiet
 info "systemd unit installed and enabled"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -432,30 +432,30 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 11 — Start/restart the service
 # ═════════════════════════════════════════════════════════════════════════════
-step 11 "Starting lss-backup service"
+step 11 "Starting lss-backup-server service"
 
-if systemctl is-active --quiet lss-backup; then
-    systemctl restart lss-backup
+if systemctl is-active --quiet lss-backup-server; then
+    systemctl restart lss-backup-server
     info "Service restarted"
 else
-    systemctl start lss-backup
+    systemctl start lss-backup-server
     info "Service started"
 fi
 
 # First-run can take a while — it applies all migrations on startup. Poll for
 # up to 30s rather than guessing with sleep 3.
 for i in {1..30}; do
-    if systemctl is-active --quiet lss-backup; then
+    if systemctl is-active --quiet lss-backup-server; then
         break
     fi
     sleep 1
 done
 
-if systemctl is-active --quiet lss-backup; then
+if systemctl is-active --quiet lss-backup-server; then
     info "${C_GREEN}Service is running${C_RESET}"
 else
     error "Service failed to start within 30s. Run:"
-    error "    journalctl -u lss-backup -n 50 --no-pager"
+    error "    journalctl -u lss-backup-server -n 50 --no-pager"
     die "Installation incomplete"
 fi
 
@@ -464,31 +464,31 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 step 12 "Installing MySQL backup script"
 
-cp "$REPO_ROOT/install/lss-mgmt-backup.sh" "$BACKUP_SCRIPT_PATH"
+cp "$REPO_ROOT/install/lss-backup-server-db.sh" "$BACKUP_SCRIPT_PATH"
 chown root:root "$BACKUP_SCRIPT_PATH"
 chmod 750 "$BACKUP_SCRIPT_PATH"
 info "Installed $BACKUP_SCRIPT_PATH"
 
 # Stash the DB password where the backup script will read it.
-if [[ ! -f /etc/default/lss-mgmt-backup ]]; then
+if [[ ! -f /etc/default/lss-backup-server-db ]]; then
     umask 077
-    cat > /etc/default/lss-mgmt-backup <<EOF
-# Defaults for /usr/local/bin/lss-mgmt-backup.sh
+    cat > /etc/default/lss-backup-server-db <<EOF
+# Defaults for /usr/local/bin/lss-backup-server-db.sh
 LSS_BACKUP_PASS="$DB_PASSWORD"
 # Optional off-host shipment (rsync target). Leave empty to disable:
-# LSS_BACKUP_REMOTE="user@offsite:/backups/lss-mgmt/"
+# LSS_BACKUP_REMOTE="user@offsite:/backups/lss-backup-server/"
 # Override defaults:
-# LSS_BACKUP_DIR=/var/backups/lss-mgmt
+# LSS_BACKUP_DIR=/var/backups/lss-backup-server-db
 # LSS_BACKUP_KEEP=14
 EOF
     umask 022
-    chmod 600 /etc/default/lss-mgmt-backup
-    info "Wrote /etc/default/lss-mgmt-backup (mode 600)"
+    chmod 600 /etc/default/lss-backup-server-db
+    info "Wrote /etc/default/lss-backup-server-db (mode 600)"
 fi
 
 # Wire a daily cron entry if not already present.
-CRONLINE='30 3 * * * /usr/local/bin/lss-mgmt-backup.sh >> /var/log/lss-mgmt-backup.log 2>&1'
-if ! (crontab -u root -l 2>/dev/null || true) | grep -qF "lss-mgmt-backup.sh"; then
+CRONLINE='30 3 * * * /usr/local/bin/lss-backup-server-db.sh >> /var/log/lss-backup-server-db.log 2>&1'
+if ! (crontab -u root -l 2>/dev/null || true) | grep -qF "lss-backup-server-db.sh"; then
     ( (crontab -u root -l 2>/dev/null || true); echo "$CRONLINE" ) | crontab -u root -
     info "Cron entry installed (03:30 daily)"
 else
@@ -513,10 +513,10 @@ cat <<SUMMARY
  LSS Backup Server — Installation Complete
 ============================================================
  Version:    $VERSION
- Service:    lss-backup (systemd, enabled)
+ Service:    lss-backup-server (systemd, enabled)
  Binary:     $BINARY_PATH
  Config:     $CONFIG_FILE
- Logs:       journalctl -u lss-backup -f
+ Logs:       journalctl -u lss-backup-server -f
 
  Next steps:
    1. Ensure DNS A record for $DISPLAY_DOMAIN points to this server.
@@ -537,14 +537,14 @@ cat <<SUMMARY
  Important files to back up:
    $SECRET_KEY_FILE   (losing this = re-register all nodes)
    $DB_PASSWORD_FILE  (MySQL credentials)
-   /var/backups/lss-mgmt/                    (daily MySQL dumps — already wired)
+   /var/backups/lss-backup-server-db/                    (daily MySQL dumps — already wired)
 
  Firewall checklist (ufw / iptables — not configured by this script):
    - allow 80/tcp + 443/tcp (web + node /api/v1/status + /ws/ssh-tunnel)
    - allow 22/tcp ONLY from your trusted admin range
    - DO NOT expose 3306/tcp (MySQL) or 8080/tcp (Go server) to the world
 
- Edit /etc/default/lss-mgmt-backup to set LSS_BACKUP_REMOTE for off-host
+ Edit /etc/default/lss-backup-server-db to set LSS_BACKUP_REMOTE for off-host
  shipment of the daily DB dumps.
 
  Threat-model assumptions and what's NOT defended against:

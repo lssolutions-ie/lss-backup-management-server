@@ -40,7 +40,7 @@ The current 3-detector engine catches obvious attacks (full repo wipes, ransomwa
 - ✅ **Node audit** — CLI v2.3.0 ships `audit_events[]` on heartbeat v3, server ingests with self-healing ack.
 - ✅ **Terminal session recording** — asciinema v2 .cast files, in-browser replay, retention knob (v1.11.4).
 - ✅ **Structured JSON logging via slog** — request IDs, access log, s.Fail() helper (v1.11.6, v1.11.9).
-- ✅ **Host audit** — shipped v1.12.0 (migration 035, journalctl polling for sshd/sudo/lss-backup.service). Known issue: SSH unit name varies by Ubuntu version, causing "exit status 1" spam on some installs.
+- ✅ **Host audit** — shipped v1.12.0 (migration 035, journalctl polling for sshd/sudo/lss-backup-server.service). Known issue: SSH unit name varies by Ubuntu version, causing "exit status 1" spam on some installs.
 - **Off-server audit mirror** — syslog emitter so `audit_log` rows also flow to syslog. Low priority now that HMAC chain provides tamper evidence.
 
 ### Shipped since original roadmap

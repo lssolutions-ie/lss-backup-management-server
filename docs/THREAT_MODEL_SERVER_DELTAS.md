@@ -37,7 +37,7 @@ Additions for the shared `THREAT_MODEL.md` maintained in the CLI repo. These cov
 | `.cast` session recordings | Exposed. Every recorded SSH session is readable. |
 | Web sessions | Attacker can forge session cookies or read them from MySQL. |
 | Node trust | Attacker can impersonate any node (has all PSKs). |
-| Off-host backups | Safe IF `LSS_BACKUP_REMOTE` in `/etc/default/lss-mgmt-backup` ships to a separate machine the attacker doesn't control. |
+| Off-host backups | Safe IF `LSS_BACKUP_REMOTE` in `/etc/default/lss-backup-server-db` ships to a separate machine the attacker doesn't control. |
 
 **Mitigation posture:** We do NOT defend against this today. The management server is a single point of trust. Realistic hardening path:
 - Off-host syslog mirror of audit_log (so attacker can't `DELETE FROM audit_log` without the syslog copy surviving).

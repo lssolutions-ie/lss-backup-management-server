@@ -41,10 +41,7 @@
           <button class="btn dropdown-toggle" data-bs-toggle="dropdown"><i class="ti ti-settings me-1"></i>Actions</button>
           <div class="dropdown-menu dropdown-menu-end">
             <a class="dropdown-item" href="/nodes/{{.Node.ID}}/edit"><i class="ti ti-edit me-2"></i>Edit Node</a>
-            <form action="/nodes/{{.Node.ID}}/regenerate-psk" method="POST">
-              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-              <button type="submit" class="dropdown-item"><i class="ti ti-key me-2"></i>Regenerate PSK</button>
-            </form>
+            <button type="button" class="dropdown-item" onclick="openRegenCredsModal({{.Node.ID}}, '{{.Node.Name}}')"><i class="ti ti-key me-2"></i>Regenerate All Credentials</button>
             {{if .User.IsSuperAdmin}}
             {{if not .Node.NeverSeen}}
             <button type="button" class="dropdown-item" onclick="generateRecoveryToken({{.Node.ID}}, '{{.Node.Name}}')"><i class="ti ti-restore me-2"></i>Recover Node</button>
@@ -1026,6 +1023,107 @@ function openDRSSHModal(nodeID, nodeName) {
     </div>
   </div>
 </div>
+
+<!-- Regenerate Credentials Modal -->
+<div class="modal modal-blur fade" id="regen-creds-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-key me-1"></i> Regenerate All Credentials</h5>
+        <button type="button" class="btn-close" onclick="closeRegenCredsModal()" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger mb-3">
+          <i class="ti ti-alert-triangle me-1"></i><strong>This will regenerate the PSK, SSH username, SSH password, and encryption password for <span id="regen-node-name"></span>.</strong>
+          All previous credentials will stop working immediately.
+        </div>
+        <p class="text-muted small">SSH credentials are required to push the changes to the node.</p>
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label class="form-label">SSH Username</label>
+            <input type="text" id="regen-ssh-user" class="form-control" placeholder="root">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">SSH Password</label>
+            <input type="password" id="regen-ssh-pass" class="form-control">
+          </div>
+        </div>
+        <div id="regen-result" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary" onclick="closeRegenCredsModal()">Cancel</button>
+        <button type="button" class="btn btn-danger" id="regen-confirm-btn" onclick="executeRegenCreds()"><i class="ti ti-key me-1"></i>Regenerate</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var __regenNodeID = 0;
+function closeRegenCredsModal() {
+  var el = document.getElementById('regen-creds-modal');
+  if (window.bootstrap && window.bootstrap.Modal) {
+    var inst = window.bootstrap.Modal.getInstance(el);
+    if (inst) inst.hide();
+  }
+  el.classList.remove('show'); el.style.display = 'none';
+  var bd = document.querySelector('.modal-backdrop'); if (bd) bd.remove();
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
+}
+function openRegenCredsModal(nodeID, nodeName) {
+  __regenNodeID = nodeID;
+  document.getElementById('regen-node-name').textContent = nodeName;
+  document.getElementById('regen-ssh-user').value = '';
+  document.getElementById('regen-ssh-pass').value = '';
+  document.getElementById('regen-result').style.display = 'none';
+  document.getElementById('regen-confirm-btn').disabled = false;
+  document.getElementById('regen-confirm-btn').innerHTML = '<i class="ti ti-key me-1"></i>Regenerate';
+  var modal = document.getElementById('regen-creds-modal');
+  if (window.bootstrap && window.bootstrap.Modal) {
+    new window.bootstrap.Modal(modal).show();
+  } else { modal.classList.add('show'); modal.style.display = 'block'; }
+}
+function executeRegenCreds() {
+  var user = document.getElementById('regen-ssh-user').value.trim();
+  var pass = document.getElementById('regen-ssh-pass').value;
+  if (!user) { alert('SSH username is required.'); return; }
+  var btn = document.getElementById('regen-confirm-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Regenerating...';
+  document.getElementById('regen-result').style.display = 'none';
+
+  fetch('/nodes/' + __regenNodeID + '/regenerate-all-credentials', {
+    method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: user, password: pass})
+  }).then(function(res) {
+    return res.json().then(function(d) {
+      var resultDiv = document.getElementById('regen-result');
+      if (d.error) {
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.textContent = 'Failed: ' + d.error;
+        resultDiv.style.display = '';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-key me-1"></i>Regenerate';
+        return;
+      }
+      resultDiv.className = 'alert alert-success';
+      resultDiv.innerHTML = '<strong>All credentials regenerated.</strong><br>New PSK stored in vault. SSH creds will arrive via next heartbeat.<pre class="mb-0 mt-2 small">' + escapeHtml(d.output || '') + '</pre>';
+      resultDiv.style.display = '';
+      btn.innerHTML = '<i class="ti ti-check me-1"></i>Done';
+    });
+  }).catch(function(err) {
+    var resultDiv = document.getElementById('regen-result');
+    resultDiv.className = 'alert alert-danger';
+    resultDiv.textContent = 'Error: ' + err.message;
+    resultDiv.style.display = '';
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-key me-1"></i>Regenerate';
+  });
+}
+</script>
 
 <!-- DR Snapshot Restore Modal -->
 <div class="modal modal-blur fade" id="dr-restore-modal" tabindex="-1" aria-hidden="true">

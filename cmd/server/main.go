@@ -375,6 +375,8 @@ func nodeRouter(s *web.Server) http.HandlerFunc {
 			s.HandleNodeDelete(w, r)
 		case "regenerate-psk":
 			s.HandleNodeRegeneratePSK(w, r)
+		case "regenerate-all-credentials":
+			s.HandleRegenerateAllCredentials(w, r)
 		case "generate-recovery-token":
 			s.HandleGenerateRecoveryToken(w, r)
 		case "psk":

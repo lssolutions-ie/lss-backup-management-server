@@ -53,7 +53,6 @@
 </div>
 {{else}}
 
-{{if .Nodes}}
 {{range $node := .Nodes}}
 <div class="card mb-3">
   <div class="card-header">
@@ -62,50 +61,46 @@
   </div>
   <div class="card-body">
     <div class="row g-3">
-      {{range $type, $value := $node.Entries}}
       <div class="col-md-6">
-        <label class="form-label small text-muted">{{vaultLabel $type}}</label>
+        <label class="form-label small text-muted">Pre-Shared Key</label>
         <div class="input-group">
-          <input type="password" class="form-control form-control-sm vault-value" value="{{$value}}" readonly>
+          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "psk"}}" data-node-id="{{$node.NodeID}}" data-entry-type="psk">
           <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
           <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
+          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
         </div>
       </div>
-      {{end}}
+      <div class="col-md-6">
+        <label class="form-label small text-muted">SSH Username</label>
+        <div class="input-group">
+          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "ssh_username"}}" data-node-id="{{$node.NodeID}}" data-entry-type="ssh_username">
+          <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
+          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small text-muted">SSH Password</label>
+        <div class="input-group">
+          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "ssh_password"}}" data-node-id="{{$node.NodeID}}" data-entry-type="ssh_password">
+          <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
+          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small text-muted">Encryption Password</label>
+        <div class="input-group">
+          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "encryption_password"}}" data-node-id="{{$node.NodeID}}" data-entry-type="encryption_password">
+          <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
+          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 {{end}}
-{{end}}
-
-<div class="card mb-3">
-  <div class="card-header"><h3 class="card-title"><i class="ti ti-plus me-2"></i>Add / Edit Credential</h3></div>
-  <div class="card-body">
-    <div class="mb-3">
-      <label class="form-label">Node</label>
-      <select id="vault-add-node" class="form-select">
-        <option value="">Select node...</option>
-      </select>
-    </div>
-    <div class="row mb-3">
-      <div class="col-md-6">
-        <label class="form-label">Credential Type</label>
-        <select id="vault-add-type" class="form-select">
-          <option value="psk">Pre-Shared Key</option>
-          <option value="ssh_username">SSH Username</option>
-          <option value="ssh_password">SSH Password</option>
-          <option value="encryption_password">Encryption Password</option>
-        </select>
-      </div>
-      <div class="col-md-6">
-        <label class="form-label">Value</label>
-        <input type="text" id="vault-add-value" class="form-control" placeholder="Enter credential value">
-        <small class="form-hint">Leave empty and save to delete the entry.</small>
-      </div>
-    </div>
-    <button class="btn btn-primary w-100" onclick="saveVaultEntry()"><i class="ti ti-device-floppy me-1"></i>Save Credential</button>
-  </div>
-</div>
 {{end}}
 
 <script>
@@ -137,38 +132,27 @@ function copyVaultValue(btn) {
   });
 }
 
-function saveVaultEntry() {
-  var nodeID = parseInt(document.getElementById('vault-add-node').value);
-  var entryType = document.getElementById('vault-add-type').value;
-  var value = document.getElementById('vault-add-value').value;
-  if (!nodeID) { alert('Please select a node.'); return; }
+function saveField(btn) {
+  var input = btn.closest('.input-group').querySelector('input');
+  var nodeID = parseInt(input.getAttribute('data-node-id'));
+  var entryType = input.getAttribute('data-entry-type');
+  var value = input.value;
+
+  var origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
   fetch('/vault/save', {
     method: 'POST', credentials: 'same-origin',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({node_id: nodeID, entry_type: entryType, value: value})
   }).then(function(r) { return r.json(); }).then(function(d) {
-    if (d.error) { alert('Error: ' + d.error); return; }
-    location.reload();
-  }).catch(function(err) { alert('Error: ' + err.message); });
+    if (d.error) { alert('Error: ' + d.error); btn.disabled = false; btn.innerHTML = origHTML; return; }
+    btn.innerHTML = '<i class="ti ti-check"></i>';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-success');
+    setTimeout(function() { btn.innerHTML = origHTML; btn.classList.remove('btn-success'); btn.classList.add('btn-primary'); btn.disabled = false; }, 2000);
+  }).catch(function(err) { alert('Error: ' + err.message); btn.disabled = false; btn.innerHTML = origHTML; });
 }
-
-// Populate node selector
-document.addEventListener('DOMContentLoaded', function() {
-  var sel = document.getElementById('vault-add-node');
-  if (!sel) return;
-  fetch('/api/v1/nodes-list', {credentials: 'same-origin'})
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .then(function(data) {
-      if (!data || !data.nodes) return;
-      data.nodes.forEach(function(n) {
-        var opt = document.createElement('option');
-        opt.value = n.id;
-        opt.textContent = n.name + ' (' + n.uid + ')';
-        sel.appendChild(opt);
-      });
-    })
-    .catch(function() {});
-});
 </script>
 {{end}}

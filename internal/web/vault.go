@@ -78,7 +78,7 @@ func (s *Server) HandleVault(w http.ResponseWriter, r *http.Request) {
 			for _, n := range nodes {
 				entries, err := s.DB.GetVaultEntries(n.ID)
 				if err != nil {
-					continue
+					entries = nil
 				}
 				nd := vaultNodeData{
 					NodeID:      n.ID,
@@ -93,9 +93,7 @@ func (s *Server) HandleVault(w http.ResponseWriter, r *http.Request) {
 						nd.Entries[e.EntryType] = plain
 					}
 				}
-				if len(nd.Entries) > 0 {
-					pd.Nodes = append(pd.Nodes, nd)
-				}
+				pd.Nodes = append(pd.Nodes, nd)
 			}
 		}
 	}

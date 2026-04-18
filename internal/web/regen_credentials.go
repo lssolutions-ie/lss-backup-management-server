@@ -129,6 +129,37 @@ func (s *Server) HandleRegenerateAllCredentials(w http.ResponseWriter, r *http.R
 
 	lg.Info("regen creds: all credentials regenerated", "node_id", node.ID, "node_name", node.Name)
 
+	// Parse CLI output and store credentials in vault immediately
+	parseAndStore := func(output string) {
+		lines := strings.Split(output, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "SSH User:") {
+				val := strings.TrimSpace(strings.TrimPrefix(line, "SSH User:"))
+				if val != "" {
+					if enc, err := crypto.VaultEncrypt(val, s.AppKey); err == nil {
+						s.DB.UpsertVaultEntry(node.ID, "ssh_username", enc)
+					}
+				}
+			} else if strings.HasPrefix(line, "SSH Pass:") {
+				val := strings.TrimSpace(strings.TrimPrefix(line, "SSH Pass:"))
+				if val != "" {
+					if enc, err := crypto.VaultEncrypt(val, s.AppKey); err == nil {
+						s.DB.UpsertVaultEntry(node.ID, "ssh_password", enc)
+					}
+				}
+			} else if strings.HasPrefix(line, "Enc Pass:") {
+				val := strings.TrimSpace(strings.TrimPrefix(line, "Enc Pass:"))
+				if val != "" {
+					if enc, err := crypto.VaultEncrypt(val, s.AppKey); err == nil {
+						s.DB.UpsertVaultEntry(node.ID, "encryption_password", enc)
+					}
+				}
+			}
+		}
+	}
+	parseAndStore(string(output))
+
 	s.auditServer(r, "all_credentials_regenerated", "critical", "regenerate", "node",
 		fmt.Sprintf("%d", node.ID),
 		"All credentials regenerated for node "+node.Name+" (PSK + SSH + encryption password)", nil)

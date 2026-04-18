@@ -11,8 +11,8 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.21.0
-**Paired CLI:** v2.10.2
+**Version:** v1.27.3
+**Paired CLI:** v2.12.0
 **Module:** `github.com/lssolutions-ie/lss-management-server`
 **Go version:** 1.25.0
 
@@ -241,6 +241,10 @@ MySQL with 42 migrations:
 | 040 | update_check_interval_minutes + latest_server_version on server_tuning — configurable version checking |
 | 041 | node_install_tokens table — one-command node deployment + recovery tokens |
 | 042 | deletion_phase + secrets_export_enc + deletion_retain_data on nodes — graceful node deletion |
+| 043 | server_backup_enabled/interval/status columns on server_tuning — server auto-backup |
+| 044 | DR config split: separate server/node restic passwords + retention (keep_last/keep_daily) |
+| 045 | latest_server_release_notes on server_tuning — GitHub release notes display |
+| 046 | latest_cli_release_notes on server_tuning — CLI release notes display |
 
 ---
 
@@ -720,16 +724,50 @@ Multi-step deletion flow with secret export:
 
 ---
 
+## Server Auto-Backup (v1.26.0)
+
+Background worker backs up the server itself to S3 via restic every 24h (configurable). Includes mysqldump, secret.key, config.toml, and .cast session recordings. Stored at `s3://{bucket}/lss-backup-management-server/`.
+
+Separate restic passwords and retention settings for server vs node backups. DR settings page split into 3 cards: Global S3, Server Backup, Node Backup.
+
+### Restore from Snapshot
+"Restore From Snapshot" button on DR settings page lists all server snapshots from S3. Selecting one restores the database, encryption key, and recordings. Sessions wiped, 2FA cleared, superadmin forced to re-setup. Audit entry injected post-restore.
+
+---
+
+## Server Self-Update (v1.26.5)
+
+One-click "Update Server Now" on Software Updates page. Downloads latest release binary from GitHub, stages to `/var/lib/lss-management/update-staging`, calls sudo helper script which uses `systemd-run` to create a transient unit (survives service restart under ProtectSystem).
+
+Requires:
+- `/usr/local/bin/lss-apply-update.sh` (helper script)
+- `/etc/sudoers.d/lss-update` (NOPASSWD rule for the helper)
+- `NoNewPrivileges=false` in systemd unit
+
+Auto-reload: after clicking update, page polls every 2s and reloads when server comes back.
+
+---
+
+## Node DR Restore (v1.26.6, paired with CLI v2.12.0)
+
+"Restore from Snapshot" in node Actions dropdown. Lists node's DR snapshots from S3 (server-side, no SSH needed for listing). SSH credentials required for the actual restore — runs `lss-backup-cli --dr-restore --snapshot {id}` via tunnel with `nohup` so it survives the tunnel drop when the daemon restarts.
+
+---
+
+## Release Notes Display (v1.27.1)
+
+Version checker uses GitHub releases API (not tags) for both CLI and server. Release notes stored in `server_tuning` and displayed on Software Updates page when update is available.
+
+---
+
 ## Roadmap
 
 Most features shipped. Remaining:
 
-1. **(LAST EVER)** Notification stack — SMTP, webhook, escalation.
-2. Run `install.sh` on a fresh Ubuntu 24.04 VM (code-reviewed, never executed).
-3. Off-server audit mirror (syslog emitter) — low priority with HMAC chain in place.
-4. Fix host audit journalctl worker — SSH unit name varies by Ubuntu version.
-5. Node decommission signal (soft delete before hard delete — CLI informed gracefully).
+1. Run `install.sh` on a fresh Ubuntu 24.04 VM (code-reviewed, never executed).
+2. Fix host audit journalctl worker — SSH unit name varies by Ubuntu version.
+3. **(LAST EVER)** Notification stack — SMTP, webhook, escalation.
 
 ---
 
-_Last updated: 2026-04-17 (v1.21.0)_
+_Last updated: 2026-04-17 (v1.27.3)_

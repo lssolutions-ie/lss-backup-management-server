@@ -78,8 +78,8 @@ step 2 "Installing system dependencies"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y mysql-server nginx git openssl curl ca-certificates
-info "Installed mysql-server, nginx, git, openssl, curl"
+apt-get install -y mysql-server nginx git openssl curl ca-certificates cron restic
+info "Installed mysql-server, nginx, git, openssl, curl, cron, restic"
 
 # Go check / install
 install_go() {
@@ -488,8 +488,8 @@ fi
 
 # Wire a daily cron entry if not already present.
 CRONLINE='30 3 * * * /usr/local/bin/lss-mgmt-backup.sh >> /var/log/lss-mgmt-backup.log 2>&1'
-if ! crontab -u root -l 2>/dev/null | grep -qF "lss-mgmt-backup.sh"; then
-    ( crontab -u root -l 2>/dev/null; echo "$CRONLINE" ) | crontab -u root -
+if ! (crontab -u root -l 2>/dev/null || true) | grep -qF "lss-mgmt-backup.sh"; then
+    ( (crontab -u root -l 2>/dev/null || true); echo "$CRONLINE" ) | crontab -u root -
     info "Cron entry installed (03:30 daily)"
 else
     info "Cron entry already present"

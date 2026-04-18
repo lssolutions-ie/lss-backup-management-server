@@ -18,9 +18,8 @@ StandardError=journal
 SyslogIdentifier=lss-management
 
 # Hardening
-NoNewPrivileges=true
+NoNewPrivileges=false
 PrivateTmp=true
-ProtectSystem=strict
 ReadWritePaths=/etc/lss-management /var/log/lss-management /var/lib/lss-management
 
 [Install]

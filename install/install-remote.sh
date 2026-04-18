@@ -27,6 +27,9 @@ die()   { error "$*"; exit 1; }
 
 GITHUB_REPO="lssolutions-ie/lss-backup-management-server"
 
+# Domain can be passed as first argument or LSS_DOMAIN env var
+DOMAIN="${1:-${LSS_DOMAIN:-}}"
+
 # ─── Constants ───────────────────────────────────────────────────────────────
 SERVICE_USER="lss-management"
 CONFIG_DIR="/etc/lss-management"
@@ -330,10 +333,18 @@ info "systemd unit installed and enabled"
 step 10 "Configuring nginx"
 
 if [[ ! -f "$NGINX_AVAILABLE" ]]; then
-    read -rp "Enter the domain name for this server (e.g. backup.example.com): " DOMAIN
+    if [[ -z "$DOMAIN" ]]; then
+        # Try reading from terminal (won't work when piped from curl)
+        if [[ -t 0 ]]; then
+            read -rp "Enter the domain name for this server (e.g. backup.example.com): " DOMAIN
+        else
+            die "Domain name required. Usage: curl ... | sudo bash -s -- yourdomain.com"
+        fi
+    fi
     if [[ -z "$DOMAIN" ]]; then
         die "Domain name cannot be empty."
     fi
+    info "Configuring nginx for: $DOMAIN"
 
     cat > "$NGINX_AVAILABLE" <<NGINX
 server {

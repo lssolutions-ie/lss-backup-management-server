@@ -70,7 +70,7 @@ func (s *Server) HandleGroupNew(w http.ResponseWriter, r *http.Request) {
 		"Created client group "+name,
 		map[string]string{"name": name, "rank": rank})
 
-	setFlash(w, "Group created.")
+	setFlash(w, "Client created.")
 	http.Redirect(w, r, "/groups", http.StatusSeeOther)
 }
 
@@ -119,7 +119,7 @@ func (s *Server) HandleGroupEdit(w http.ResponseWriter, r *http.Request) {
 		"Updated client group "+name,
 		map[string]string{"name": name, "rank": rank})
 
-	setFlash(w, "Group updated.")
+	setFlash(w, "Client updated.")
 	http.Redirect(w, r, "/groups", http.StatusSeeOther)
 }
 
@@ -162,7 +162,7 @@ func (s *Server) HandleGroupDelete(w http.ResponseWriter, r *http.Request) {
 		"Deleted client group "+group.Name,
 		map[string]string{"name": group.Name})
 
-	setFlash(w, "Group deleted.")
+	setFlash(w, "Client deleted.")
 	http.Redirect(w, r, "/groups", http.StatusSeeOther)
 }
 

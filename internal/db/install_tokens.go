@@ -122,8 +122,8 @@ func (d *DB) PruneExpiredPendingNodes() (int64, error) {
 // Name is set to the UID initially; the first heartbeat populates the real hostname.
 func (d *DB) CreatePendingNode(uid string, pskEncrypted string, clientGroupID uint64) (uint64, error) {
 	res, err := d.db.Exec(
-		`INSERT INTO nodes (uid, name, client_group_id, psk_encrypted, hw_storage_json, dr_last_error)
-		 VALUES (?, ?, ?, ?, '[]', '')`,
+		`INSERT INTO nodes (uid, name, client_group_id, psk_encrypted, hw_storage_json, dr_last_error, secrets_export_enc)
+		 VALUES (?, ?, ?, ?, '[]', '', '')`,
 		uid, uid, clientGroupID, pskEncrypted,
 	)
 	if err != nil {

@@ -43,7 +43,7 @@ func TestClassifyJournalEntry_Sudo(t *testing.T) {
 	e := journalEntry{
 		Unit:             "",
 		SyslogIdentifier: "sudo",
-		Message:          "ladia : TTY=pts/0 ; PWD=/home/ladia ; USER=root ; COMMAND=/usr/bin/systemctl restart lss-management",
+		Message:          "ladia : TTY=pts/0 ; PWD=/home/ladia ; USER=root ; COMMAND=/usr/bin/systemctl restart lss-backup",
 	}
 	cat, sev, actor, _, details := classifyJournalEntry(e)
 	if cat != "host_sudo" {
@@ -55,7 +55,7 @@ func TestClassifyJournalEntry_Sudo(t *testing.T) {
 	if actor != "user:ladia" {
 		t.Errorf("actor = %q, want user:ladia", actor)
 	}
-	if details["user"] != "ladia" || details["command"] != "/usr/bin/systemctl restart lss-management" {
+	if details["user"] != "ladia" || details["command"] != "/usr/bin/systemctl restart lss-backup" {
 		t.Errorf("details unexpected: %+v", details)
 	}
 }
@@ -64,12 +64,12 @@ func TestClassifyJournalEntry_ServiceLifecycle(t *testing.T) {
 	cases := []struct {
 		msg, wantCat, wantSev string
 	}{
-		{"Started lss-management.service - LSS Management Server.", "host_service_started", "info"},
-		{"Stopping lss-management.service - LSS Management Server...", "host_service_stopped", "warn"},
-		{"lss-management.service: Failed with result 'exit-code'.", "host_service_failed", "critical"},
+		{"Started lss-backup.service - LSS Management Server.", "host_service_started", "info"},
+		{"Stopping lss-backup.service - LSS Management Server...", "host_service_stopped", "warn"},
+		{"lss-backup.service: Failed with result 'exit-code'.", "host_service_failed", "critical"},
 	}
 	for _, tc := range cases {
-		e := journalEntry{Unit: "lss-management.service", Message: tc.msg}
+		e := journalEntry{Unit: "lss-backup.service", Message: tc.msg}
 		cat, sev, _, _, _ := classifyJournalEntry(e)
 		if cat != tc.wantCat || sev != tc.wantSev {
 			t.Errorf("%q: got (%q, %q), want (%q, %q)", tc.msg, cat, sev, tc.wantCat, tc.wantSev)

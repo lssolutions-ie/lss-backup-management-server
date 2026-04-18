@@ -521,7 +521,7 @@ func (d *DB) ListTunnelPublicKeys() ([]string, error) {
 
 // WriteTunnelAuthorizedKeys atomically writes every registered tunnel public
 // key to path, one per line. The file is mode 0644 and owned by whichever
-// user the process runs as — on the production server that's lss-management,
+// user the process runs as — on the production server that's lss-backup,
 // which matches the AuthorizedKeysCommand script's expected readable source.
 func (d *DB) WriteTunnelAuthorizedKeys(path string) error {
 	keys, err := d.ListTunnelPublicKeys()

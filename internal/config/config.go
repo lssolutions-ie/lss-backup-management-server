@@ -39,7 +39,7 @@ func Load(path string) (*Config, error) {
 	cfg.Server.ListenAddr = "127.0.0.1:8080"
 	cfg.Session.CookieName = "lss_session"
 	cfg.Session.MaxAgeHours = 24
-	cfg.Terminal.SessionsDir = "/var/lib/lss-management/sessions"
+	cfg.Terminal.SessionsDir = "/var/lib/lss-backup/sessions"
 
 	var section string
 	for _, raw := range strings.Split(string(data), "\n") {

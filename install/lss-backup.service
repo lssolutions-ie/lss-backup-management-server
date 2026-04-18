@@ -5,22 +5,22 @@ Requires=mysql.service
 
 [Service]
 Type=simple
-User=lss-management
-Group=lss-management
+User=lss-backup
+Group=lss-backup
 ExecStart=/usr/local/bin/lss-backup-server
-WorkingDirectory=/etc/lss-management
+WorkingDirectory=/etc/lss-backup
 Environment=LSS_ENV=production
-Environment=LSS_CONFIG=/etc/lss-management/config.toml
+Environment=LSS_CONFIG=/etc/lss-backup/config.toml
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=lss-management
+SyslogIdentifier=lss-backup
 
 # Hardening
 NoNewPrivileges=false
 PrivateTmp=true
-ReadWritePaths=/etc/lss-management /var/log/lss-management /var/lib/lss-management
+ReadWritePaths=/etc/lss-backup /var/log/lss-backup /var/lib/lss-backup
 
 [Install]
 WantedBy=multi-user.target

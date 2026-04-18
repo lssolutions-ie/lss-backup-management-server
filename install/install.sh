@@ -29,17 +29,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ─── Constants ───────────────────────────────────────────────────────────────
-SERVICE_USER="lss-management"
-CONFIG_DIR="/etc/lss-management"
-STATE_DIR="/var/lib/lss-management"
-LOG_DIR="/var/log/lss-management"
+SERVICE_USER="lss-backup"
+CONFIG_DIR="/etc/lss-backup"
+STATE_DIR="/var/lib/lss-backup"
+LOG_DIR="/var/log/lss-backup"
 SECRET_KEY_FILE="$CONFIG_DIR/secret.key"
 DB_PASSWORD_FILE="$CONFIG_DIR/db.password"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 BINARY_PATH="/usr/local/bin/lss-backup-server"
-SYSTEMD_UNIT="/etc/systemd/system/lss-management.service"
-NGINX_AVAILABLE="/etc/nginx/sites-available/lss-management"
-NGINX_ENABLED="/etc/nginx/sites-enabled/lss-management"
+SYSTEMD_UNIT="/etc/systemd/system/lss-backup.service"
+NGINX_AVAILABLE="/etc/nginx/sites-available/lss-backup"
+NGINX_ENABLED="/etc/nginx/sites-enabled/lss-backup"
 TUNNEL_USER="lss-tunnel"
 TUNNEL_AUTHKEYS_FILE="$STATE_DIR/tunnel_authorized_keys"
 TUNNEL_AUTHKEYS_SCRIPT="/usr/local/bin/lss-tunnel-authkeys.sh"
@@ -190,13 +190,13 @@ user_exists="$(mysql -N -B -e \
     "SELECT COUNT(*) FROM mysql.user WHERE user='lss_mgmt' AND host='localhost';")"
 
 if [[ "$user_exists" == "0" ]]; then
-    info "Creating MySQL user lss_mgmt and database lss_management"
+    info "Creating MySQL user lss_mgmt and database lss_backup"
     DB_PASSWORD="$(openssl rand -base64 24)"
 
     mysql <<SQL
 CREATE USER IF NOT EXISTS 'lss_mgmt'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
-CREATE DATABASE IF NOT EXISTS lss_management CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-GRANT ALL PRIVILEGES ON lss_management.* TO 'lss_mgmt'@'localhost';
+CREATE DATABASE IF NOT EXISTS lss_backup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON lss_backup.* TO 'lss_mgmt'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 
@@ -213,7 +213,7 @@ else
     fi
     DB_PASSWORD="$(cat "$DB_PASSWORD_FILE")"
     # Ensure the database exists (idempotent)
-    mysql -e "CREATE DATABASE IF NOT EXISTS lss_management CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    mysql -e "CREATE DATABASE IF NOT EXISTS lss_backup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -273,7 +273,7 @@ chmod 700 "$TUNNEL_HOME/.ssh"
 chown "$TUNNEL_USER:$TUNNEL_USER" "$TUNNEL_HOME/.ssh/authorized_keys"
 chmod 600 "$TUNNEL_HOME/.ssh/authorized_keys"
 
-# authorized_keys file maintained by lss-management.
+# authorized_keys file maintained by lss-backup.
 touch "$TUNNEL_AUTHKEYS_FILE"
 chown "$SERVICE_USER:$SERVICE_USER" "$TUNNEL_AUTHKEYS_FILE"
 chmod 644 "$TUNNEL_AUTHKEYS_FILE"
@@ -282,11 +282,11 @@ chmod 644 "$TUNNEL_AUTHKEYS_FILE"
 cat > "$TUNNEL_AUTHKEYS_SCRIPT" <<'SCRIPT'
 #!/bin/bash
 # Invoked by sshd for the lss-tunnel user. Emits the current authorized_keys
-# contents from the file maintained by the lss-management service.
+# contents from the file maintained by the lss-backup service.
 if [[ "$1" != "lss-tunnel" ]]; then
     exit 0
 fi
-cat /var/lib/lss-management/tunnel_authorized_keys 2>/dev/null
+cat /var/lib/lss-backup/tunnel_authorized_keys 2>/dev/null
 SCRIPT
 chown root:root "$TUNNEL_AUTHKEYS_SCRIPT"
 chmod 0755 "$TUNNEL_AUTHKEYS_SCRIPT"
@@ -342,7 +342,7 @@ chmod 755 "$BINARY_PATH"
 info "Binary installed at $BINARY_PATH"
 
 # Install runtime assets (templates, migrations, static) into the working dir.
-# The Go server reads these relative to its WorkingDirectory (/etc/lss-management).
+# The Go server reads these relative to its WorkingDirectory (/etc/lss-backup).
 info "Installing runtime assets to $CONFIG_DIR"
 for asset in templates migrations static; do
     if [[ -d "$REPO_ROOT/$asset" ]]; then
@@ -365,7 +365,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 listen_addr = "127.0.0.1:8080"
 
 [database]
-dsn = "lss_mgmt:${DB_PASSWORD}@tcp(localhost:3306)/lss_management?parseTime=true&loc=Local"
+dsn = "lss_mgmt:${DB_PASSWORD}@tcp(localhost:3306)/lss_backup?parseTime=true&loc=Local"
 
 [security]
 secret_key_file = "$SECRET_KEY_FILE"
@@ -389,12 +389,12 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 step 9 "Installing systemd unit"
 
-cp "$REPO_ROOT/install/lss-management.service" "$SYSTEMD_UNIT"
+cp "$REPO_ROOT/install/lss-backup.service" "$SYSTEMD_UNIT"
 chown root:root "$SYSTEMD_UNIT"
 chmod 644 "$SYSTEMD_UNIT"
 
 systemctl daemon-reload
-systemctl enable lss-management --quiet
+systemctl enable lss-backup --quiet
 info "systemd unit installed and enabled"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -432,30 +432,30 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 11 — Start/restart the service
 # ═════════════════════════════════════════════════════════════════════════════
-step 11 "Starting lss-management service"
+step 11 "Starting lss-backup service"
 
-if systemctl is-active --quiet lss-management; then
-    systemctl restart lss-management
+if systemctl is-active --quiet lss-backup; then
+    systemctl restart lss-backup
     info "Service restarted"
 else
-    systemctl start lss-management
+    systemctl start lss-backup
     info "Service started"
 fi
 
 # First-run can take a while — it applies all migrations on startup. Poll for
 # up to 30s rather than guessing with sleep 3.
 for i in {1..30}; do
-    if systemctl is-active --quiet lss-management; then
+    if systemctl is-active --quiet lss-backup; then
         break
     fi
     sleep 1
 done
 
-if systemctl is-active --quiet lss-management; then
+if systemctl is-active --quiet lss-backup; then
     info "${C_GREEN}Service is running${C_RESET}"
 else
     error "Service failed to start within 30s. Run:"
-    error "    journalctl -u lss-management -n 50 --no-pager"
+    error "    journalctl -u lss-backup -n 50 --no-pager"
     die "Installation incomplete"
 fi
 
@@ -513,10 +513,10 @@ cat <<SUMMARY
  LSS Backup Server — Installation Complete
 ============================================================
  Version:    $VERSION
- Service:    lss-management (systemd, enabled)
+ Service:    lss-backup (systemd, enabled)
  Binary:     $BINARY_PATH
  Config:     $CONFIG_FILE
- Logs:       journalctl -u lss-management -f
+ Logs:       journalctl -u lss-backup -f
 
  Next steps:
    1. Ensure DNS A record for $DISPLAY_DOMAIN points to this server.

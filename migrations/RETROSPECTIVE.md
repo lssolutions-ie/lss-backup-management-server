@@ -62,7 +62,7 @@ Pair this file with `README.md` (convention) and `CLAUDE.md` § Database (the ta
 | 032 | `032_terminal_recording.sql` | Toggle (`terminal_recording_enabled`, default ON) and retention (`terminal_recording_retention_days`, default 30) for asciinema v2 session recording. The actual `.cast` files live on disk under `cfg.Terminal.SessionsDir`, not in the database. |
 | 033 | `033_silent_node_alarm.sql` | `silent_alert_threshold_minutes` (default 7). Aggressive companion to the existing 10-minute offline check — fires within 1-2 missed heartbeats so an attacker who stops the daemon doesn't get a clean window. |
 | 034 | `034_anomaly_resolution_note.sql` | `resolution_note` on `job_anomalies`. Captured at ack time, surfaced as a tooltip on the Ack'd badge — closes the "why was this acked?" forensics question. Free text up to 500 chars. |
-| 035 | `035_host_audit.sql` | Extends `audit_log.source` ENUM with `'host'` and adds `host_audit_state` for the journalctl cursor. Powers the host-audit worker that captures sshd logins, sudo invocations, and lss-management.service lifecycle into the unified audit feed. |
+| 035 | `035_host_audit.sql` | Extends `audit_log.source` ENUM with `'host'` and adds `host_audit_state` for the journalctl cursor. Powers the host-audit worker that captures sshd logins, sudo invocations, and lss-backup.service lifecycle into the unified audit feed. |
 
 ## v1.15.x — disaster recovery
 

@@ -89,7 +89,7 @@ func main() {
 	// for the restricted tunnel user. Overridable via LSS_TUNNEL_AUTHKEYS_FILE.
 	tunnelAuthKeysFile := os.Getenv("LSS_TUNNEL_AUTHKEYS_FILE")
 	if tunnelAuthKeysFile == "" {
-		tunnelAuthKeysFile = "/var/lib/lss-management/tunnel_authorized_keys"
+		tunnelAuthKeysFile = "/var/lib/lss-backup/tunnel_authorized_keys"
 	}
 
 	apiHandler := &api.Handler{

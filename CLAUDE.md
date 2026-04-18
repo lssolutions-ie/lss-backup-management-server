@@ -119,7 +119,7 @@ Configured in `/etc/ssh/sshd_config.d/lss-tunnel.conf`:
 ### Authorized Keys Management
 
 - Keys stored in DB column `nodes.tunnel_public_key`
-- Written atomically to `/var/lib/lss-management/tunnel_authorized_keys` (tempfile + rename)
+- Written atomically to `/var/lib/lss-backup/tunnel_authorized_keys` (tempfile + rename)
 - sshd reads via `AuthorizedKeysCommand` script (not from `~/.ssh/authorized_keys`)
 - Regenerated on startup and whenever a node's key changes via heartbeat
 
@@ -478,21 +478,21 @@ Version is set via `-ldflags "-X main.Version=vX.Y.Z"` — defaults to `"dev"` i
 
 ```bash
 # 1. Build
-GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=vX.Y.Z" -o /tmp/lss-management ./cmd/server
+GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=vX.Y.Z" -o /tmp/lss-backup ./cmd/server
 
 # 2. Stop, copy, start (must stop first — can't overwrite running binary)
-ssh root@10.0.0.123 'systemctl stop lss-management'
-scp /tmp/lss-management root@10.0.0.123:/usr/local/bin/lss-backup-server
-ssh root@10.0.0.123 'systemctl start lss-management'
+ssh root@10.0.0.123 'systemctl stop lss-backup'
+scp /tmp/lss-backup root@10.0.0.123:/usr/local/bin/lss-backup-server
+ssh root@10.0.0.123 'systemctl start lss-backup'
 ```
 
-**Important:** The binary is `/usr/local/bin/lss-backup-server` (NOT `lss-management`).
+**Important:** The binary is `/usr/local/bin/lss-backup-server` (NOT `lss-backup`).
 
 ---
 
 ## Nginx WebSocket Configuration
 
-`/etc/nginx/sites-enabled/lss-management` has two location blocks:
+`/etc/nginx/sites-enabled/lss-backup` has two location blocks:
 
 ```nginx
 location /ws/ {
@@ -532,7 +532,7 @@ Without these, HAProxy kills idle WebSocket connections after its default timeou
 
 ## Things To Watch Out For
 
-- **Binary filename:** systemd runs `lss-backup-server`, not `lss-management`. Deploy to the right path.
+- **Binary filename:** systemd runs `lss-backup-server`, not `lss-backup`. Deploy to the right path.
 - **nginx /ws/ block:** Without WebSocket header pass-through, ALL tunnel connections fail with "upgrade token not found in Connection header". This was the #1 issue during initial tunnel debugging.
 - **ForceCommand:** Must be `/usr/bin/sleep infinity`, not `/bin/false`. False exits immediately, killing SSH sessions and their reverse port forwards.
 - **HAProxy timeout tunnel:** Without this, HAProxy kills WebSocket connections after ~30 seconds of "idle" (no HTTP-level activity).
@@ -606,7 +606,7 @@ Every dashboard SSH session via `/ws/terminal` is teed into a `.cast` file when 
 
 ### How
 - `internal/recorder/recorder.go` writes asciinema v2 format: header line + `[delta_seconds, "o"|"i"|"r", data]` frames per event.
-- Storage: `cfg.Terminal.SessionsDir` (default `/var/lib/lss-management/sessions/`), one `.cast` per session named `<unix_nano>-<username>-<node_id>.cast`.
+- Storage: `cfg.Terminal.SessionsDir` (default `/var/lib/lss-backup/sessions/`), one `.cast` per session named `<unix_nano>-<username>-<node_id>.cast`.
 - The websocket pump in `terminal.go` calls `rec.WriteOutput(b)` on SSH→browser bytes, `rec.WriteInput(b)` on browser→SSH, and `rec.Resize(cols, rows)` on resize messages. Recorder is `nil` when disabled — calls are zero-cost no-ops.
 - Audit row `terminal_opened` carries `session_id` + `session_file` in details. Replay button on the audit page links to `/audit/session/{filename}`.
 - `/audit/session/{filename}` (superadmin only) renders an in-browser asciinema-player viewer (CDN). `/audit/session/{filename}.raw` serves the raw `.cast` for download. Loading the replay page itself emits a `session_replay` audit row (severity warn).
@@ -737,7 +737,7 @@ Separate restic passwords and retention settings for server vs node backups. DR 
 
 ## Server Self-Update (v1.26.5)
 
-One-click "Update Server Now" on Software Updates page. Downloads latest release binary from GitHub, stages to `/var/lib/lss-management/update-staging`, calls sudo helper script which uses `systemd-run` to create a transient unit (survives service restart under ProtectSystem).
+One-click "Update Server Now" on Software Updates page. Downloads latest release binary from GitHub, stages to `/var/lib/lss-backup/update-staging`, calls sudo helper script which uses `systemd-run` to create a transient unit (survives service restart under ProtectSystem).
 
 Requires:
 - `/usr/local/bin/lss-apply-update.sh` (helper script)

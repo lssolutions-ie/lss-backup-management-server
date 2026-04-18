@@ -183,9 +183,9 @@ Last verified: 2026-04-17 (v1.21.9)
 | `host_ssh_login` | info | SSH login success | journalctl SYSLOG_IDENTIFIER=sshd |
 | `host_ssh_login_failed` | warn | SSH login failure | journalctl SYSLOG_IDENTIFIER=sshd |
 | `host_sudo` | warn | sudo command executed | journalctl SYSLOG_IDENTIFIER=sudo |
-| `host_service_started` | info | lss-management.service started | journalctl _SYSTEMD_UNIT |
-| `host_service_stopped` | warn | lss-management.service stopped | journalctl _SYSTEMD_UNIT |
-| `host_service_failed` | critical | lss-management.service crashed | journalctl _SYSTEMD_UNIT |
+| `host_service_started` | info | lss-backup.service started | journalctl _SYSTEMD_UNIT |
+| `host_service_stopped` | warn | lss-backup.service stopped | journalctl _SYSTEMD_UNIT |
+| `host_service_failed` | critical | lss-backup.service crashed | journalctl _SYSTEMD_UNIT |
 
 ---
 

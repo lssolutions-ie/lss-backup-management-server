@@ -1,6 +1,6 @@
 -- Migration 035: extend audit_log.source enum to include 'host' for events
 -- collected from the management server's own systemd journal (sshd, sudo,
--- lss-management.service lifecycle).
+-- lss-backup.service lifecycle).
 
 ALTER TABLE audit_log
     MODIFY COLUMN source ENUM('server','node','host') NOT NULL;

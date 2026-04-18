@@ -22,15 +22,17 @@
     <div class="col-auto">
       <div class="btn-list flex-nowrap">
         {{if .User.IsSuperAdmin}}
+        <span id="dr-badge">
         {{if not .Node.DREnabled}}
-        <span class="badge badge-outline text-muted fs-5 px-3 py-2" title="Disaster Recovery disabled"><i class="ti ti-shield-off me-1"></i>DR Off</span>
+        <span class="btn btn-light pe-none" title="Disaster Recovery disabled"><i class="ti ti-shield-off me-1"></i>DR Off</span>
         {{else if eq .Node.DRLastStatus "success"}}
-        <span class="badge bg-success-lt text-success fs-5 px-3 py-2" title="DR: last backup OK"><i class="ti ti-shield-check me-1"></i>DR OK</span>
+        <span class="btn btn-success-lt pe-none" style="background-color:rgba(47,179,68,.1);color:#2fb344;border:0;" title="DR: last backup OK"><i class="ti ti-shield-check me-1"></i>DR OK</span>
         {{else if eq .Node.DRLastStatus "failure"}}
-        <span class="badge bg-danger-lt text-danger fs-5 px-3 py-2" title="DR: last backup failed"><i class="ti ti-shield-x me-1"></i>DR Failed</span>
+        <span class="btn btn-danger-lt pe-none" style="background-color:rgba(214,57,57,.1);color:#d63939;border:0;" title="DR: last backup failed"><i class="ti ti-shield-x me-1"></i>DR Failed</span>
         {{else}}
-        <span class="badge bg-warning-lt text-warning fs-5 px-3 py-2" title="DR: enabled, awaiting first backup"><i class="ti ti-shield-check me-1"></i>DR Pending</span>
+        <span class="btn btn-warning-lt pe-none" style="background-color:rgba(247,103,7,.1);color:#f76707;border:0;" title="DR: enabled, awaiting first backup"><i class="ti ti-shield-check me-1"></i>DR Pending</span>
         {{end}}
+        </span>
         {{end}}
 
         <a href="/nodes/{{.Node.ID}}/anomalies" class="btn btn-outline-danger"><i class="ti ti-shield-x me-1"></i>Security</a>
@@ -669,18 +671,18 @@ function renderJobHistory(row) {
     }
     if (!errCell) errCell = '—';
     var anomCell = '—';
+    var anomURL = '/anomalies?node=' + __nodeID + '&job=' + encodeURIComponent(row.getAttribute('data-job-id'));
     if (e.anomaly_rows && e.anomaly_rows.length > 0) {
       anomCell = e.anomaly_rows.map(function(ar){
         var label = ar.type === 'snapshot_drop' ? 'Snapshots' : ar.type === 'files_drop' ? 'Files' : ar.type === 'bytes_drop' ? 'Bytes' : ar.type;
         var cls = ar.acknowledged ? 'text-bg-secondary' : 'text-bg-danger';
-        var ttl = ar.acknowledged ? 'Acknowledged — click to unacknowledge' : 'Click to acknowledge';
         var icon = ar.acknowledged ? 'ti-shield-check' : 'ti-shield-x';
-        return '<a href="#" class="jh-anom-toggle badge ' + cls + ' me-1 text-decoration-none" data-id="' + ar.id + '" data-acked="' + (ar.acknowledged ? '1' : '0') + '" title="' + ttl + '"><i class="ti ' + icon + '"></i> ' + label + '</a>';
+        return '<a href="' + anomURL + '" class="badge ' + cls + ' me-1 text-decoration-none" title="View in Anomalies"><i class="ti ' + icon + '"></i> ' + label + '</a>';
       }).join('');
     } else if (e.anomalies && e.anomalies.length > 0) {
       anomCell = e.anomalies.map(function(a){
         var label = a === 'snapshot_drop' ? 'Snapshots' : a === 'files_drop' ? 'Files' : a === 'bytes_drop' ? 'Bytes' : a;
-        return '<span class="badge text-bg-danger me-1" title="' + escapeHtml(a) + '"><i class="ti ti-shield-x"></i> ' + label + '</span>';
+        return '<a href="' + anomURL + '" class="badge text-bg-danger me-1 text-decoration-none" title="View in Anomalies"><i class="ti ti-shield-x"></i> ' + label + '</a>';
       }).join('');
     }
     html += '<td>' + anomCell + '</td>';
@@ -689,24 +691,6 @@ function renderJobHistory(row) {
   });
   html += '</tbody></table>';
   results.innerHTML = html;
-
-  // Wire up ack/unack on anomaly badges — update in place, no full reload.
-  results.querySelectorAll('.jh-anom-toggle').forEach(function(a){
-    a.addEventListener('click', function(ev){
-      ev.preventDefault();
-      var id = a.getAttribute('data-id');
-      var acked = a.getAttribute('data-acked') === '1';
-      var url = '/anomalies/' + id + (acked ? '/unack' : '/ack');
-      var fd = new FormData();
-      fd.append('csrf_token', __csrf);
-      fetch(url, { method: 'POST', body: fd, credentials: 'same-origin', redirect: 'manual' })
-        .then(function(){
-          loadJobHistory(row, row.getAttribute('data-job-id'), true);
-          refreshShieldsForNode();
-        })
-        .catch(function(err){ console.error('ack failed', err); });
-    });
-  });
 
   // Wire up sort handlers on the freshly rendered headers.
   results.querySelectorAll('.jh-sort').forEach(function(th){
@@ -963,19 +947,32 @@ function triggerDRNow(nodeID, nodeName) {
   }, __csrf);
 }
 function runDRNow(nodeID, nodeName, user, pass) {
+  var badge = document.getElementById('dr-badge');
+  var origBadge = badge ? badge.innerHTML : '';
+  if (badge) badge.innerHTML = '<span class="btn btn-primary-lt pe-none" style="background-color:rgba(32,107,196,.1);color:#206bc4;border:0;"><span class="spinner-border spinner-border-sm me-1"></span>DR Running...</span>';
+
   fetch('/nodes/' + nodeID + '/dr/run-now', {
     method: 'POST', credentials: 'same-origin',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({username: user, password: pass})
   }).then(function(res) {
     return res.json().then(function(d) {
-      if (res.status === 401) { delete drSshCreds[nodeID]; alert('SSH credentials rejected.'); return; }
-      if (d.error) { alert('DR backup failed: ' + d.error); return; }
-      alert('DR backup completed on ' + nodeName + '.');
-      location.reload();
+      if (res.status === 401) {
+        if (badge) badge.innerHTML = origBadge;
+        alert('SSH credentials rejected.');
+        return;
+      }
+      if (d.error) {
+        if (badge) badge.innerHTML = '<span class="btn btn-danger-lt pe-none" style="background-color:rgba(214,57,57,.1);color:#d63939;border:0;"><i class="ti ti-shield-x me-1"></i>DR Failed</span>';
+        alert('DR backup failed: ' + d.error);
+        return;
+      }
+      if (badge) badge.innerHTML = '<span class="btn btn-success-lt pe-none" style="background-color:rgba(47,179,68,.1);color:#2fb344;border:0;"><i class="ti ti-shield-check me-1"></i>DR OK</span>';
     });
-  }).catch(function(err) { alert('Error: ' + err.message); });
-}
+  }).catch(function(err) {
+    if (badge) badge.innerHTML = origBadge;
+    alert('Error: ' + err.message);
+  });
 }
 </script>
 

@@ -128,31 +128,6 @@
   </div>
 </div>
 
-<div class="modal modal-blur fade" id="anom-ssh-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="ti ti-lock me-1"></i> SSH Credentials Required</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-muted small">Enter SSH credentials for the node to run <code>restic diff</code> and show which files were deleted.</p>
-        <div class="mb-3">
-          <label class="form-label">SSH Username</label>
-          <input type="text" id="anom-ssh-user" class="form-control" placeholder="root">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">SSH Password</label>
-          <input type="password" id="anom-ssh-pass" class="form-control">
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" id="anom-ssh-confirm" class="btn btn-primary"><i class="ti ti-file-diff"></i> Run Diff</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <script id="anom-data" type="application/json">
 [
@@ -196,6 +171,20 @@
   // filters: { fieldKey: [value1, value2, ...] } — empty array or missing => no filter
   var filters = {};
   var globalQ = '';
+
+  // Pre-filter from URL params (e.g. /anomalies?node=22&job=test-backup)
+  var urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('node')) {
+    var nodeID = urlParams.get('node');
+    // Find the node_name for this node_id
+    var matchNode = rows.find(function(r) { return String(r.node_id) === nodeID; });
+    if (matchNode) filters.node_name = [matchNode.node_name];
+  }
+  if (urlParams.get('job')) {
+    var jobID = urlParams.get('job');
+    var matchJob = rows.find(function(r) { return r.job_id === jobID; });
+    if (matchJob) filters.job_label = [matchJob.job_label || matchJob.job_name || jobID];
+  }
   var selected = {};
   var pageSize = 25;
   var page = 1;
@@ -261,7 +250,6 @@
     if (r.prev_snapshot_id && r.curr_snapshot_id &&
         (r.anomaly_type === 'files_drop' || r.anomaly_type === 'bytes_drop')) {
       base += '<button type="button" class="btn btn-sm btn-outline-danger mt-1 anom-diff-btn" data-id="' + r.id + '" data-node="' + r.node_id + '"><i class="ti ti-file-diff"></i> Show deleted</button>';
-      base += '<div id="anom-diff-' + r.id + '" class="small mt-1" style="display:none;"></div>';
     }
     return base;
   }
@@ -419,7 +407,8 @@
           '<td class="text-nowrap small">' + changeCell(r) + '</td>' +
           '<td>' + statusCell(r) + '</td>' +
           '<td>' + actionCell(r) + '</td>' +
-        '</tr>';
+        '</tr>' +
+        '<tr id="anom-diff-row-' + r.id + '" style="display:none;"><td colspan="9" class="bg-body-tertiary p-3"><div id="anom-diff-' + r.id + '" class="small"></div></td></tr>';
       });
       tbody.innerHTML = html;
       tbody.querySelectorAll('.anom-ack-btn').forEach(function(btn){
@@ -553,22 +542,27 @@
   // ── Diff (Show deleted files) ──
   var sshCreds = {}; // nodeID → {username, password}
   function showDiff(anomalyID, nodeID) {
+    var diffRow = document.getElementById('anom-diff-row-' + anomalyID);
     var container = document.getElementById('anom-diff-' + anomalyID);
-    if (!container) return;
-    if (container.style.display !== 'none') { container.style.display = 'none'; return; }
-    container.style.display = 'block';
+    if (!diffRow || !container) return;
+    if (diffRow.style.display !== 'none') { diffRow.style.display = 'none'; return; }
+    diffRow.style.display = '';
     container.innerHTML = '<span class="text-muted">Loading diff…</span>';
+    // Find anomaly row data for download buttons
+    var anomRow = rows.find(function(r) { return r.id === anomalyID; });
     var creds = sshCreds[nodeID];
     if (!creds) {
-      openSSHModal(function(u, p){
+      // Try vault first via vaultSSH helper
+      var csrf = document.querySelector('meta[name="csrf-token"]').content;
+      vaultSSH(nodeID, function(u, p) {
         sshCreds[nodeID] = {username: u, password: p};
-        fetchDiff(anomalyID, nodeID, u, p, container);
-      });
+        fetchDiff(anomalyID, nodeID, u, p, container, anomRow);
+      }, csrf);
       return;
     }
-    fetchDiff(anomalyID, nodeID, creds.username, creds.password, container);
+    fetchDiff(anomalyID, nodeID, creds.username, creds.password, container, anomRow);
   }
-  function fetchDiff(anomalyID, nodeID, user, pass, container) {
+  function fetchDiff(anomalyID, nodeID, user, pass, container, anomRow) {
     fetch('/anomalies/' + anomalyID + '/diff', {
       method: 'POST', credentials: 'same-origin',
       headers: {'Content-Type': 'application/json'},
@@ -576,20 +570,112 @@
     }).then(function(res){
       if (res.status === 401) { delete sshCreds[nodeID]; container.innerHTML = '<span class="text-danger">SSH credentials rejected. Click again to retry.</span>'; return; }
       if (!res.ok) return res.json().then(function(d){ container.innerHTML = '<span class="text-danger">' + escapeHtml(d.error || 'Diff failed') + '</span>'; });
-      return res.json().then(function(d){ renderDiff(d, container); });
+      return res.json().then(function(d){ renderDiff(d, container, anomRow); });
     }).catch(function(err){ container.innerHTML = '<span class="text-danger">Error: ' + escapeHtml(err.message) + '</span>'; });
   }
-  function renderDiff(d, container) {
+  window.toggleAllDiffChecks = function(master) {
+    document.querySelectorAll('.diff-file-check').forEach(function(cb) { cb.checked = master.checked; });
+    updateDiffDownloadBtn();
+  };
+
+  window.updateDiffDownloadBtn = function() {
+    var count = document.querySelectorAll('.diff-file-check:checked').length;
+    var btn = document.querySelector('.diff-download-btn');
+    if (btn) btn.disabled = count === 0;
+  };
+
+  window.downloadSelectedFiles = function(btn, nodeID, jobID, snapshotID) {
+    var paths = [];
+    document.querySelectorAll('.diff-file-check:checked').forEach(function(cb) { paths.push(cb.value); });
+    if (paths.length === 0) { alert('No files selected.'); return; }
+    var origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Zipping...';
+    var creds = sshCreds[nodeID];
+    if (!creds) {
+      var csrf = document.querySelector('meta[name="csrf-token"]').content;
+      vaultSSH(nodeID, function(u, p) {
+        sshCreds[nodeID] = {username: u, password: p};
+        doZipDownload(btn, origHTML, nodeID, jobID, snapshotID, paths, u, p);
+      }, csrf);
+      return;
+    }
+    doZipDownload(btn, origHTML, nodeID, jobID, snapshotID, paths, creds.username, creds.password);
+  };
+
+  function doZipDownload(btn, origHTML, nodeID, jobID, snapshotID, paths, username, password) {
+    fetch('/nodes/' + nodeID + '/repo/download-zip', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({job_id: jobID, snapshot_id: snapshotID, paths: paths, username: username, password: password})
+    }).then(function(res) {
+      if (!res.ok) { alert('Download failed'); btn.disabled = false; btn.innerHTML = origHTML; return; }
+      return res.blob().then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'deleted-files.zip';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        btn.disabled = false; btn.innerHTML = origHTML;
+      });
+    }).catch(function(err) { alert('Error: ' + err.message); btn.disabled = false; btn.innerHTML = origHTML; });
+  }
+
+  window.downloadDeletedFile = function(btn, nodeID, jobID, snapshotID, filePath) {
+    var origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    var creds = sshCreds[nodeID];
+    if (!creds) {
+      // Try vault
+      var csrf = document.querySelector('meta[name="csrf-token"]').content;
+      vaultSSH(nodeID, function(u, p) {
+        sshCreds[nodeID] = {username: u, password: p};
+        doDownload(btn, origHTML, nodeID, jobID, snapshotID, filePath, u, p);
+      }, csrf);
+      return;
+    }
+    doDownload(btn, origHTML, nodeID, jobID, snapshotID, filePath, creds.username, creds.password);
+  }
+  function doDownload(btn, origHTML, nodeID, jobID, snapshotID, filePath, username, password) {
+    fetch('/nodes/' + nodeID + '/repo/download', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({job_id: jobID, snapshot_id: snapshotID, path: filePath, username: username, password: password})
+    }).then(function(res) {
+      if (!res.ok) { alert('Download failed'); btn.disabled = false; btn.innerHTML = origHTML; return; }
+      var filename = filePath.split('/').pop() || 'download';
+      return res.blob().then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        btn.disabled = false; btn.innerHTML = origHTML;
+      });
+    }).catch(function(err) { alert('Error: ' + err.message); btn.disabled = false; btn.innerHTML = origHTML; });
+  }
+  function renderDiff(d, container, anomRow) {
     if (!d) { container.innerHTML = '<span class="text-muted">No data.</span>'; return; }
+    var nodeID = anomRow ? anomRow.node_id : 0;
+    var jobID = anomRow ? anomRow.job_id : '';
+    var prevSnap = anomRow ? anomRow.prev_snapshot_id : '';
     var html = '';
     if (d.removed && d.removed.length > 0) {
-      html += '<div class="fw-bold text-danger mb-1">Removed (' + d.removed.length + ')</div><table class="table table-sm mb-2"><thead><tr><th>Path</th><th>Size</th></tr></thead><tbody>';
-      d.removed.forEach(function(f){ html += '<tr><td><code>' + escapeHtml(f.path) + '</code></td><td class="text-nowrap">' + (f.size ? fmtBytes(f.size) : '—') + '</td></tr>'; });
+      html += '<div class="d-flex align-items-center justify-content-between mb-1">' +
+        '<span class="fw-bold text-danger">Removed (' + d.removed.length + ')</span>' +
+        '<button class="btn btn-sm btn-outline-primary diff-download-btn" disabled onclick="downloadSelectedFiles(this,' + nodeID + ',\'' + escapeHtml(jobID) + '\',\'' + escapeHtml(prevSnap) + '\')"><i class="ti ti-download me-1"></i>Download Selected</button>' +
+        '</div>';
+      html += '<table class="table table-sm mb-2"><thead><tr><th style="width:30px;"><input type="checkbox" class="form-check-input" onchange="toggleAllDiffChecks(this)"></th><th>Path</th><th style="width:50px;"></th></tr></thead><tbody>';
+      d.removed.forEach(function(f){
+        html += '<tr><td><input type="checkbox" class="form-check-input diff-file-check" value="' + escapeHtml(f.path) + '" onchange="updateDiffDownloadBtn()"></td><td><code>' + escapeHtml(f.path) + '</code></td>' +
+          '<td><button class="btn btn-sm btn-outline-primary" onclick="downloadDeletedFile(this,' + nodeID + ',\'' + escapeHtml(jobID) + '\',\'' + escapeHtml(prevSnap) + '\',\'' + escapeHtml(f.path) + '\')"><i class="ti ti-download"></i></button></td></tr>';
+      });
       html += '</tbody></table>';
     }
     if (d.added && d.added.length > 0) {
-      html += '<div class="fw-bold text-success mb-1">Added (' + d.added.length + ')</div><table class="table table-sm mb-2"><thead><tr><th>Path</th><th>Size</th></tr></thead><tbody>';
-      d.added.forEach(function(f){ html += '<tr><td><code>' + escapeHtml(f.path) + '</code></td><td class="text-nowrap">' + (f.size ? fmtBytes(f.size) : '—') + '</td></tr>'; });
+      html += '<div class="fw-bold text-success mb-1">Added (' + d.added.length + ')</div><table class="table table-sm mb-2"><thead><tr><th>Path</th></tr></thead><tbody>';
+      d.added.forEach(function(f){ html += '<tr><td><code>' + escapeHtml(f.path) + '</code></td></tr>'; });
       html += '</tbody></table>';
     }
     if (d.changed && d.changed.length > 0) {
@@ -602,24 +688,9 @@
     if (d.snapshot_b_exists === false) html = '<span class="text-danger">Current snapshot no longer exists — cannot diff.</span>';
     container.innerHTML = html;
   }
-  function openSSHModal(onConfirm) {
-    document.getElementById('anom-ssh-user').value = '';
-    document.getElementById('anom-ssh-pass').value = '';
-    var modalEl = document.getElementById('anom-ssh-modal');
-    var btn = document.getElementById('anom-ssh-confirm');
-    var newBtn = btn.cloneNode(true);
-    btn.parentNode.replaceChild(newBtn, btn);
-    var modal = window.bootstrap && window.bootstrap.Modal
-      ? new window.bootstrap.Modal(modalEl) : null;
-    newBtn.addEventListener('click', function(){
-      var u = document.getElementById('anom-ssh-user').value.trim();
-      var p = document.getElementById('anom-ssh-pass').value;
-      if (!u) return;
-      if (modal) modal.hide();
-      onConfirm(u, p);
-    });
-    if (modal) modal.show();
-    else { modalEl.classList.add('show'); modalEl.style.display = 'block'; }
+  function openSSHModal(nodeID, onConfirm) {
+    var csrf = document.querySelector('meta[name="csrf-token"]').content;
+    vaultSSH(nodeID, onConfirm, csrf);
   }
 
   // ── Filter editor ──

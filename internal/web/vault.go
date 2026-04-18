@@ -202,6 +202,7 @@ func (s *Server) HandleVaultLock(w http.ResponseWriter, r *http.Request) {
 
 	sessionToken, _ := r.Context().Value(ctxSession).(string)
 	clearVaultPassword(sessionToken)
+	ClearSessionSSHCreds(sessionToken)
 
 	setFlash(w, "Vault locked.")
 	http.Redirect(w, r, "/vault", http.StatusSeeOther)

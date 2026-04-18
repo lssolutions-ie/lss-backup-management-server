@@ -452,7 +452,20 @@ func (s *Server) HandleRepoDownload(w http.ResponseWriter, r *http.Request) {
 		SnapshotID string `json:"snapshot_id"`
 		Path       string `json:"path"`
 	}
-	json.Unmarshal(body, &req)
+	// Try JSON body first, fall back to form values
+	if err := json.Unmarshal(body, &req); err != nil || req.Path == "" {
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.ParseForm()
+		if req.JobID == "" { req.JobID = r.FormValue("job_id") }
+		if req.SnapshotID == "" { req.SnapshotID = r.FormValue("snapshot_id") }
+		if req.Path == "" { req.Path = r.FormValue("path") }
+	}
+
+	// Fall back to vault creds if no SSH creds provided
+	if username == "" {
+		sessionToken, _ := r.Context().Value(ctxSession).(string)
+		username, password = s.GetVaultSSHCreds(sessionToken, node.ID)
+	}
 
 	if !node.TunnelReady() || req.Path == "" || username == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -546,6 +559,12 @@ func (s *Server) HandleRepoDownloadZip(w http.ResponseWriter, r *http.Request) {
 		Paths      []string `json:"paths"`
 	}
 	json.Unmarshal(body, &req)
+
+	// Fall back to vault creds if no SSH creds provided
+	if username == "" {
+		sessionToken, _ := r.Context().Value(ctxSession).(string)
+		username, password = s.GetVaultSSHCreds(sessionToken, node.ID)
+	}
 
 	if !node.TunnelReady() || len(req.Paths) == 0 || username == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)

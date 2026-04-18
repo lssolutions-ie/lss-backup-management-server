@@ -956,12 +956,11 @@ flatpickr('#filter-to', {
   maxDate: 'today',
 });
 
-// ── DR Now via SSH ──
-var drSshCreds = {};
+// ── DR Now via SSH (vault-aware) ──
 function triggerDRNow(nodeID, nodeName) {
-  var creds = drSshCreds[nodeID];
-  if (creds) { runDRNow(nodeID, nodeName, creds.username, creds.password); return; }
-  openDRSSHModal(nodeID, nodeName);
+  vaultSSH(nodeID, function(user, pass) {
+    runDRNow(nodeID, nodeName, user, pass);
+  }, __csrf);
 }
 function runDRNow(nodeID, nodeName, user, pass) {
   fetch('/nodes/' + nodeID + '/dr/run-now', {
@@ -977,52 +976,8 @@ function runDRNow(nodeID, nodeName, user, pass) {
     });
   }).catch(function(err) { alert('Error: ' + err.message); });
 }
-function openDRSSHModal(nodeID, nodeName) {
-  var m = document.getElementById('dr-ssh-modal');
-  if (!m) return;
-  document.getElementById('dr-ssh-node-name').textContent = nodeName;
-  document.getElementById('dr-ssh-user').value = '';
-  document.getElementById('dr-ssh-pass').value = '';
-  var btn = document.getElementById('dr-ssh-confirm');
-  var nb = btn.cloneNode(true); btn.parentNode.replaceChild(nb, btn);
-  var modal = window.bootstrap && window.bootstrap.Modal ? new window.bootstrap.Modal(m) : null;
-  nb.addEventListener('click', function() {
-    var u = document.getElementById('dr-ssh-user').value.trim();
-    var p = document.getElementById('dr-ssh-pass').value;
-    if (!u) return;
-    drSshCreds[nodeID] = {username: u, password: p};
-    if (modal) modal.hide();
-    runDRNow(nodeID, nodeName, u, p);
-  });
-  if (modal) modal.show(); else { m.classList.add('show'); m.style.display = 'block'; }
 }
 </script>
-
-<div class="modal modal-blur fade" id="dr-ssh-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="ti ti-player-play me-1"></i> DR Backup on <span id="dr-ssh-node-name"></span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-muted small">SSH credentials needed to run the DR backup immediately on the node.</p>
-        <div class="mb-3">
-          <label class="form-label">SSH Username</label>
-          <input type="text" id="dr-ssh-user" class="form-control" placeholder="root">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">SSH Password</label>
-          <input type="password" id="dr-ssh-pass" class="form-control">
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" id="dr-ssh-confirm" class="btn btn-primary"><i class="ti ti-player-play"></i> Run DR Now</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- Regenerate Credentials Modal -->
 <div class="modal modal-blur fade" id="regen-creds-modal" tabindex="-1" aria-hidden="true">
@@ -1077,6 +1032,15 @@ function openRegenCredsModal(nodeID, nodeName) {
   document.getElementById('regen-result').style.display = 'none';
   document.getElementById('regen-confirm-btn').disabled = false;
   document.getElementById('regen-confirm-btn').innerHTML = '<i class="ti ti-key me-1"></i>Regenerate';
+  // Pre-fill from vault if available
+  fetch('/vault/ssh-check?node_id=' + nodeID, {credentials: 'same-origin'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.status === 'available') {
+        document.getElementById('regen-ssh-user').value = d.username;
+        document.getElementById('regen-ssh-pass').value = d.password;
+      }
+    }).catch(function() {});
   var modal = document.getElementById('regen-creds-modal');
   if (window.bootstrap && window.bootstrap.Modal) {
     new window.bootstrap.Modal(modal).show();
@@ -1260,6 +1224,15 @@ function drRestoreShowCreds() {
   document.getElementById('dr-restore-user').value = '';
   document.getElementById('dr-restore-pass').value = '';
   document.getElementById('dr-restore-confirm-check').checked = false;
+  // Pre-fill from vault
+  fetch('/vault/ssh-check?node_id=' + __nodeID, {credentials: 'same-origin'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.status === 'available') {
+        document.getElementById('dr-restore-user').value = d.username;
+        document.getElementById('dr-restore-pass').value = d.password;
+      }
+    }).catch(function() {});
 }
 
 function drRestoreExecute() {

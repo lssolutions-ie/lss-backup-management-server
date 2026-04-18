@@ -236,6 +236,8 @@ func main() {
 	mux.HandleFunc("/vault/lock", webServer.RequireManagerOrAbove(webServer.HandleVaultLock))
 	mux.HandleFunc("/vault/save", webServer.RequireManagerOrAbove(webServer.HandleVaultSave))
 	mux.HandleFunc("/vault/reveal", webServer.RequireManagerOrAbove(webServer.HandleVaultReveal))
+	mux.HandleFunc("/vault/ssh-check", webServer.RequireManagerOrAbove(webServer.HandleVaultSSHCheck))
+	mux.HandleFunc("/vault/unlock-ajax", webServer.RequireManagerOrAbove(webServer.HandleVaultUnlockAJAX))
 	mux.HandleFunc("/api/v1/nodes-list", webServer.RequireManagerOrAbove(webServer.HandleNodesListJSON))
 
 	// Wrap mux with request-id/access-log, then security headers.

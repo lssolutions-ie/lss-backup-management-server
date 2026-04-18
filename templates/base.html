@@ -168,8 +168,128 @@
     </footer>
   </div>
 </div>
+<!-- Global SSH Credentials Modal (vault-aware) -->
+<div class="modal modal-blur fade" id="global-ssh-modal" tabindex="-1" aria-hidden="true" data-node-id="">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-terminal me-1"></i> SSH Credentials Required</h5>
+        <button type="button" class="btn-close" onclick="closeGlobalSSHModal()" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="global-ssh-vault-section" style="display:none;">
+          <div class="alert alert-info mb-3">
+            <i class="ti ti-lock me-1"></i><strong>Vault is locked.</strong> Unlock to use stored credentials, or enter SSH details manually below.
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Vault Password</label>
+            <div class="input-group">
+              <input type="password" id="global-ssh-vault-pw" class="form-control" placeholder="Enter vault password">
+              <button class="btn btn-primary" onclick="unlockVaultInline()"><i class="ti ti-lock-open me-1"></i>Unlock</button>
+            </div>
+            <div id="global-ssh-vault-err" class="text-danger small mt-1" style="display:none;"></div>
+          </div>
+          <div class="text-center text-muted small mb-3">— or enter credentials manually —</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">SSH Username</label>
+          <input type="text" id="global-ssh-user" class="form-control" placeholder="root">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">SSH Password</label>
+          <input type="password" id="global-ssh-pass" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link link-secondary" onclick="closeGlobalSSHModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitGlobalSSH()"><i class="ti ti-arrow-right me-1"></i>Connect</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/js/tabler.min.js" defer></script>
 <script>
+// Vault-aware SSH credential helper.
+// Checks vault for SSH creds before showing the manual SSH modal.
+// Usage: vaultSSH(nodeID, function(user, pass) { ... }, csrfToken)
+function vaultSSH(nodeID, callback, csrf) {
+  fetch('/vault/ssh-check?node_id=' + nodeID, {credentials: 'same-origin'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.status === 'available') {
+        callback(d.username, d.password);
+      } else {
+        showSSHModal(nodeID, callback, csrf, d.status === 'locked');
+      }
+    })
+    .catch(function() {
+      showSSHModal(nodeID, callback, csrf, false);
+    });
+}
+
+var __sshCallback = null;
+var __sshCSRF = '';
+function showSSHModal(nodeID, callback, csrf, vaultLocked) {
+  __sshCallback = callback;
+  __sshCSRF = csrf;
+  var m = document.getElementById('global-ssh-modal');
+  if (!m) return;
+  m.setAttribute('data-node-id', nodeID);
+  document.getElementById('global-ssh-user').value = '';
+  document.getElementById('global-ssh-pass').value = '';
+  var vaultSection = document.getElementById('global-ssh-vault-section');
+  var vaultErr = document.getElementById('global-ssh-vault-err');
+  if (vaultErr) vaultErr.style.display = 'none';
+  if (vaultSection) vaultSection.style.display = vaultLocked ? '' : 'none';
+  if (window.bootstrap && window.bootstrap.Modal) {
+    new window.bootstrap.Modal(m).show();
+  } else { m.classList.add('show'); m.style.display = 'block'; }
+}
+function closeGlobalSSHModal() {
+  var el = document.getElementById('global-ssh-modal');
+  if (window.bootstrap && window.bootstrap.Modal) {
+    var inst = window.bootstrap.Modal.getInstance(el);
+    if (inst) inst.hide();
+  }
+  el.classList.remove('show'); el.style.display = 'none';
+  var bd = document.querySelector('.modal-backdrop'); if (bd) bd.remove();
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
+}
+function submitGlobalSSH() {
+  var u = document.getElementById('global-ssh-user').value.trim();
+  var p = document.getElementById('global-ssh-pass').value;
+  if (!u) { alert('SSH username is required.'); return; }
+  closeGlobalSSHModal();
+  if (__sshCallback) __sshCallback(u, p);
+}
+function unlockVaultInline() {
+  var pw = document.getElementById('global-ssh-vault-pw').value;
+  if (!pw) return;
+  var fd = new FormData();
+  fd.append('vault_password', pw);
+  fd.append('csrf_token', __sshCSRF);
+  fetch('/vault/unlock-ajax', {method: 'POST', credentials: 'same-origin', body: fd})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) {
+        var err = document.getElementById('global-ssh-vault-err');
+        err.textContent = d.error;
+        err.style.display = '';
+        return;
+      }
+      closeGlobalSSHModal();
+      // Vault unlocked — retry the original action
+      if (__sshCallback) {
+        var nodeID = document.getElementById('global-ssh-modal').getAttribute('data-node-id');
+        vaultSSH(parseInt(nodeID), __sshCallback, __sshCSRF);
+      }
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+}
+
 function copyBtn(btn, inputId) {
   var text = document.getElementById(inputId).value;
   navigator.clipboard.writeText(text).then(function() {

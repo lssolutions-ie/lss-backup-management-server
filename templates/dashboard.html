@@ -600,15 +600,12 @@
   };
 })();
 
-// ── CLI Update via SSH ──
-var updateSshCreds = {};
+// ── CLI Update via SSH (vault-aware) ──
+var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 function triggerNodeUpdate(nodeID, nodeName) {
-  var creds = updateSshCreds[nodeID];
-  if (creds) {
-    runUpdate(nodeID, nodeName, creds.username, creds.password);
-    return;
-  }
-  openUpdateSSHModal(nodeID, nodeName);
+  vaultSSH(nodeID, function(user, pass) {
+    runUpdate(nodeID, nodeName, user, pass);
+  }, csrfToken);
 }
 function runUpdate(nodeID, nodeName, user, pass) {
   var btn = document.querySelector('[onclick*="triggerNodeUpdate(' + nodeID + '"]');
@@ -626,62 +623,6 @@ function runUpdate(nodeID, nodeName, user, pass) {
     });
   }).catch(function(err) { alert('Error: ' + err.message); location.reload(); });
 }
-function closeUpdateModal() {
-  var el = document.getElementById('update-ssh-modal');
-  if (window.bootstrap && window.bootstrap.Modal) {
-    var inst = window.bootstrap.Modal.getInstance(el);
-    if (inst) inst.hide();
-  }
-  el.classList.remove('show'); el.style.display = 'none';
-  var bd = document.querySelector('.modal-backdrop'); if (bd) bd.remove();
-  document.body.classList.remove('modal-open');
-  document.body.style.removeProperty('overflow');
-  document.body.style.removeProperty('padding-right');
-}
-function openUpdateSSHModal(nodeID, nodeName) {
-  var m = document.getElementById('update-ssh-modal');
-  if (!m) return;
-  document.getElementById('update-ssh-node-name').textContent = nodeName;
-  document.getElementById('update-ssh-user').value = '';
-  document.getElementById('update-ssh-pass').value = '';
-  var btn = document.getElementById('update-ssh-confirm');
-  var nb = btn.cloneNode(true); btn.parentNode.replaceChild(nb, btn);
-  var modal = window.bootstrap && window.bootstrap.Modal ? new window.bootstrap.Modal(m) : null;
-  nb.addEventListener('click', function() {
-    var u = document.getElementById('update-ssh-user').value.trim();
-    var p = document.getElementById('update-ssh-pass').value;
-    if (!u) return;
-    updateSshCreds[nodeID] = {username: u, password: p};
-    if (modal) modal.hide();
-    runUpdate(nodeID, nodeName, u, p);
-  });
-  if (modal) modal.show(); else { m.classList.add('show'); m.style.display = 'block'; }
 }
 </script>
-
-<div class="modal modal-blur fade" id="update-ssh-modal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="ti ti-refresh me-1"></i> Update CLI on <span id="update-ssh-node-name"></span></h5>
-        <button type="button" class="btn-close" onclick="closeUpdateModal()" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-muted small">SSH credentials are needed to connect to the node and run the update immediately.</p>
-        <div class="mb-3">
-          <label class="form-label">SSH Username</label>
-          <input type="text" id="update-ssh-user" class="form-control" placeholder="root">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">SSH Password</label>
-          <input type="password" id="update-ssh-pass" class="form-control">
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-link link-secondary" onclick="closeUpdateModal()">Cancel</button>
-        <button type="button" id="update-ssh-confirm" class="btn btn-primary"><i class="ti ti-refresh"></i> Update Now</button>
-      </div>
-    </div>
-  </div>
-</div>
 {{end}}

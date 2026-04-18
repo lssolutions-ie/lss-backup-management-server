@@ -340,6 +340,76 @@ func (s *Server) HandleVaultReveal(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"error": "Entry not found"})
 }
 
+// HandleVaultUnlockAJAX unlocks the vault via AJAX (returns JSON instead of redirect).
+func (s *Server) HandleVaultUnlockAJAX(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.ParseMultipartForm(1 << 20)
+	if !s.validateCSRF(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid CSRF token"})
+		return
+	}
+
+	password := r.FormValue("vault_password")
+	sentinel, _ := s.DB.GetVaultSentinel()
+	if sentinel == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": "Vault is not set up"})
+		return
+	}
+
+	if !crypto.VaultVerifySentinel(sentinel, password, s.AppKey) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Incorrect vault password"})
+		return
+	}
+
+	sessionToken, _ := r.Context().Value(ctxSession).(string)
+	cacheVaultPassword(sessionToken, password)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+// HandleVaultSSHCheck returns whether vault has SSH creds for a node (without revealing them).
+func (s *Server) HandleVaultSSHCheck(w http.ResponseWriter, r *http.Request) {
+	sessionToken, _ := r.Context().Value(ctxSession).(string)
+	vaultPW := getCachedVaultPassword(sessionToken)
+
+	nodeID, _ := strconv.ParseUint(r.URL.Query().Get("node_id"), 10, 64)
+	if nodeID == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "no_node"})
+		return
+	}
+
+	if vaultPW == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "locked"})
+		return
+	}
+
+	username, password := s.GetVaultSSHCreds(sessionToken, nodeID)
+	if username != "" && password != "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":   "available",
+			"username": username,
+			"password": password,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "no_creds"})
+}
+
 // GetVaultSSHCreds returns cached SSH credentials from the vault for a node.
 // Used by terminal/DR/update handlers to skip the SSH prompt.
 func (s *Server) GetVaultSSHCreds(sessionToken string, nodeID uint64) (username, password string) {

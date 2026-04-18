@@ -77,6 +77,10 @@ func main() {
 
 	web.ServerVersion = Version
 
+	// Sync templates/migrations/static from GitHub if binary version doesn't match disk
+	configDir := filepath.Dir(configPath)
+	web.SyncAssetsIfNeeded(Version, configDir)
+
 	// Wire HTTP handlers
 	webServer := &web.Server{
 		DB:         database,

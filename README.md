@@ -1,9 +1,8 @@
-# LSS Management Server
+# LSS Backup Management Server
 
-A self-hosted management server for LSS Backup CLI deployments. Client nodes
-(macOS, Linux, Windows) POST AES-256-GCM encrypted status reports to this
-server; an MSP operator monitors every node and backup job through a single
-web dashboard.
+Enterprise backup management platform for MSP and IT operations teams. Centralized monitoring, disaster recovery, encrypted credential vault, anomaly detection, and remote node management — all from a single dashboard.
+
+Manages cross-platform backup nodes (Linux, macOS, Windows) with AES-256-GCM encrypted communications, HMAC-chained audit logs, and one-click deploy/update/recover workflows.
 
 ## Features
 

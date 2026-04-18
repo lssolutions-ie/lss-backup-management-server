@@ -1,4 +1,4 @@
-# LSS Backup Management Server
+# LSS Backup Server
 
 Enterprise backup management platform for MSP and IT operations teams. Centralized monitoring, disaster recovery, encrypted credential vault, anomaly detection, and remote node management — all from a single dashboard.
 

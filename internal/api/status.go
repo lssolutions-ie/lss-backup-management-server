@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/classify"
-	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
-	"github.com/lssolutions-ie/lss-management-server/internal/models"
-	"github.com/lssolutions-ie/lss-management-server/internal/notify"
+	"github.com/lssolutions-ie/lss-backup-server/internal/classify"
+	"github.com/lssolutions-ie/lss-backup-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/models"
+	"github.com/lssolutions-ie/lss-backup-server/internal/notify"
 )
 
 var lg = logx.Component("api")

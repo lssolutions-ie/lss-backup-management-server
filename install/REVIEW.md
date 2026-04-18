@@ -33,7 +33,7 @@ multipass shell lss-fresh
 # Inside the VM:
 sudo apt-get update
 sudo apt-get install -y git
-git clone https://github.com/lssolutions-ie/lss-backup-management-server.git
+git clone https://github.com/lssolutions-ie/lss-backup-server.git
 cd lss-backup-management-server
 sudo bash install/install.sh
 ```

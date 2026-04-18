@@ -1,4 +1,4 @@
-module github.com/lssolutions-ie/lss-management-server
+module github.com/lssolutions-ie/lss-backup-server
 
 go 1.26.1
 

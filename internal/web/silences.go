@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
-	"github.com/lssolutions-ie/lss-management-server/internal/models"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/models"
 )
 
 // HandleJobSilence handles mute/unmute for a (node, job). POST only.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 // vaultPasswordCache stores vault passwords in memory per session. Never persisted.

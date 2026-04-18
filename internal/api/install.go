@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 // HandleInstall serves a one-time install script with embedded credentials.

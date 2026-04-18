@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
 )
 
 // HostAuditWorker polls the local systemd journal for events on units we care

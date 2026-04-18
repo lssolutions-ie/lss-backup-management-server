@@ -28,7 +28,7 @@ Manages cross-platform backup nodes (Linux, macOS, Windows) with AES-256-GCM enc
 
 ```bash
 export LSS_DOMAIN=your-domain.com
-curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-management-server/main/install/install-remote.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-server/main/install/install-remote.sh | bash
 ```
 
 This downloads the latest release binary from GitHub and installs everything:
@@ -38,8 +38,8 @@ and daily backup cron. No git clone or Go compiler needed.
 ### Developer Install (from source)
 
 ```bash
-git clone https://github.com/lssolutions-ie/lss-backup-management-server.git
-cd lss-backup-management-server
+git clone https://github.com/lssolutions-ie/lss-backup-server.git
+cd lss-backup-server
 sudo bash install/install.sh
 ```
 
@@ -100,13 +100,13 @@ Re-run the install command — it's idempotent:
 
 ```bash
 export LSS_DOMAIN=your-domain.com
-curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-management-server/main/install/install-remote.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-server/main/install/install-remote.sh | bash
 ```
 
 ### Manual Upgrade (developer install)
 
 ```bash
-cd lss-backup-management-server
+cd lss-backup-server
 git pull
 sudo bash install/install.sh
 ```

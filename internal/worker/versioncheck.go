@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
 )
 
 // VersionChecker polls the GitHub tags API periodically to discover the latest
@@ -22,7 +22,7 @@ func NewVersionChecker(d *db.DB) *VersionChecker {
 	return &VersionChecker{
 		db:            d,
 		cliRepoURL:    "https://api.github.com/repos/lssolutions-ie/lss-backup-cli/tags?per_page=1",
-		serverRepoURL: "https://api.github.com/repos/lssolutions-ie/lss-backup-management-server/tags?per_page=1",
+		serverRepoURL: "https://api.github.com/repos/lssolutions-ie/lss-backup-server/tags?per_page=1",
 		client:        &http.Client{Timeout: 15 * time.Second},
 	}
 }
@@ -82,7 +82,7 @@ func (c *VersionChecker) CheckCLIVersion() (string, error) {
 // CheckServerVersion fetches the latest server version and release notes from GitHub.
 // Public so the "Check Now" handler can call it directly.
 func (c *VersionChecker) CheckServerVersion() (string, error) {
-	version, notes, err := c.fetchLatestRelease("https://api.github.com/repos/lssolutions-ie/lss-backup-management-server/releases/latest")
+	version, notes, err := c.fetchLatestRelease("https://api.github.com/repos/lssolutions-ie/lss-backup-server/releases/latest")
 	if err != nil {
 		lg.Warn("version-check: server request failed", "err", err.Error())
 		return "", err

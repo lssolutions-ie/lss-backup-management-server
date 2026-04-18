@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 var tunnelLg = logx.Component("tunnel")

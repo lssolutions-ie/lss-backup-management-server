@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 type resticSnapshot struct {

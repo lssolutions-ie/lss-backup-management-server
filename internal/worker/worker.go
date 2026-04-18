@@ -3,9 +3,9 @@ package worker
 import (
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
-	"github.com/lssolutions-ie/lss-management-server/internal/notify"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/notify"
 )
 
 var lg = logx.Component("worker")

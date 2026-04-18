@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 // HandleRegenerateAllCredentials generates a new PSK, SSHes into the node to

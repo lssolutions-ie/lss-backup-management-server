@@ -3,8 +3,8 @@ package web
 import (
 	"net/http"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
-	"github.com/lssolutions-ie/lss-management-server/internal/models"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/models"
 )
 
 var auditLg = logx.Component("audit")

@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 type githubRelease struct {
@@ -51,7 +51,7 @@ func (s *Server) HandleServerUpdate(w http.ResponseWriter, r *http.Request) {
 
 	lg.Warn("server update: starting", "from", ServerVersion, "to", tuning.LatestServerVersion)
 
-	releaseURL := "https://api.github.com/repos/lssolutions-ie/lss-backup-management-server/releases/tags/" + tuning.LatestServerVersion
+	releaseURL := "https://api.github.com/repos/lssolutions-ie/lss-backup-server/releases/tags/" + tuning.LatestServerVersion
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	req, _ := http.NewRequest(http.MethodGet, releaseURL, nil)

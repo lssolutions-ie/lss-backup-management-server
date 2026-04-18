@@ -3,7 +3,7 @@ package db
 import (
 	"database/sql"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
+	"github.com/lssolutions-ie/lss-backup-server/internal/crypto"
 )
 
 // VaultEntry represents a single encrypted credential for a node.

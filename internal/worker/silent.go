@@ -3,7 +3,7 @@ package worker
 import (
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
 )
 
 // SilentNodeChecker fires an audit_log event when a node misses a heartbeat

@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/api"
-	"github.com/lssolutions-ie/lss-management-server/internal/config"
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
-	"github.com/lssolutions-ie/lss-management-server/internal/notify"
-	"github.com/lssolutions-ie/lss-management-server/internal/web"
-	"github.com/lssolutions-ie/lss-management-server/internal/worker"
+	"github.com/lssolutions-ie/lss-backup-server/internal/api"
+	"github.com/lssolutions-ie/lss-backup-server/internal/config"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/notify"
+	"github.com/lssolutions-ie/lss-backup-server/internal/web"
+	"github.com/lssolutions-ie/lss-backup-server/internal/worker"
 )
 
 // Version is set at build time via -ldflags.

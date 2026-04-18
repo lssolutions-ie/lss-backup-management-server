@@ -1,5 +1,5 @@
 [Unit]
-Description=LSS Management Server
+Description=LSS Backup Server
 After=network.target mysql.service
 Requires=mysql.service
 

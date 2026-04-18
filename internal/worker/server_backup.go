@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
-	"github.com/lssolutions-ie/lss-management-server/internal/models"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/models"
 )
 
 type ServerBackupWorker struct {

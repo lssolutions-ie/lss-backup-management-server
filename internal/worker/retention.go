@@ -3,8 +3,8 @@ package worker
 import (
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/db"
-	"github.com/lssolutions-ie/lss-management-server/internal/recorder"
+	"github.com/lssolutions-ie/lss-backup-server/internal/db"
+	"github.com/lssolutions-ie/lss-backup-server/internal/recorder"
 )
 
 // RetentionWorker runs periodically to aggregate old node_reports into

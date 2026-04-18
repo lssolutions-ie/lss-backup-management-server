@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 // HandleIntelligenceTuning renders and saves intelligence-specific tuning (anomaly thresholds + retention).

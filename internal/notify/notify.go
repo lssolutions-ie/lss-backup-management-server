@@ -3,7 +3,7 @@ package notify
 import (
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/models"
+	"github.com/lssolutions-ie/lss-backup-server/internal/models"
 )
 
 // Notifier is the alerting interface. Implement it to add email/webhook alerts.

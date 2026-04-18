@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
-	"github.com/lssolutions-ie/lss-management-server/internal/models"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/models"
 )
 
 // statusCapturingWriter wraps ResponseWriter so we can log the final status.

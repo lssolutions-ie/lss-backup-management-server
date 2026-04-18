@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# LSS Management Server — installation script
+# LSS Backup Server — installation script
 # Usage: sudo bash install/install.sh
 #
 # Idempotent — safe to re-run for upgrades.
@@ -510,7 +510,7 @@ fi
 cat <<SUMMARY
 
 ============================================================
- LSS Management Server — Installation Complete
+ LSS Backup Server — Installation Complete
 ============================================================
  Version:    $VERSION
  Service:    lss-management (systemd, enabled)

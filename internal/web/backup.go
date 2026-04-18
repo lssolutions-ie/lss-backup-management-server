@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 // dsnParts holds parsed MySQL DSN components.

@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/logx"
+	"github.com/lssolutions-ie/lss-backup-server/internal/logx"
 )
 
 // HandleScheduleCLIUpdate SSHes to the node via tunnel and runs the update immediately.

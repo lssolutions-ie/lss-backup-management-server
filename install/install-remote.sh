@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# LSS Management Server — remote installation script
+# LSS Backup Server — remote installation script
 #
 # Usage:
 #   Behind a reverse proxy (HAProxy/OPNsense):
@@ -32,7 +32,7 @@ warn()  { echo "  ${C_YELLOW}⚠${C_RESET} $*"; }
 error() { echo "${C_RED}✗ $*${C_RESET}" >&2; }
 die()   { error "$*"; exit 1; }
 
-GITHUB_REPO="lssolutions-ie/lss-backup-management-server"
+GITHUB_REPO="lssolutions-ie/lss-backup-server"
 
 # ─── Parse arguments ────────────────────────────────────────────────────────
 MODE=""
@@ -334,7 +334,7 @@ step 9 "Installing systemd unit"
 
 cat > "$SYSTEMD_UNIT" <<'EOF'
 [Unit]
-Description=LSS Management Server
+Description=LSS Backup Server
 After=network.target mysql.service
 Requires=mysql.service
 
@@ -675,7 +675,7 @@ fi
 cat <<SUMMARY
 
 ============================================================
- LSS Management Server — Installation Complete ($MODE mode)
+ LSS Backup Server — Installation Complete ($MODE mode)
 ============================================================
  Version:    $VERSION
  Mode:       $MODE

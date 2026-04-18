@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lssolutions-ie/lss-management-server/internal/worker"
+	"github.com/lssolutions-ie/lss-backup-server/internal/worker"
 )
 
 type updateSettingsPageData struct {

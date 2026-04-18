@@ -1,45 +1,35 @@
 {{define "content"}}
 <div class="page-header mb-3">
-  <div class="row g-2 align-items-center">
-    <div class="col">
-      <h2 class="page-title">Set Up Two-Factor Authentication</h2>
-    </div>
-    <div class="col-auto">
-      <a href="/settings" class="btn">Cancel</a>
-    </div>
-  </div>
+  <h2 class="page-title"><i class="ti ti-shield-lock me-1"></i> Set Up Two-Factor Authentication</h2>
+  <div class="text-muted">Secure your account with an authenticator app.</div>
 </div>
 
-<div class="row">
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-body">
-        {{if .Error}}
-        <div class="alert alert-danger">{{.Error}}</div>
-        {{end}}
+<div class="card">
+  <div class="card-body">
+    {{if .Error}}
+    <div class="alert alert-danger">{{.Error}}</div>
+    {{end}}
 
+    <div class="row">
+      <div class="col-md-6 text-center mb-3 mb-md-0">
         <h3 class="card-title">1. Scan QR Code</h3>
-        <p class="text-muted">Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.).</p>
-        <div class="text-center mb-3">
-          <img src="data:image/png;base64,{{.QRCode}}" alt="TOTP QR Code" style="image-rendering: pixelated; width: 200px; height: 200px;">
+        <p class="text-muted small">Scan with your authenticator app (Google Authenticator, Authy, etc.).</p>
+        <img src="data:image/png;base64,{{.QRCode}}" alt="TOTP QR Code" style="image-rendering: pixelated; width: 220px; height: 220px;" class="mb-3">
+        <div>
+          <p class="text-muted small mb-1">Can't scan? Enter this secret manually:</p>
+          <code style="font-size: 0.85rem; word-break: break-all;">{{.Secret}}</code>
         </div>
-
-        <h3 class="card-title">2. Manual Entry</h3>
-        <p class="text-muted">If you can't scan the QR code, enter this secret manually:</p>
-        <div class="mb-3">
-          <code style="font-size: 1.1rem; word-break: break-all;">{{.Secret}}</code>
-        </div>
-
-        <h3 class="card-title">3. Verify</h3>
+      </div>
+      <div class="col-md-6 d-flex flex-column justify-content-center">
+        <h3 class="card-title">2. Verify</h3>
         <p class="text-muted">Enter the 6-digit code from your authenticator app to confirm setup.</p>
         <form action="/settings/2fa/setup" method="POST" autocomplete="off">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <div class="mb-3">
-            <input type="text" name="code" class="form-control text-center" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autofocus required style="font-size: 1.5rem; letter-spacing: 0.5em; max-width: 200px;">
+            <input type="text" name="code" class="form-control text-center" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autofocus required style="font-size: 2rem; letter-spacing: 0.5em;">
           </div>
-          <div class="form-footer">
-            <button type="submit" class="btn btn-primary">Enable 2FA</button>
-          </div>
+          <button type="submit" class="btn btn-primary w-100 mb-2"><i class="ti ti-shield-check me-1"></i>Enable 2FA</button>
+          <a href="/settings" class="btn btn-outline-secondary w-100">Cancel</a>
         </form>
       </div>
     </div>

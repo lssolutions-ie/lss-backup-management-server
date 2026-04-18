@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 #
 # LSS Management Server — remote installation script
-# Usage: curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-management-server/main/install/install-remote.sh | sudo bash
+#
+# Usage:
+#   Behind a reverse proxy (HAProxy/OPNsense):
+#     export LSS_DOMAIN=backup.example.com
+#     curl -fsSL https://raw.githubusercontent.com/.../install-remote.sh | bash -s -- --proxy
+#
+#   Direct VPS (public-facing, full hardening + SSL):
+#     export LSS_DOMAIN=backup.example.com
+#     curl -fsSL https://raw.githubusercontent.com/.../install-remote.sh | bash -s -- --vps
 #
 # Downloads the latest release binary from GitHub. No git clone, no Go compiler needed.
 # Idempotent — safe to re-run for upgrades.
@@ -19,7 +27,6 @@ else
     C_RED= C_GREEN= C_YELLOW= C_BLUE= C_RESET=
 fi
 
-step()  { echo; echo "${C_BLUE}[STEP $1/12]${C_RESET} $2"; }
 info()  { echo "  ${C_GREEN}→${C_RESET} $*"; }
 warn()  { echo "  ${C_YELLOW}⚠${C_RESET} $*"; }
 error() { echo "${C_RED}✗ $*${C_RESET}" >&2; }
@@ -27,8 +34,43 @@ die()   { error "$*"; exit 1; }
 
 GITHUB_REPO="lssolutions-ie/lss-backup-management-server"
 
-# Domain can be passed as first argument or LSS_DOMAIN env var
-DOMAIN="${1:-${LSS_DOMAIN:-}}"
+# ─── Parse arguments ────────────────────────────────────────────────────────
+MODE=""
+DOMAIN="${LSS_DOMAIN:-}"
+SSH_PUBKEY="${LSS_SSH_PUBKEY:-}"
+
+for arg in "$@"; do
+    case "$arg" in
+        --proxy) MODE="proxy" ;;
+        --vps)   MODE="vps" ;;
+        *)
+            if [[ -z "$DOMAIN" ]]; then
+                DOMAIN="$arg"
+            fi
+            ;;
+    esac
+done
+
+if [[ -z "$MODE" ]]; then
+    die "Please specify --proxy or --vps
+
+  --proxy  Behind a reverse proxy (HAProxy/OPNsense). Skips SSL and VPS hardening.
+  --vps    Direct public-facing VPS. Full hardening: SSL, fail2ban, SSH key-only, firewall.
+
+  Example:
+    export LSS_DOMAIN=backup.example.com
+    curl -fsSL https://raw.githubusercontent.com/.../install-remote.sh | bash -s -- --vps"
+fi
+
+if [[ "$MODE" == "proxy" ]]; then
+    TOTAL_STEPS=13
+else
+    TOTAL_STEPS=15
+fi
+
+step() { echo; echo "${C_BLUE}[STEP $1/$TOTAL_STEPS]${C_RESET} $2"; }
+
+info "Install mode: ${C_YELLOW}${MODE}${C_RESET}"
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 SERVICE_USER="lss-management"
@@ -57,7 +99,7 @@ trap 'error "Install failed at line $LINENO"; exit 1' ERR
 step 1 "Checking prerequisites"
 
 if [[ $EUID -ne 0 ]]; then
-    die "This script must be run as root. Try: curl ... | sudo bash"
+    die "This script must be run as root."
 fi
 
 if [[ ! -f /etc/os-release ]]; then
@@ -77,8 +119,12 @@ step 2 "Installing system dependencies"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y mysql-server nginx openssl curl ca-certificates cron restic
-info "Installed mysql-server, nginx, openssl, curl, cron, restic"
+PACKAGES="mysql-server nginx openssl curl ca-certificates cron restic"
+if [[ "$MODE" == "vps" ]]; then
+    PACKAGES="$PACKAGES fail2ban ufw"
+fi
+apt-get install -y $PACKAGES
+info "System dependencies installed"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 3 — Create service user and directories
@@ -103,7 +149,6 @@ for dir in "$CONFIG_DIR" "$LOG_DIR" "$STATE_DIR" "$SESSIONS_DIR"; do
 done
 chmod 750 "$CONFIG_DIR" "$LOG_DIR" "$SESSIONS_DIR"
 chmod 755 "$STATE_DIR"
-
 info "Directories created"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -119,24 +164,21 @@ user_exists="$(mysql -N -B -e \
     "SELECT COUNT(*) FROM mysql.user WHERE user='lss_mgmt' AND host='localhost';")"
 
 if [[ "$user_exists" == "0" ]]; then
-    info "Creating MySQL user lss_mgmt and database lss_management"
     DB_PASSWORD="$(openssl rand -base64 24)"
-
     mysql <<SQL
 CREATE USER IF NOT EXISTS 'lss_mgmt'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
 CREATE DATABASE IF NOT EXISTS lss_management CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 GRANT ALL PRIVILEGES ON lss_management.* TO 'lss_mgmt'@'localhost';
 FLUSH PRIVILEGES;
 SQL
-
     umask 077
     printf '%s' "$DB_PASSWORD" > "$DB_PASSWORD_FILE"
     umask 022
     chown "$SERVICE_USER:$SERVICE_USER" "$DB_PASSWORD_FILE"
     chmod 600 "$DB_PASSWORD_FILE"
-    info "MySQL configured. Credentials saved to $DB_PASSWORD_FILE"
+    info "MySQL configured"
 else
-    info "MySQL user lss_mgmt already exists — skipping"
+    info "MySQL user already exists — skipping"
     if [[ ! -f "$DB_PASSWORD_FILE" ]]; then
         die "lss_mgmt exists but $DB_PASSWORD_FILE is missing."
     fi
@@ -233,13 +275,11 @@ if [[ -z "$VERSION" || -z "$DOWNLOAD_URL" ]]; then
 fi
 
 info "Latest version: $VERSION"
-info "Downloading binary..."
 curl -fsSL -o "$BINARY_PATH" "$DOWNLOAD_URL"
 chown root:root "$BINARY_PATH"
 chmod 755 "$BINARY_PATH"
 info "Binary installed at $BINARY_PATH"
 
-# Download runtime assets (templates, migrations, static) from the repo
 info "Downloading runtime assets..."
 ASSETS_URL="https://github.com/$GITHUB_REPO/archive/refs/tags/$VERSION.tar.gz"
 TMPDIR="$(mktemp -d)"
@@ -255,7 +295,7 @@ for asset in templates migrations static; do
     fi
 done
 rm -rf "$TMPDIR"
-info "Templates, migrations, and static assets installed"
+info "Runtime assets installed"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 8 — Write config file
@@ -282,9 +322,9 @@ sessions_dir = "$SESSIONS_DIR"
 EOF
     chown "$SERVICE_USER:$SERVICE_USER" "$CONFIG_FILE"
     chmod 640 "$CONFIG_FILE"
-    info "Config written: $CONFIG_FILE"
+    info "Config written"
 else
-    info "Config already exists — skipping (upgrade-safe)"
+    info "Config already exists — skipping"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -322,10 +362,9 @@ WantedBy=multi-user.target
 EOF
 chown root:root "$SYSTEMD_UNIT"
 chmod 644 "$SYSTEMD_UNIT"
-
 systemctl daemon-reload
 systemctl enable lss-management --quiet
-info "systemd unit installed and enabled"
+info "systemd unit installed"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 10 — Configure nginx
@@ -334,12 +373,10 @@ step 10 "Configuring nginx"
 
 if [[ ! -f "$NGINX_AVAILABLE" ]]; then
     if [[ -z "$DOMAIN" ]]; then
-        # Try reading from terminal (won't work when piped from curl)
-        # When piped from curl, stdin is the script itself. Read domain from /dev/tty.
-        read -rp "Enter the domain name for this server (e.g. backup.example.com): " DOMAIN < /dev/tty
+        read -rp "Enter the domain name for this server (e.g. backup.example.com): " DOMAIN < /dev/tty || true
     fi
     if [[ -z "$DOMAIN" ]]; then
-        die "Domain name cannot be empty."
+        die "Domain name required. Set LSS_DOMAIN env var."
     fi
     info "Configuring nginx for: $DOMAIN"
 
@@ -377,24 +414,17 @@ server {
 NGINX
     chown root:root "$NGINX_AVAILABLE"
     chmod 644 "$NGINX_AVAILABLE"
-    info "Wrote $NGINX_AVAILABLE"
-
     ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
     rm -f /etc/nginx/sites-enabled/default
-
-    if ! nginx -t 2>/dev/null; then
-        nginx -t || true
-        die "nginx configuration test failed"
-    fi
-
+    nginx -t 2>/dev/null || die "nginx config test failed"
     systemctl reload nginx
-    info "nginx reloaded"
+    info "nginx configured"
 else
     info "nginx config already exists — skipping"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 11 — Start/restart the service
+# STEP 11 — Start/restart service
 # ═════════════════════════════════════════════════════════════════════════════
 step 11 "Starting lss-management service"
 
@@ -407,17 +437,14 @@ else
 fi
 
 for i in {1..30}; do
-    if systemctl is-active --quiet lss-management; then
-        break
-    fi
+    systemctl is-active --quiet lss-management && break
     sleep 1
 done
 
 if systemctl is-active --quiet lss-management; then
     info "${C_GREEN}Service is running${C_RESET}"
 else
-    error "Service failed to start. Run: journalctl -u lss-management -n 50"
-    die "Installation incomplete"
+    die "Service failed to start. Run: journalctl -u lss-management -n 50"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -425,7 +452,6 @@ fi
 # ═════════════════════════════════════════════════════════════════════════════
 step 12 "Installing update helper and backup cron"
 
-# Server self-update helper (called via sudo from the dashboard)
 cat > "$UPDATE_SCRIPT" <<'UPDATESCRIPT'
 #!/bin/bash
 STAGED="/var/lib/lss-management/update-staging"
@@ -446,30 +472,21 @@ systemd-run --unit=lss-update --description="LSS server update" bash -c '
 UPDATESCRIPT
 chown root:root "$UPDATE_SCRIPT"
 chmod 755 "$UPDATE_SCRIPT"
-
-# Sudoers rule for the update helper
 echo "$SERVICE_USER ALL=(root) NOPASSWD: $UPDATE_SCRIPT" > /etc/sudoers.d/lss-update
 chmod 440 /etc/sudoers.d/lss-update
 info "Update helper installed"
 
-# Daily MySQL backup cron
 cat > /usr/local/bin/lss-mgmt-backup.sh <<'BACKUPSCRIPT'
 #!/bin/bash
 set -euo pipefail
-if [[ -f /etc/default/lss-mgmt-backup ]]; then
-    . /etc/default/lss-mgmt-backup
-fi
+[[ -f /etc/default/lss-mgmt-backup ]] && . /etc/default/lss-mgmt-backup
 BACKUP_DIR="${LSS_BACKUP_DIR:-/var/backups/lss-mgmt}"
 DB_NAME="${LSS_BACKUP_DB:-lss_management}"
 DB_USER="${LSS_BACKUP_USER:-lss_mgmt}"
 DB_PASS="${LSS_BACKUP_PASS:-}"
 KEEP="${LSS_BACKUP_KEEP:-14}"
-if [[ -z "$DB_PASS" ]]; then
-    echo "[$(date -Is)] ERROR: LSS_BACKUP_PASS not set" >&2
-    exit 1
-fi
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
+[[ -z "$DB_PASS" ]] && { echo "[$(date -Is)] ERROR: LSS_BACKUP_PASS not set" >&2; exit 1; }
+mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$BACKUP_DIR/lss_management-$STAMP.sql.gz"
 mysqldump --user="$DB_USER" --password="$DB_PASS" --single-transaction --routines --triggers --hex-blob --default-character-set=utf8mb4 "$DB_NAME" | gzip -9 > "$OUT"
@@ -482,9 +499,7 @@ chmod 750 /usr/local/bin/lss-mgmt-backup.sh
 
 if [[ ! -f /etc/default/lss-mgmt-backup ]]; then
     umask 077
-    cat > /etc/default/lss-mgmt-backup <<EOF
-LSS_BACKUP_PASS="$DB_PASSWORD"
-EOF
+    printf 'LSS_BACKUP_PASS="%s"\n' "$DB_PASSWORD" > /etc/default/lss-mgmt-backup
     umask 022
     chmod 600 /etc/default/lss-mgmt-backup
 fi
@@ -498,34 +513,193 @@ else
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
+# STEP 13 — Install fail2ban (both modes)
+# ═════════════════════════════════════════════════════════════════════════════
+step 13 "Configuring fail2ban"
+
+if command -v fail2ban-client &>/dev/null; then
+    cat > /etc/fail2ban/jail.local <<'JAIL'
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+banaction = ufw
+
+[sshd]
+enabled  = true
+port     = ssh
+maxretry = 3
+
+[nginx-http-auth]
+enabled = true
+port    = http,https
+
+[nginx-botsearch]
+enabled = true
+port    = http,https
+JAIL
+    systemctl enable fail2ban --quiet
+    systemctl restart fail2ban
+    info "fail2ban configured (3 jails)"
+else
+    apt-get install -y fail2ban 2>&1 | tail -1
+    # Re-run this step
+    cat > /etc/fail2ban/jail.local <<'JAIL'
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled  = true
+port     = ssh
+maxretry = 3
+
+[nginx-http-auth]
+enabled = true
+port    = http,https
+
+[nginx-botsearch]
+enabled = true
+port    = http,https
+JAIL
+    systemctl enable fail2ban --quiet
+    systemctl restart fail2ban
+    info "fail2ban installed and configured"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# VPS-ONLY STEPS (14-15)
+# ═════════════════════════════════════════════════════════════════════════════
+if [[ "$MODE" == "vps" ]]; then
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 14 — VPS hardening (SSH, nginx headers, kernel, firewall)
+# ═════════════════════════════════════════════════════════════════════════════
+step 14 "Hardening server (VPS mode)"
+
+# ── SSH key setup ──
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+
+if [[ -n "$SSH_PUBKEY" ]]; then
+    echo "$SSH_PUBKEY" >> /root/.ssh/authorized_keys
+    info "SSH public key added from LSS_SSH_PUBKEY"
+elif [[ -f /root/.ssh/authorized_keys ]] && [[ -s /root/.ssh/authorized_keys ]]; then
+    info "SSH authorized_keys already has keys"
+else
+    warn "No SSH key found. Add your public key to /root/.ssh/authorized_keys BEFORE logging out!"
+    warn "  echo 'ssh-ed25519 AAAA...' >> /root/.ssh/authorized_keys"
+fi
+
+if [[ -f /root/.ssh/authorized_keys ]] && [[ -s /root/.ssh/authorized_keys ]]; then
+    chmod 600 /root/.ssh/authorized_keys
+
+    # Harden SSH — disable password auth
+    sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sed -i 's/^#\?MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
+    sed -i 's/^#\?LoginGraceTime.*/LoginGraceTime 30/' /etc/ssh/sshd_config
+    sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' /etc/ssh/sshd_config
+    systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null
+    info "SSH hardened: key-only, root prohibit-password, max 3 attempts"
+else
+    warn "SSH password auth LEFT ENABLED — no authorized_keys found"
+    warn "Add your key and re-run, or manually disable PasswordAuthentication"
+fi
+
+# ── Nginx security headers ──
+cat > /etc/nginx/conf.d/security-headers.conf <<'HEADERS'
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+add_header X-Frame-Options DENY always;
+add_header X-Content-Type-Options nosniff always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "geolocation=(), microphone=()" always;
+HEADERS
+sed -i 's/# server_tokens off;/server_tokens off;/' /etc/nginx/nginx.conf 2>/dev/null
+sed -i 's/server_tokens on;/server_tokens off;/' /etc/nginx/nginx.conf 2>/dev/null
+nginx -t 2>/dev/null && systemctl reload nginx
+info "Nginx: server tokens hidden, security headers added"
+
+# ── Kernel hardening ──
+cat > /etc/sysctl.d/99-lss-hardening.conf <<'SYSCTL'
+net.ipv4.ip_forward = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.tcp_syncookies = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+SYSCTL
+sysctl -p /etc/sysctl.d/99-lss-hardening.conf >/dev/null 2>&1
+info "Kernel hardened: SYN flood protection, ICMP hardened"
+
+# ── Firewall ──
+ufw allow 22/tcp >/dev/null 2>&1
+ufw allow 80/tcp >/dev/null 2>&1
+ufw allow 443/tcp >/dev/null 2>&1
+ufw --force enable >/dev/null 2>&1
+info "Firewall: SSH + HTTP + HTTPS only"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 15 — SSL certificate (VPS mode)
+# ═════════════════════════════════════════════════════════════════════════════
+step 15 "Installing SSL certificate"
+
+if [[ -n "$DOMAIN" ]]; then
+    apt-get install -y certbot python3-certbot-nginx 2>&1 | tail -1
+    if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" 2>&1; then
+        info "SSL certificate installed for $DOMAIN"
+    else
+        warn "Certbot failed — check DNS points to this server's IP"
+        warn "Run manually: certbot --nginx -d $DOMAIN"
+    fi
+else
+    warn "No domain set — skipping SSL. Run: certbot --nginx -d yourdomain.com"
+fi
+
+fi # end VPS-only steps
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Completion summary
 # ═════════════════════════════════════════════════════════════════════════════
-DISPLAY_DOMAIN="(not configured)"
-if [[ -f "$NGINX_AVAILABLE" ]]; then
-    extracted="$(grep -m1 -E '^\s*server_name' "$NGINX_AVAILABLE" | awk '{print $2}' | sed 's/;$//')"
-    if [[ -n "$extracted" ]]; then
-        DISPLAY_DOMAIN="$extracted"
-    fi
+DISPLAY_DOMAIN="${DOMAIN:-(not configured)}"
+
+if [[ "$MODE" == "vps" ]]; then
+    PROTOCOL="https"
+else
+    PROTOCOL="http"
 fi
 
 cat <<SUMMARY
 
 ============================================================
- LSS Management Server — Installation Complete
+ LSS Management Server — Installation Complete ($MODE mode)
 ============================================================
  Version:    $VERSION
+ Mode:       $MODE
  Service:    lss-management (systemd, enabled)
  Binary:     $BINARY_PATH
  Config:     $CONFIG_FILE
  Logs:       journalctl -u lss-management -f
 
  Next steps:
-   1. Visit https://$DISPLAY_DOMAIN/setup to create your superadmin account.
-   2. If behind a reverse proxy (HAProxy / OPNsense), add:
+   1. Visit ${PROTOCOL}://$DISPLAY_DOMAIN/setup to create your superadmin account.
+SUMMARY
+
+if [[ "$MODE" == "proxy" ]]; then
+    cat <<PROXY
+   2. Configure your reverse proxy to forward to this server on port 80.
+      HAProxy backend settings:
         option http-server-close
         timeout tunnel 24h
+PROXY
+fi
+
+cat <<FINAL
 
  Important — back these up:
    $SECRET_KEY_FILE   (losing this = re-register all nodes)
 ============================================================
-SUMMARY
+FINAL

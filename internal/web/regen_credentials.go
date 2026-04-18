@@ -1,6 +1,8 @@
 package web
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -53,15 +55,16 @@ func (s *Server) HandleRegenerateAllCredentials(w http.ResponseWriter, r *http.R
 	lg := logx.FromContext(r.Context())
 	lg.Warn("regenerate all credentials: starting", "node_id", node.ID, "node_name", node.Name)
 
-	// Step 1: Generate new PSK
-	psk, err := crypto.GeneratePSK()
-	if err != nil {
+	// Step 1: Generate hex-only PSK (safe for shell embedding)
+	pskBytes := make([]byte, 64)
+	if _, err := io.ReadFull(rand.Reader, pskBytes); err != nil {
 		lg.Error("regen creds: generate PSK failed", "err", err.Error())
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to generate PSK"})
 		return
 	}
+	psk := hex.EncodeToString(pskBytes)
 
 	encrypted, err := crypto.EncryptPSK(psk, s.AppKey)
 	if err != nil {
@@ -73,22 +76,22 @@ func (s *Server) HandleRegenerateAllCredentials(w http.ResponseWriter, r *http.R
 	}
 
 	// Step 2: SSH into node and update config.toml with new PSK
-	configDir := "/etc/lss-backup-cli"
-	if node.HwOS == "windows" {
-		configDir = `C:\ProgramData\LSS Backup`
-	} else if node.HwOS == "darwin" {
-		configDir = "/etc/lss-backup-cli"
+	var configPath string
+	switch node.HwOS {
+	case "windows":
+		configPath = `C:\ProgramData\LSS Backup\config.toml`
+	case "darwin":
+		configPath = "/Library/Application Support/LSS Backup/config.toml"
+	default:
+		configPath = "/etc/lss-backup/config.toml"
 	}
 
 	var updatePSKCmd string
 	if node.HwOS == "windows" {
-		updatePSKCmd = fmt.Sprintf(`powershell -Command "(Get-Content '%s\config.toml') -replace 'psk_key = \".*\"', 'psk_key = \"%s\"' | Set-Content '%s\config.toml'"`,
-			configDir, psk, configDir)
+		updatePSKCmd = fmt.Sprintf(`powershell -Command "(Get-Content '%s') -replace 'psk_key = \".*\"', 'psk_key = \"%s\"' | Set-Content '%s'"`,
+			configPath, psk, configPath)
 	} else {
-		escapedPSK := strings.ReplaceAll(psk, `\`, `\\`)
-		escapedPSK = strings.ReplaceAll(escapedPSK, `/`, `\/`)
-		escapedPSK = strings.ReplaceAll(escapedPSK, `&`, `\&`)
-		updatePSKCmd = fmt.Sprintf(`sed -i 's/psk_key = ".*"/psk_key = "%s"/' %s/config.toml`, escapedPSK, configDir)
+		updatePSKCmd = fmt.Sprintf(`sed -i 's/psk_key = ".*"/psk_key = "%s"/' '%s'`, psk, configPath)
 	}
 
 	output, err := sshExecOnNodeSudo(node, req.Username, req.Password, updatePSKCmd)

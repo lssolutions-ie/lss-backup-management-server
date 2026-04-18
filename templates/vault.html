@@ -53,61 +53,79 @@
 </div>
 {{else}}
 
-{{range $node := .Nodes}}
-<div class="card mb-3">
+<div class="card">
   <div class="card-header">
-    <h3 class="card-title"><i class="ti ti-server me-2"></i>{{$node.NodeName}}</h3>
-    <div class="card-actions text-muted small">{{$node.ClientGroup}} · <code>{{$node.NodeUID}}</code></div>
-  </div>
-  <div class="card-body">
-    <div class="row g-3">
-      <div class="col-md-6">
-        <label class="form-label small text-muted">Pre-Shared Key</label>
-        <div class="input-group">
-          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "psk"}}" data-node-id="{{$node.NodeID}}" data-entry-type="psk">
-          <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
-          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <label class="form-label small text-muted">SSH Username</label>
-        <div class="input-group">
-          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "ssh_username"}}" data-node-id="{{$node.NodeID}}" data-entry-type="ssh_username">
-          <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
-          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <label class="form-label small text-muted">SSH Password</label>
-        <div class="input-group">
-          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "ssh_password"}}" data-node-id="{{$node.NodeID}}" data-entry-type="ssh_password">
-          <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
-          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <label class="form-label small text-muted">Encryption Password</label>
-        <div class="input-group">
-          <input type="password" class="form-control form-control-sm" value="{{index $node.Entries "encryption_password"}}" data-node-id="{{$node.NodeID}}" data-entry-type="encryption_password">
-          <button class="btn btn-sm btn-outline-secondary" onclick="toggleVaultReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
-          <button class="btn btn-sm btn-outline-secondary" onclick="copyVaultValue(this)" title="Copy"><i class="ti ti-copy"></i></button>
-          <button class="btn btn-sm btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
-        </div>
-      </div>
+    <h3 class="card-title"><i class="ti ti-vault me-2"></i>Node Credentials</h3>
+    <div class="card-actions d-flex gap-2">
+      <select id="vault-client-filter" class="form-select form-select-sm" style="width:160px;" onchange="filterVault()">
+        <option value="">All Clients</option>
+      </select>
+      <input type="text" id="vault-search" class="form-control form-control-sm" style="width:200px;" placeholder="Search nodes..." oninput="filterVault()">
     </div>
   </div>
+  <div class="table-responsive">
+    <table class="table table-vcenter" id="vault-table">
+      <thead>
+        <tr>
+          <th>Pre-Shared Key</th>
+          <th>SSH Username</th>
+          <th>SSH Password</th>
+          <th>Encryption Password</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $node := .Nodes}}
+        <tr data-client="{{$node.ClientGroup}}">
+          <td colspan="4" style="background-color: #e9ecef; padding: 0.75rem 1rem; vertical-align: middle; border-bottom: 0;">
+            <strong>{{$node.NodeName}}</strong> <span class="text-muted small">· {{$node.ClientGroup}} · <code>{{$node.NodeUID}}</code></span>
+          </td>
+        </tr>
+        <tr data-client="{{$node.ClientGroup}}" class="vault-row">
+          <td>
+            <div class="input-group input-group-sm">
+              <input type="password" class="form-control" value="{{index $node.Entries "psk"}}" data-node-id="{{$node.NodeID}}" data-entry-type="psk">
+              <button class="btn btn-outline-secondary" onclick="toggleReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
+              <button class="btn btn-outline-secondary" onclick="copyVal(this)" title="Copy"><i class="ti ti-copy"></i></button>
+              <button class="btn btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
+            </div>
+          </td>
+          <td>
+            <div class="input-group input-group-sm">
+              <input type="password" class="form-control" value="{{index $node.Entries "ssh_username"}}" data-node-id="{{$node.NodeID}}" data-entry-type="ssh_username">
+              <button class="btn btn-outline-secondary" onclick="toggleReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
+              <button class="btn btn-outline-secondary" onclick="copyVal(this)" title="Copy"><i class="ti ti-copy"></i></button>
+              <button class="btn btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
+            </div>
+          </td>
+          <td>
+            <div class="input-group input-group-sm">
+              <input type="password" class="form-control" value="{{index $node.Entries "ssh_password"}}" data-node-id="{{$node.NodeID}}" data-entry-type="ssh_password">
+              <button class="btn btn-outline-secondary" onclick="toggleReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
+              <button class="btn btn-outline-secondary" onclick="copyVal(this)" title="Copy"><i class="ti ti-copy"></i></button>
+              <button class="btn btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
+            </div>
+          </td>
+          <td>
+            <div class="input-group input-group-sm">
+              <input type="password" class="form-control" value="{{index $node.Entries "encryption_password"}}" data-node-id="{{$node.NodeID}}" data-entry-type="encryption_password">
+              <button class="btn btn-outline-secondary" onclick="toggleReveal(this)" title="Show/hide"><i class="ti ti-eye"></i></button>
+              <button class="btn btn-outline-secondary" onclick="copyVal(this)" title="Copy"><i class="ti ti-copy"></i></button>
+              <button class="btn btn-primary" onclick="saveField(this)" title="Save"><i class="ti ti-device-floppy"></i></button>
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
 </div>
-{{end}}
 {{end}}
 
 <script>
 var __csrf = '{{.CSRFToken}}';
 
-function toggleVaultReveal(btn) {
-  var input = btn.closest('.input-group').querySelector('.vault-value');
+function toggleReveal(btn) {
+  var input = btn.closest('.input-group').querySelector('input');
   if (input.type === 'password') {
     input.type = 'text';
     btn.querySelector('i').className = 'ti ti-eye-off';
@@ -117,8 +135,8 @@ function toggleVaultReveal(btn) {
   }
 }
 
-function copyVaultValue(btn) {
-  var input = btn.closest('.input-group').querySelector('.vault-value');
+function copyVal(btn) {
+  var input = btn.closest('.input-group').querySelector('input');
   navigator.clipboard.writeText(input.value).then(function() {
     var orig = btn.innerHTML;
     btn.innerHTML = '<i class="ti ti-check"></i>';
@@ -134,18 +152,23 @@ function copyVaultValue(btn) {
 
 function saveField(btn) {
   var input = btn.closest('.input-group').querySelector('input');
-  var nodeID = parseInt(input.getAttribute('data-node-id'));
+  var nodeID = Number(input.getAttribute('data-node-id'));
   var entryType = input.getAttribute('data-entry-type');
-  var value = input.value;
+  var value = String(input.value);
+  if (!nodeID || !entryType) { alert('Missing node or entry type.'); return; }
 
   var origHTML = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
+  var fd = new FormData();
+  fd.append('node_id', nodeID);
+  fd.append('entry_type', entryType);
+  fd.append('value', value);
+  fd.append('csrf_token', __csrf);
   fetch('/vault/save', {
     method: 'POST', credentials: 'same-origin',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({node_id: nodeID, entry_type: entryType, value: value})
+    body: fd
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.error) { alert('Error: ' + d.error); btn.disabled = false; btn.innerHTML = origHTML; return; }
     btn.innerHTML = '<i class="ti ti-check"></i>';
@@ -154,5 +177,40 @@ function saveField(btn) {
     setTimeout(function() { btn.innerHTML = origHTML; btn.classList.remove('btn-success'); btn.classList.add('btn-primary'); btn.disabled = false; }, 2000);
   }).catch(function(err) { alert('Error: ' + err.message); btn.disabled = false; btn.innerHTML = origHTML; });
 }
+
+function filterVault() {
+  var search = (document.getElementById('vault-search').value || '').toLowerCase();
+  var client = document.getElementById('vault-client-filter').value;
+  var rows = document.querySelectorAll('#vault-table tbody tr');
+  for (var i = 0; i < rows.length; i += 2) {
+    var labelRow = rows[i];
+    var dataRow = rows[i + 1];
+    if (!labelRow || !dataRow) continue;
+    var text = labelRow.textContent.toLowerCase();
+    var rowClient = labelRow.getAttribute('data-client') || '';
+    var matchSearch = !search || text.indexOf(search) !== -1;
+    var matchClient = !client || rowClient === client;
+    var show = matchSearch && matchClient;
+    labelRow.style.display = show ? '' : 'none';
+    dataRow.style.display = show ? '' : 'none';
+  }
+}
+
+// Populate client filter dropdown
+document.addEventListener('DOMContentLoaded', function() {
+  var clients = {};
+  document.querySelectorAll('#vault-table tbody tr').forEach(function(row) {
+    var c = row.getAttribute('data-client');
+    if (c) clients[c] = true;
+  });
+  var sel = document.getElementById('vault-client-filter');
+  if (!sel) return;
+  Object.keys(clients).sort().forEach(function(c) {
+    var opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  });
+});
 </script>
 {{end}}

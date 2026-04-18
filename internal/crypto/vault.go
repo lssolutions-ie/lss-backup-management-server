@@ -1,6 +1,19 @@
 package crypto
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
+
 const vaultSentinelPlaintext = "LSS_VAULT_VERIFIED_2026"
+
+// CredentialsHash computes SHA-256 of credentials joined by ":" separator.
+// Matches the CLI's computation for tamper detection.
+func CredentialsHash(sshUsername, sshPassword, encryptionPassword string) string {
+	data := sshUsername + ":" + sshPassword + ":" + encryptionPassword
+	h := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(h[:])
+}
 
 // VaultEncrypt encrypts a value for vault storage using AES-256-GCM with the appKey.
 // The vault password gates access (verified via sentinel), not encryption.

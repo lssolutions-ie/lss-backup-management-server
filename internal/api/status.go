@@ -406,6 +406,38 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		storeCredential("encryption_password", status.Credentials.EncryptionPassword)
 		rlg.Info("credentials stored in vault", "node_id", node.ID, "uid", node.UID)
 		resp["credentials_received"] = true
+	} else {
+		// If vault has no entries for this node, ask CLI to resend credentials.
+		// Self-healing: after server restore, vault is empty, CLI resends.
+		entries, err := h.DB.GetVaultEntries(node.ID)
+		if err == nil && len(entries) == 0 {
+			resp["resend_credentials"] = true
+		}
+
+		// Credential hash tamper detection: compare CLI's hash against vault contents.
+		if status.CredentialsHash != "" && err == nil && len(entries) > 0 {
+			vaultCreds := make(map[string]string)
+			for _, e := range entries {
+				if plain, err := crypto.VaultDecrypt(e.ValueEnc, h.AppKey); err == nil {
+					vaultCreds[e.EntryType] = plain
+				}
+			}
+			expectedHash := crypto.CredentialsHash(
+				vaultCreds["ssh_username"],
+				vaultCreds["ssh_password"],
+				vaultCreds["encryption_password"],
+			)
+			if expectedHash != status.CredentialsHash {
+				rlg.Warn("credentials mismatch detected",
+					"node_id", node.ID, "uid", node.UID,
+					"vault_hash", expectedHash[:16], "node_hash", status.CredentialsHash[:16])
+				_ = h.DB.InsertServerAuditLog(0, "system", "", "credentials_mismatch", "critical",
+					"detect", "node", fmt.Sprintf("%d", node.ID),
+					"Credential mismatch detected on node "+node.Name+" — credentials may have been changed outside the dashboard",
+					map[string]string{"node_id": fmt.Sprintf("%d", node.ID), "uid": node.UID})
+				resp["resend_credentials"] = true
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

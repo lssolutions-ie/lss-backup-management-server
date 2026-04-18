@@ -1034,19 +1034,16 @@ function openDRSSHModal(nodeID, nodeName) {
       </div>
       <div class="modal-body">
         <div class="alert alert-danger mb-3">
-          <i class="ti ti-alert-triangle me-1"></i><strong>This will regenerate the PSK, SSH username, SSH password, and encryption password for <span id="regen-node-name"></span>.</strong>
-          All previous credentials will stop working immediately.
+          <i class="ti ti-alert-triangle me-1"></i><strong>This will regenerate all credentials for <span id="regen-node-name"></span>.</strong>
+          <div class="mt-1">PSK, SSH username, SSH password, and encryption password will all be replaced. Previous credentials will stop working immediately.</div>
         </div>
-        <p class="text-muted small">SSH credentials are required to push the changes to the node.</p>
-        <div class="row mb-3">
-          <div class="col-md-6">
-            <label class="form-label">SSH Username</label>
-            <input type="text" id="regen-ssh-user" class="form-control" placeholder="root">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">SSH Password</label>
-            <input type="password" id="regen-ssh-pass" class="form-control">
-          </div>
+        <div class="mb-3">
+          <label class="form-label">SSH Username</label>
+          <input type="text" id="regen-ssh-user" class="form-control" placeholder="root">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">SSH Password</label>
+          <input type="password" id="regen-ssh-pass" class="form-control">
         </div>
         <div id="regen-result" style="display:none;"></div>
       </div>
@@ -1110,7 +1107,7 @@ function executeRegenCreds() {
         return;
       }
       resultDiv.className = 'alert alert-success';
-      resultDiv.innerHTML = '<strong>All credentials regenerated.</strong><br>New PSK stored in vault. SSH creds will arrive via next heartbeat.<pre class="mb-0 mt-2 small">' + escapeHtml(d.output || '') + '</pre>';
+      resultDiv.innerHTML = '<strong>All credentials regenerated and stored in vault.</strong><pre class="mb-0 mt-2 small" style="white-space:pre-wrap;">' + escapeHtml(d.output || '') + '</pre>';
       resultDiv.style.display = '';
       btn.innerHTML = '<i class="ti ti-check me-1"></i>Done';
     });

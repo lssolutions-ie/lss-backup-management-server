@@ -298,7 +298,8 @@ type NodeStatus struct {
 	AuditEvents    []AuditEvent    `json:"audit_events,omitempty"` // v3+
 	DRStatus       *DRStatus       `json:"dr_status,omitempty"`
 	SecretsExport  json.RawMessage `json:"secrets_export,omitempty"` // opaque blob from CLI during graceful deletion
-	Credentials    *NodeCredentials `json:"credentials,omitempty"`
+	Credentials     *NodeCredentials `json:"credentials,omitempty"`
+	CredentialsHash string           `json:"credentials_hash,omitempty"`
 }
 
 type NodeCredentials struct {

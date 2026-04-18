@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/lssolutions-ie/lss-management-server/internal/crypto"
@@ -212,6 +213,9 @@ func (s *Server) HandleVaultSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// Parse form/JSON before CSRF check so FormValue works
+	r.ParseMultipartForm(1 << 20)
+
 	if !s.validateCSRF(r) {
 		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
@@ -226,34 +230,49 @@ func (s *Server) HandleVaultSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		NodeID    uint64 `json:"node_id"`
-		EntryType string `json:"entry_type"`
-		Value     string `json:"value"`
+	var nodeID uint64
+	var entryType, value string
+
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var req struct {
+			NodeID    uint64 `json:"node_id"`
+			EntryType string `json:"entry_type"`
+			Value     string `json:"value"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		nodeID = req.NodeID
+		entryType = req.EntryType
+		value = req.Value
+	} else {
+		nodeID, _ = strconv.ParseUint(r.FormValue("node_id"), 10, 64)
+		entryType = r.FormValue("entry_type")
+		value = r.FormValue("value")
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+
+	if nodeID == 0 || entryType == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Missing node_id or entry_type"})
 		return
 	}
 
-	if req.Value == "" {
-		if err := s.DB.RawExec("DELETE FROM vault_entries WHERE node_id = ? AND entry_type = ?", req.NodeID, req.EntryType); err != nil {
+	if value == "" {
+		if err := s.DB.RawExec("DELETE FROM vault_entries WHERE node_id = ? AND entry_type = ?", nodeID, entryType); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 	} else {
-		enc, err := crypto.VaultEncrypt(req.Value, s.AppKey)
+		enc, err := crypto.VaultEncrypt(value, s.AppKey)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Encryption failed"})
 			return
 		}
-		if err := s.DB.UpsertVaultEntry(req.NodeID, req.EntryType, enc); err != nil {
+		if err := s.DB.UpsertVaultEntry(nodeID, entryType, enc); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -262,8 +281,8 @@ func (s *Server) HandleVaultSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.auditServer(r, "vault_entry_saved", "warn", "save", "vault_entry",
-		fmt.Sprintf("%d", req.NodeID),
-		fmt.Sprintf("Vault entry %s updated for node %d", req.EntryType, req.NodeID), nil)
+		fmt.Sprintf("%d", nodeID),
+		fmt.Sprintf("Vault entry %s updated for node %d", entryType, nodeID), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"ok": "true"})

@@ -187,6 +187,8 @@
   window.unlockVaultRepo = function() {
     var pw = document.getElementById('repo-vault-pw').value;
     if (!pw) return;
+    var unlockBtn = event.target.closest('button');
+    if (unlockBtn) { unlockBtn.disabled = true; unlockBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Unlocking...'; }
     var csrf = document.querySelector('meta[name="csrf-token"]').content;
     var fd = new FormData();
     fd.append('vault_password', pw);
@@ -201,6 +203,7 @@
           return;
         }
         document.getElementById('auth-card').style.display = 'none';
+        document.getElementById('loading').style.display = 'block';
         tryVaultOrShowAuth();
       })
       .catch(function(err) { alert('Error: ' + err.message); });

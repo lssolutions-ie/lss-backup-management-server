@@ -83,6 +83,7 @@
       </div>
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i>Save Server Backup Settings</button>
+        <button type="button" class="btn btn-outline-success" onclick="runServerBackupNow()"><i class="ti ti-cloud-upload me-1"></i>Backup Now</button>
         <button type="button" class="btn btn-outline-warning" onclick="loadServerSnapshots()"><i class="ti ti-history me-1"></i>Restore From Snapshot</button>
       </div>
     </form>
@@ -250,6 +251,24 @@ function confirmS3Change(form) {
     return confirm('You are changing the S3 endpoint or bucket. All previous backup data in the old S3 location will need to be deleted manually. Continue?');
   }
   return true;
+}
+function runServerBackupNow() {
+  if (!confirm('Run a server backup to S3 now?')) return;
+  var btn = event.target.closest('button');
+  var origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Backing up...';
+  fetch('/settings/dr/server-backup-now', {
+    method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'csrf_token=' + encodeURIComponent('{{.CSRFToken}}')
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { alert('Backup failed: ' + d.error); btn.disabled = false; btn.innerHTML = origHTML; return; }
+    btn.innerHTML = '<i class="ti ti-check me-1"></i>Backup Complete';
+    btn.classList.remove('btn-outline-success');
+    btn.classList.add('btn-success');
+    setTimeout(function() { location.reload(); }, 2000);
+  }).catch(function(err) { alert('Error: ' + err.message); btn.disabled = false; btn.innerHTML = origHTML; });
 }
 function confirmServerPassword(form) {
   var pw = form.querySelector('[name="server_restic_password"]').value;

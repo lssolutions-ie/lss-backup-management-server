@@ -82,6 +82,21 @@ func (w *ServerBackupWorker) tick() {
 	w.db.InsertServerAuditLog(0, "system", "", "server_backup", "info", "backup", "server", "", "Automatic server backup completed successfully", nil)
 }
 
+// RunOnce performs a single backup immediately. Used by the manual "Backup Now" handler.
+func (w *ServerBackupWorker) RunOnce() error {
+	drCfg, err := w.db.GetDRConfig(w.appKey)
+	if err != nil || drCfg == nil || drCfg.S3Endpoint == "" {
+		return fmt.Errorf("DR S3 config not set")
+	}
+
+	if err := w.doBackup(drCfg); err != nil {
+		w.db.UpdateServerBackupStatus("failure", err.Error())
+		return err
+	}
+	w.db.UpdateServerBackupStatus("success", "")
+	return nil
+}
+
 type dsnParts struct {
 	User, Password, Host, Port, DBName string
 }

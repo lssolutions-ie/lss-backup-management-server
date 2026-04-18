@@ -1,20 +1,42 @@
 # LSS Management Server
 
-A self-hosted management server for LSS Backup CLI v2 deployments. Client nodes
+A self-hosted management server for LSS Backup CLI deployments. Client nodes
 (macOS, Linux, Windows) POST AES-256-GCM encrypted status reports to this
 server; an MSP operator monitors every node and backup job through a single
 web dashboard.
+
+## Features
+
+- Real-time dashboard with node monitoring, job status, anomaly detection
+- Password vault with credential tamper detection
+- Disaster recovery: automatic server + node backup to S3
+- One-click server self-update from the dashboard
+- Terminal session recording with replay
+- HMAC-chained audit logs (73+ event types)
+- One-command node deploy, recover, and delete
+- Firewall-style RBAC permission engine
 
 ## Requirements
 
 - Ubuntu 22.04 LTS or 24.04 LTS
 - A domain name with an A record pointing to this server's public IP
-- Ports 80 and 443 open (ufw: `sudo ufw allow 80 && sudo ufw allow 443`)
+- Ports 80 and 443 open
 - Root or sudo access
 
 ## Installation
 
-The complete installation is three commands:
+### One-Line Install (recommended)
+
+```bash
+export LSS_DOMAIN=your-domain.com
+curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-management-server/main/install/install-remote.sh | bash
+```
+
+This downloads the latest release binary from GitHub and installs everything:
+MySQL, nginx, systemd service, SSH tunnel user, server self-update helper,
+and daily backup cron. No git clone or Go compiler needed.
+
+### Developer Install (from source)
 
 ```bash
 git clone https://github.com/lssolutions-ie/lss-backup-management-server.git
@@ -22,16 +44,24 @@ cd lss-backup-management-server
 sudo bash install/install.sh
 ```
 
-The script installs all dependencies (MySQL, nginx, Go), configures the
-database, builds the binary, sets up the systemd service, and configures
-nginx. It will prompt for your domain name.
+This clones the repo, installs Go, and builds from source. The script will
+prompt for your domain name.
 
-## SSL Certificate (required after install)
+## SSL Certificate
+
+If connecting directly (no reverse proxy):
 
 ```bash
 sudo apt install certbot python3-certbot-nginx
 sudo certbot --nginx -d your-domain.com
 sudo systemctl reload nginx
+```
+
+If behind a reverse proxy (HAProxy / OPNsense), add these to the backend:
+
+```
+option http-server-close
+timeout tunnel 24h
 ```
 
 ## First Login
@@ -40,30 +70,41 @@ Visit `https://your-domain.com/setup` to create your superadmin account.
 This page is only available once — it disappears after the first account is
 created.
 
-## Registering a Node
+## Registering Nodes
+
+### Server-Assisted Install (recommended)
 
 1. Log in to the dashboard
-2. Go to **Client Groups** → create a group for the client (e.g. "Acme Ltd")
-3. Go to **Register Node**
-4. Fill in:
-   - **Node ID** — a unique code you choose (e.g. `acme-fileserver-01`).
-     This is the node's identity on the server and you will paste it into
-     the CLI below.
-   - **Node Hostname** — the node's actual hostname, copied from the node
-     itself, for display in the dashboard.
-   - **Client Group** — assign to the group you created above.
-5. Copy the PSK key shown — **it will not be shown again**
-6. On the node machine, open LSS Backup CLI → **Settings** → **Configure
-   Management Console**
-7. Enter:
-   - **Server URL** — `https://your-domain.com`
-   - **User ID** — the **Node ID** string you entered in step 4
-   - **Node Name** — anything; the server ignores this field
-   - **PSK Key** — the 128-char PSK from step 5
-8. Save. The node will check in within 5 minutes, or immediately after the
-   next backup job runs.
+2. Go to **Nodes** → **Register Node**
+3. Select a client group and click **Generate Install Command**
+4. Copy the one-liner and paste it on the target machine
+5. The node installs, configures, and appears on the dashboard automatically
+
+### Manual Registration
+
+1. Go to **Nodes** → **Register Node**
+2. Fill in Node ID, Hostname, Client Group
+3. Copy the PSK key shown
+4. On the node, open LSS Backup CLI → **Settings** → **Configure Management Console**
+5. Enter the Server URL, Node ID, and PSK Key
 
 ## Upgrading
+
+### From the Dashboard (recommended)
+
+Go to **Settings** → **Software Updates** → **Check Now** → **Update Server Now**.
+The server downloads the latest release, replaces the binary, and restarts.
+
+### Manual Upgrade (one-line install)
+
+Re-run the install command — it's idempotent:
+
+```bash
+export LSS_DOMAIN=your-domain.com
+curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-backup-management-server/main/install/install-remote.sh | bash
+```
+
+### Manual Upgrade (developer install)
 
 ```bash
 cd lss-backup-management-server
@@ -71,71 +112,57 @@ git pull
 sudo bash install/install.sh
 ```
 
-The script is idempotent — it rebuilds the binary and restarts the service.
-It never overwrites your config, secret key, or database.
-
 ## Service Management
 
 ```bash
-# Status
-systemctl status lss-management
-
-# Logs (live)
-journalctl -u lss-management -f
-
-# Restart
-systemctl restart lss-management
-
-# Stop
-systemctl stop lss-management
+systemctl status lss-management     # Status
+journalctl -u lss-management -f     # Live logs
+systemctl restart lss-management    # Restart
+systemctl stop lss-management       # Stop
 ```
 
-## Backup
+## Backup & Restore
 
-Back up these files regularly — losing them is unrecoverable:
+### Automatic (recommended)
 
-| File | What it contains | Impact if lost |
-|------|------------------|----------------|
-| `/etc/lss-management/secret.key` | App encryption key | All PSK keys become unreadable; every node must be re-registered |
-| `/etc/lss-management/db.password` | MySQL credentials | Recoverable — reset MySQL password and update `config.toml` |
-| `/etc/lss-management/config.toml` | Server config | Recoverable — recreate from scratch |
-| MySQL `lss_management` database | All node history | Unrecoverable without a backup |
+The server automatically backs up to S3 every 24 hours when Disaster Recovery
+is configured (**Settings** → **Disaster Recovery**). Includes database,
+encryption key, config, and terminal recordings.
 
-Recommended backup command (run as root, add to cron):
+Restore from **Settings** → **Disaster Recovery** → **Restore From Snapshot**.
 
-```bash
-mysqldump lss_management | gzip > /var/backups/lss-management-$(date +%F).sql.gz
-cp /etc/lss-management/secret.key /var/backups/lss-management-secret.key
-```
+### Manual
+
+Download a backup zip from **Settings** → **Backup & Restore** → **Download Backup Now**.
+Restore by uploading the zip on a fresh install via the same page.
+
+### Critical Files
+
+| File | Impact if lost |
+|------|----------------|
+| `/etc/lss-management/secret.key` | All PSK keys unreadable — every node must be re-registered |
+| `/etc/lss-management/config.toml` | Recoverable — recreate or restore from backup |
+| MySQL `lss_management` database | All history lost without a backup |
 
 ## Troubleshooting
 
 **Service won't start:**
-
 ```bash
 journalctl -u lss-management -n 100
 ```
 
-**"secret key file not found" error:**
-The `/etc/lss-management/secret.key` file is missing. If this is a fresh
-install, re-run `install.sh`. If the file was lost, all nodes must be
-re-registered.
-
 **Node not appearing in dashboard:**
-- Verify the node's server URL, user ID, and PSK key in the CLI settings
-- Check the node's LSS Backup CLI activity log for HTTP errors
-- Verify nginx is running: `systemctl status nginx`
-- Check the server log: `journalctl -u lss-management -n 50`
+- Check the node's CLI activity log for HTTP errors
+- Verify nginx: `systemctl status nginx`
+- Check server log: `journalctl -u lss-management -n 50`
 
 **Forgot superadmin password:**
-
 ```bash
-# Reset via MySQL
-mysql lss_management -e "UPDATE users SET password_hash='<new-bcrypt-hash>' WHERE role='superadmin';"
+mysql lss_management -e "UPDATE users SET force_setup = 1, totp_secret = '', totp_enabled = 0 WHERE role = 'superadmin';"
+mysql lss_management -e "DELETE FROM sessions;"
 ```
+Then log in with `lssbackuppassword` and you'll be prompted to set a new password + 2FA.
 
-Generate a bcrypt hash with:
+## License
 
-```bash
-htpasswd -bnBC 12 "" newpassword | tr -d ':\n'
-```
+Copyright 2026 LS Solutions. All rights reserved.

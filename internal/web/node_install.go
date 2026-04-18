@@ -93,7 +93,10 @@ func (s *Server) HandleGenerateInstallToken(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Generate random token: 32 bytes -> 64-char hex
+	// Auto-store PSK in vault
+	_ = s.DB.AutoStoreNodePSK(nodeID, psk, s.AppKey)
+
+	// Generate random token: 32 bytes -> 64-char hex (install token)
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		rlg.Error("generate token failed", "err", err.Error())

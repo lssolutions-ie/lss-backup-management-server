@@ -390,6 +390,24 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Credentials ingest — CLI sends SSH creds + encryption password after install/recovery.
+	if status.Credentials != nil && status.Credentials.SSHUsername != "" {
+		storeCredential := func(entryType, value string) {
+			if value == "" {
+				return
+			}
+			enc, err := crypto.VaultEncrypt(value, h.AppKey)
+			if err == nil {
+				_ = h.DB.UpsertVaultEntry(node.ID, entryType, enc)
+			}
+		}
+		storeCredential("ssh_username", status.Credentials.SSHUsername)
+		storeCredential("ssh_password", status.Credentials.SSHPassword)
+		storeCredential("encryption_password", status.Credentials.EncryptionPassword)
+		rlg.Info("credentials stored in vault", "node_id", node.ID, "uid", node.UID)
+		resp["credentials_received"] = true
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck

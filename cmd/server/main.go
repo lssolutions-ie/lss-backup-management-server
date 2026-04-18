@@ -119,7 +119,7 @@ func main() {
 	mux.HandleFunc("/setup", webServer.HandleSetup)
 	mux.HandleFunc("/login", webServer.HandleLogin)
 	mux.HandleFunc("/login/2fa", webServer.HandleTOTPVerify)
-	mux.HandleFunc("/logout", webServer.HandleLogout)
+	mux.HandleFunc("/logout", webServer.RequireAuth(webServer.HandleLogout))
 
 	// 2FA setup/disable and forced password change (requires auth)
 	mux.HandleFunc("/settings/2fa/setup", webServer.RequireAuth(webServer.HandleTOTPSetup))
@@ -229,6 +229,13 @@ func main() {
 	mux.HandleFunc("/settings/backup", webServer.RequireSuperAdmin(webServer.HandleBackupPage))
 	mux.HandleFunc("/settings/backup/download", webServer.RequireSuperAdmin(webServer.HandleBackupDownload))
 	mux.HandleFunc("/settings/backup/restore", webServer.RequireSuperAdmin(webServer.HandleRestore))
+	mux.HandleFunc("/vault", webServer.RequireManagerOrAbove(webServer.HandleVault))
+	mux.HandleFunc("/vault/setup", webServer.RequireManagerOrAbove(webServer.HandleVaultSetup))
+	mux.HandleFunc("/vault/unlock", webServer.RequireManagerOrAbove(webServer.HandleVaultUnlock))
+	mux.HandleFunc("/vault/lock", webServer.RequireManagerOrAbove(webServer.HandleVaultLock))
+	mux.HandleFunc("/vault/save", webServer.RequireManagerOrAbove(webServer.HandleVaultSave))
+	mux.HandleFunc("/vault/reveal", webServer.RequireManagerOrAbove(webServer.HandleVaultReveal))
+	mux.HandleFunc("/api/v1/nodes-list", webServer.RequireManagerOrAbove(webServer.HandleNodesListJSON))
 
 	// Wrap mux with request-id/access-log, then security headers.
 	handler := securityHeaders(webServer.RequestLog(mux))

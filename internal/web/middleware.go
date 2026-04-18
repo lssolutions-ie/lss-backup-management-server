@@ -200,6 +200,16 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 		"versionLT": func(a, b string) bool {
 			return versionLessThan(a, b)
 		},
+		"vaultLabel": func(entryType string) string {
+			labels := map[string]string{
+				"psk": "Pre-Shared Key", "ssh_username": "SSH Username",
+				"ssh_password": "SSH Password", "encryption_password": "Encryption Password",
+			}
+			if l, ok := labels[entryType]; ok {
+				return l
+			}
+			return entryType
+		},
 		"prettyJSON": func(s string) string {
 			if s == "" {
 				return ""

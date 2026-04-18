@@ -298,6 +298,13 @@ type NodeStatus struct {
 	AuditEvents    []AuditEvent    `json:"audit_events,omitempty"` // v3+
 	DRStatus       *DRStatus       `json:"dr_status,omitempty"`
 	SecretsExport  json.RawMessage `json:"secrets_export,omitempty"` // opaque blob from CLI during graceful deletion
+	Credentials    *NodeCredentials `json:"credentials,omitempty"`
+}
+
+type NodeCredentials struct {
+	SSHUsername         string `json:"ssh_username"`
+	SSHPassword         string `json:"ssh_password"`
+	EncryptionPassword  string `json:"encryption_password"`
 }
 
 // DRConfig is the single-row global DR configuration.

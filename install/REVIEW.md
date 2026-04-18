@@ -34,7 +34,7 @@ multipass shell lss-fresh
 sudo apt-get update
 sudo apt-get install -y git
 git clone https://github.com/lssolutions-ie/lss-backup-server.git
-cd lss-backup-management-server
+cd lss-backup-server
 sudo bash install/install.sh
 ```
 

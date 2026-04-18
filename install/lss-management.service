@@ -7,7 +7,7 @@ Requires=mysql.service
 Type=simple
 User=lss-management
 Group=lss-management
-ExecStart=/usr/local/bin/lss-management-server
+ExecStart=/usr/local/bin/lss-backup-server
 WorkingDirectory=/etc/lss-management
 Environment=LSS_ENV=production
 Environment=LSS_CONFIG=/etc/lss-management/config.toml

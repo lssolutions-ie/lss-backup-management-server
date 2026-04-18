@@ -80,7 +80,7 @@ LOG_DIR="/var/log/lss-management"
 SECRET_KEY_FILE="$CONFIG_DIR/secret.key"
 DB_PASSWORD_FILE="$CONFIG_DIR/db.password"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
-BINARY_PATH="/usr/local/bin/lss-management-server"
+BINARY_PATH="/usr/local/bin/lss-backup-server"
 SYSTEMD_UNIT="/etc/systemd/system/lss-management.service"
 NGINX_AVAILABLE="/etc/nginx/sites-available/lss-management"
 NGINX_ENABLED="/etc/nginx/sites-enabled/lss-management"
@@ -342,7 +342,7 @@ Requires=mysql.service
 Type=simple
 User=lss-management
 Group=lss-management
-ExecStart=/usr/local/bin/lss-management-server
+ExecStart=/usr/local/bin/lss-backup-server
 WorkingDirectory=/etc/lss-management
 Environment=LSS_ENV=production
 Environment=LSS_CONFIG=/etc/lss-management/config.toml
@@ -455,7 +455,7 @@ step 12 "Installing update helper and backup cron"
 cat > "$UPDATE_SCRIPT" <<'UPDATESCRIPT'
 #!/bin/bash
 STAGED="/var/lib/lss-management/update-staging"
-TARGET="/usr/local/bin/lss-management-server"
+TARGET="/usr/local/bin/lss-backup-server"
 if [ ! -f "$STAGED" ]; then
   echo "No staged update found"
   exit 1
@@ -463,8 +463,8 @@ fi
 systemd-run --unit=lss-update --description="LSS server update" bash -c '
   sleep 1
   systemctl stop lss-management
-  cp /var/lib/lss-management/update-staging /usr/local/bin/lss-management-server
-  chmod 755 /usr/local/bin/lss-management-server
+  cp /var/lib/lss-management/update-staging /usr/local/bin/lss-backup-server
+  chmod 755 /usr/local/bin/lss-backup-server
   rm -f /var/lib/lss-management/update-staging
   systemctl start lss-management
   echo "Update applied at $(date)" >> /var/log/lss-management/update.log

@@ -84,7 +84,7 @@ func (s *Server) HandleServerUpdate(w http.ResponseWriter, r *http.Request) {
 
 	var downloadURL string
 	for _, a := range release.Assets {
-		if a.Name == "lss-management-server" {
+		if a.Name == "lss-backup-server" {
 			downloadURL = a.BrowserDownloadURL
 			break
 		}

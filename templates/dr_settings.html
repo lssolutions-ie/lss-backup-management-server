@@ -48,7 +48,7 @@
 <div class="card mb-3">
   <div class="card-header"><h3 class="card-title"><i class="ti ti-server me-2"></i>Server Backup</h3></div>
   <div class="card-body">
-    <p class="text-muted small mb-3">Automatic backup of the management server (database, config, encryption keys, session recordings) to <code>s3://{{.Config.S3Bucket}}/lss-backup-management-server/</code>.</p>
+    <p class="text-muted small mb-3">Automatic backup of the management server (database, config, encryption keys, session recordings) to <code>s3://{{.Config.S3Bucket}}/lss-backup-server/</code>.</p>
     {{if and .Tuning .Tuning.ServerBackupLastAt}}
     <div class="mb-3">
       <span class="badge {{if eq .Tuning.ServerBackupLastStatus "success"}}bg-success-lt text-success{{else}}bg-danger-lt text-danger{{end}} me-2">

@@ -159,7 +159,7 @@ func (w *ServerBackupWorker) doBackup(drCfg *models.DRConfig) error {
 		}
 	}
 
-	repo := fmt.Sprintf("s3:%s/%s/lss-backup-management-server", drCfg.S3Endpoint, drCfg.S3Bucket)
+	repo := fmt.Sprintf("s3:%s/%s/lss-backup-server", drCfg.S3Endpoint, drCfg.S3Bucket)
 
 	password := drCfg.ServerResticPassword
 	if password == "" {

@@ -35,7 +35,7 @@ func (s *Server) resticEnv() ([]string, string, error) {
 		return nil, "", fmt.Errorf("no restic password configured")
 	}
 
-	repo := fmt.Sprintf("s3:%s/%s/lss-backup-management-server", drCfg.S3Endpoint, drCfg.S3Bucket)
+	repo := fmt.Sprintf("s3:%s/%s/lss-backup-server", drCfg.S3Endpoint, drCfg.S3Bucket)
 	env := append(os.Environ(),
 		"RESTIC_REPOSITORY="+repo,
 		"RESTIC_PASSWORD="+password,

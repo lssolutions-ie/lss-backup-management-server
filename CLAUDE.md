@@ -13,7 +13,7 @@ terminal access to nodes through reverse SSH tunnels over WebSocket.
 
 **Version:** v1.29.3
 **Paired CLI:** v2.13.5
-**Module:** `github.com/lssolutions-ie/lss-management-server`
+**Module:** `github.com/lssolutions-ie/lss-backup-server`
 **Go version:** 1.25.0
 
 ---
@@ -469,7 +469,7 @@ Applied on: tag edit, tags list (create), node detail modal, node new form.
 go build ./cmd/server
 
 # Production (with version)
-GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.10.2" -o lss-management-server ./cmd/server
+GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=v1.10.2" -o lss-backup-server ./cmd/server
 ```
 
 Version is set via `-ldflags "-X main.Version=vX.Y.Z"` — defaults to `"dev"` if not set.
@@ -482,11 +482,11 @@ GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=vX.Y.Z" -o /tmp/lss-m
 
 # 2. Stop, copy, start (must stop first — can't overwrite running binary)
 ssh root@10.0.0.123 'systemctl stop lss-management'
-scp /tmp/lss-management root@10.0.0.123:/usr/local/bin/lss-management-server
+scp /tmp/lss-management root@10.0.0.123:/usr/local/bin/lss-backup-server
 ssh root@10.0.0.123 'systemctl start lss-management'
 ```
 
-**Important:** The binary is `/usr/local/bin/lss-management-server` (NOT `lss-management`).
+**Important:** The binary is `/usr/local/bin/lss-backup-server` (NOT `lss-management`).
 
 ---
 
@@ -532,7 +532,7 @@ Without these, HAProxy kills idle WebSocket connections after its default timeou
 
 ## Things To Watch Out For
 
-- **Binary filename:** systemd runs `lss-management-server`, not `lss-management`. Deploy to the right path.
+- **Binary filename:** systemd runs `lss-backup-server`, not `lss-management`. Deploy to the right path.
 - **nginx /ws/ block:** Without WebSocket header pass-through, ALL tunnel connections fail with "upgrade token not found in Connection header". This was the #1 issue during initial tunnel debugging.
 - **ForceCommand:** Must be `/usr/bin/sleep infinity`, not `/bin/false`. False exits immediately, killing SSH sessions and their reverse port forwards.
 - **HAProxy timeout tunnel:** Without this, HAProxy kills WebSocket connections after ~30 seconds of "idle" (no HTTP-level activity).
@@ -726,7 +726,7 @@ Multi-step deletion flow with secret export:
 
 ## Server Auto-Backup (v1.26.0)
 
-Background worker backs up the server itself to S3 via restic every 24h (configurable). Includes mysqldump, secret.key, config.toml, and .cast session recordings. Stored at `s3://{bucket}/lss-backup-management-server/`.
+Background worker backs up the server itself to S3 via restic every 24h (configurable). Includes mysqldump, secret.key, config.toml, and .cast session recordings. Stored at `s3://{bucket}/lss-backup-server/`.
 
 Separate restic passwords and retention settings for server vs node backups. DR settings page split into 3 cards: Global S3, Server Backup, Node Backup.
 

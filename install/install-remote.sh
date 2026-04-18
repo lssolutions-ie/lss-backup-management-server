@@ -335,11 +335,8 @@ step 10 "Configuring nginx"
 if [[ ! -f "$NGINX_AVAILABLE" ]]; then
     if [[ -z "$DOMAIN" ]]; then
         # Try reading from terminal (won't work when piped from curl)
-        if [[ -t 0 ]]; then
-            read -rp "Enter the domain name for this server (e.g. backup.example.com): " DOMAIN
-        else
-            die "Domain name required. Usage: curl ... | sudo bash -s -- yourdomain.com"
-        fi
+        # When piped from curl, stdin is the script itself. Read domain from /dev/tty.
+        read -rp "Enter the domain name for this server (e.g. backup.example.com): " DOMAIN < /dev/tty
     fi
     if [[ -z "$DOMAIN" ]]; then
         die "Domain name cannot be empty."

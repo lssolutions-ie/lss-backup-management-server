@@ -11,8 +11,8 @@ A web-based management server for LSS Backup CLI nodes. It receives encrypted he
 and post-run reports from CLI nodes, provides a dashboard for operators, and enables remote
 terminal access to nodes through reverse SSH tunnels over WebSocket.
 
-**Version:** v1.29.3
-**Paired CLI:** v2.13.5
+**Version:** v1.29.10
+**Paired CLI:** v2.13.9
 **Module:** `github.com/lssolutions-ie/lss-backup-server`
 **Go version:** 1.25.0
 
@@ -770,4 +770,4 @@ Most features shipped. Remaining:
 
 ---
 
-_Last updated: 2026-04-18 (v1.29.3)_
+_Last updated: 2026-04-18 (v1.29.10)_
